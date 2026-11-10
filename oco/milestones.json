@@ -1,0 +1,5 @@
+{"id":"dl-life","subject":"devlab","ord":3,"title":"A phone's whole life","horizon":"perfection","readiness":8,"criteria":"backlog:flash backlog:provision","why":"From image to working phone."}
+{"id":"dl-manual","subject":"devlab","ord":4,"title":"Half-manual tests","horizon":"perfection","readiness":8,"criteria":"backlog:manual-tests","why":"What needs eyes and hands, as a conveyor."}
+{"id":"dl-reaches","subject":"devlab","ord":1,"title":"Reaches and checks a phone","horizon":"working","readiness":7,"criteria":"backlog:phone backlog:health","why":"The ground of every other tool."}
+{"id":"dl-safe","subject":"devlab","ord":2,"title":"Safe experiments","horizon":"working","readiness":7,"criteria":"backlog:kernel","why":"Tries that never strand the phone."}
+{"id":"dl-upstream","subject":"devlab","ord":5,"title":"Built on postmarketOS","horizon":"ongoing","readiness":9,"criteria":"backlog:pmos-conventions","why":"Fitting in, contributing back."}

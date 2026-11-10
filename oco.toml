@@ -9,3 +9,5 @@ kind = "tool"
 parent = "linux-phone-oco"
 
 [exports]
+backlog = "oco/backlog.json"
+milestones = "oco/milestones.json"
