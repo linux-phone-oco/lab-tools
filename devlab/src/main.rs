@@ -65,7 +65,11 @@ enum Cmd {
     /// Listen: play a tone on each speaker and hear it through the lab's microphone
     Hear,
     /// The checks against everything that worked before; exit 1 on a regression
-    Health,
+    Health {
+        /// Listen too: play a tone on each speaker and hear it through the lab's microphone
+        #[arg(long)]
+        hear: bool,
+    },
     /// Watch the phone: health after every boot, silent when well, a board task when not
     Watch,
     /// A test kernel beside the stock one: tried once, falls back to stock by itself
@@ -152,8 +156,8 @@ fn main() -> Result<()> {
             let n = |o: &str| checks.iter().filter(|c| c.outcome == o).count();
             println!("{} pass, {} fail, {} skip", n("pass"), n("fail"), n("skip"));
         }
-        Cmd::Health => {
-            let r = health::health(&dev, &here, &phone::Phone::find(&dev)?)?;
+        Cmd::Health { hear } => {
+            let r = health::health(&dev, &here, &phone::Phone::find(&dev)?, hear)?;
             if r.is_empty() {
                 println!(
                     "all is well ({} checks in the baseline)",

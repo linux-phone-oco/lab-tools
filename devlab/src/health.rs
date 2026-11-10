@@ -98,11 +98,58 @@ pub fn save_baseline(device: &Device, b: &BTreeSet<String>) -> Result<()> {
     Ok(())
 }
 
+/// The baseline a run is held to. A run that did not listen is not asked about what only listening
+/// can tell: the heard checks are out of its scope, not regressions that "did not run".
+pub fn in_scope(
+    baseline: &BTreeSet<String>,
+    heard_keys: &[String],
+    listened: bool,
+) -> BTreeSet<String> {
+    if listened {
+        return baseline.clone();
+    }
+    baseline
+        .iter()
+        .filter(|k| !heard_keys.contains(k))
+        .cloned()
+        .collect()
+}
+
 /// One health check: the regressions (empty when all is well); the baseline grows with new passes.
-pub fn health(device: &Device, manifest_dir: &Path, phone: &Phone) -> Result<Vec<String>> {
-    let now = run_checks(device, manifest_dir, phone)?;
+/// With `listen`, the lab's ear joins in: a speaker heard once is in the baseline, and silent after
+/// that is a regression like any other.
+pub fn health(
+    device: &Device,
+    manifest_dir: &Path,
+    phone: &Phone,
+    listen: bool,
+) -> Result<Vec<String>> {
+    let mut now = run_checks(device, manifest_dir, phone)?;
+    if listen {
+        let heard = crate::hear::hear(device, phone)?;
+        let dir = device.state_dir().join("results");
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let lines: String = heard
+            .iter()
+            .map(|c| {
+                let (component, test) = c.key.split_once('/').unwrap_or(("", &c.key));
+                format!("{}\n", serde_json::json!({"test": test, "component": component, "outcome": c.outcome, "detail": c.detail}))
+            })
+            .collect();
+        std::fs::write(dir.join(format!("{stamp}-hear.jsonl")), lines)?;
+        now.extend(heard);
+    }
     let base = load_baseline(device);
-    let r = regressions(&base, &now);
+    let heard_keys: Vec<String> = device
+        .hear
+        .tones()
+        .iter()
+        .map(|t| format!("{}/{}", t.component, t.name))
+        .collect();
+    let r = regressions(&in_scope(&base, &heard_keys, listen), &now);
     save_baseline(device, &grown(&base, &now))?;
     Ok(r)
 }
@@ -154,5 +201,42 @@ mod tests {
         let base: BTreeSet<String> = ["a/x".to_string()].into();
         let g = grown(&base, &[c("a/x", "fail"), c("c/z", "pass")]);
         assert_eq!(g, ["a/x".to_string(), "c/z".to_string()].into());
+    }
+
+    #[test]
+    fn a_run_that_did_not_listen_is_not_asked_what_only_listening_tells() {
+        let base: BTreeSet<String> = ["audio-speaker/heard-left", "audio-speaker/card"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let heard = vec!["audio-speaker/heard-left".to_string()];
+        let ran = vec![Check {
+            key: "audio-speaker/card".into(),
+            outcome: "pass".into(),
+            detail: String::new(),
+        }];
+        assert!(
+            regressions(&in_scope(&base, &heard, false), &ran).is_empty(),
+            "silent run: the heard check is out of scope"
+        );
+        let r = regressions(&in_scope(&base, &heard, true), &ran);
+        assert_eq!(
+            r,
+            vec!["audio-speaker/heard-left (did not run)".to_string()],
+            "a listening run answers for it"
+        );
+        let silent = vec![
+            ran[0].clone(),
+            Check {
+                key: "audio-speaker/heard-left".into(),
+                outcome: "fail".into(),
+                detail: "NOT HEARD".into(),
+            },
+        ];
+        assert_eq!(
+            regressions(&in_scope(&base, &heard, true), &silent).len(),
+            1,
+            "heard before, silent now: a regression"
+        );
     }
 }

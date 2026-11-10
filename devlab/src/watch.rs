@@ -37,7 +37,7 @@ pub fn watch(device: &Device, manifest_dir: &Path) -> Result<()> {
                 if new_boot && phone.uptime().unwrap_or(0) < 90 {
                     std::thread::sleep(Duration::from_secs(90)); // let the boot settle
                 }
-                match health::health(device, manifest_dir, &phone) {
+                match health::health(device, manifest_dir, &phone, false) {
                     Ok(r) => {
                         let text = alert_text(&device.device.codename, &r);
                         match (&text, &alerting) {
