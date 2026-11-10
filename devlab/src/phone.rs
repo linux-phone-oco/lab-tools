@@ -6,6 +6,7 @@ use anyhow::{bail, Context, Result};
 use std::io::Write;
 use std::process::{Command, Stdio};
 
+#[derive(Clone)]
 pub struct Phone {
     pub target: String,
     password: String,
@@ -36,6 +37,18 @@ pub const AS_USER: &str = "export XDG_RUNTIME_DIR=/run/user/$(id -u); sh -s";
 pub const AS_ROOT: &str = "sudo -S -p '' sh -s";
 
 impl Phone {
+    /// The phone at one given address, if it answers there.
+    pub fn at(device: &Device, addr: &str) -> Result<Phone> {
+        let p = Phone {
+            target: format!("{}@{addr}", device.connection.user),
+            password: password(device)?,
+        };
+        if !p.answers() {
+            bail!("{} does not answer at {addr}", device.device.codename);
+        }
+        Ok(p)
+    }
+
     /// The first address that answers: the manifest's, then the remembered Wi-Fi one.
     pub fn find(device: &Device) -> Result<Phone> {
         let password = password(device)?;

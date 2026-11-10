@@ -15,6 +15,7 @@ mod device;
 mod health;
 mod kernel;
 mod phone;
+mod provision;
 mod watch;
 
 use anyhow::{bail, Result};
@@ -42,6 +43,8 @@ enum Cmd {
         #[command(subcommand)]
         action: PhoneCmd,
     },
+    /// Provision a freshly flashed phone: packages, files, Wi-Fi (say `now`: it changes this machine's networking for a while)
+    Provision { now: String },
     /// Run the device's checks now
     Test,
     /// The checks against everything that worked before; exit 1 on a regression
@@ -97,6 +100,12 @@ fn main() -> Result<()> {
         .map(std::path::Path::to_path_buf)
         .unwrap_or_default();
     match cli.cmd {
+        Cmd::Provision { now } => {
+            if now != "now" {
+                bail!("usage: devlab provision now - it shares this machine's connection with the phone for a while");
+            }
+            provision::provision(&dev, &here)?;
+        }
         Cmd::Test => {
             let checks = health::run_checks(&dev, &here, &phone::Phone::find(&dev)?)?;
             for c in &checks {

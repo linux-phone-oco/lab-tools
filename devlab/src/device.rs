@@ -13,6 +13,47 @@ pub struct Device {
     pub connection: Connection,
     #[serde(default)]
     pub tests: Tests,
+    #[serde(default)]
+    pub provision: Provision,
+}
+
+/// What a freshly flashed phone gets.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct Provision {
+    /// The package list, relative to the manifest
+    #[serde(default = "default_packages")]
+    pub packages: String,
+    /// Files to install - `{compatible}` is the phone's device-tree name
+    #[serde(default)]
+    pub install: Vec<Install>,
+}
+
+fn default_packages() -> String {
+    "provision/packages.txt".into()
+}
+
+impl Default for Provision {
+    fn default() -> Self {
+        Provision {
+            packages: default_packages(),
+            install: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct Install {
+    pub from: String,
+    pub to: String,
+    #[serde(default = "default_mode")]
+    pub mode: String,
+    /// A command on the phone that must succeed for the file to go on (empty: always)
+    #[serde(default)]
+    pub when: String,
+}
+
+fn default_mode() -> String {
+    "644".into()
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
