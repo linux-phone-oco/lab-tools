@@ -11,6 +11,22 @@ pub const MANIFEST: &str = "device.toml";
 pub struct Device {
     pub device: Identity,
     pub connection: Connection,
+    #[serde(default)]
+    pub tests: Tests,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct Tests {
+    /// The checks script, relative to the manifest; run on the phone as root, one JSON line per check
+    pub checks: String,
+}
+
+impl Default for Tests {
+    fn default() -> Self {
+        Tests {
+            checks: "tests/automatic/checks.sh".into(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
