@@ -1,0 +1,11 @@
+name: gather
+# ocoeco gathers this repository's activity, releases and CI into oco/gathered/ - data made by work.
+on:
+  schedule:
+    - cron: "41 3 * * *"
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  gather:
+    uses: open-commons-observatory/ocoeco/.github/workflows/gather.yml@main
