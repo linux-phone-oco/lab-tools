@@ -45,7 +45,7 @@ impl Phone {
                 target: format!("{}@{addr}", device.connection.user),
                 password: password.clone(),
             };
-            if p.run("true", AS_USER, "").map(|o| o.0).unwrap_or(false) {
+            if p.answers() {
                 return Ok(p);
             }
         }
@@ -76,6 +76,20 @@ impl Phone {
             out.status.success(),
             String::from_utf8_lossy(&out.stdout).into_owned(),
         ))
+    }
+
+    /// Whether this address answers - quietly: an address that does not is no error worth showing.
+    fn answers(&self) -> bool {
+        Command::new("sshpass")
+            .arg("-e")
+            .arg("ssh")
+            .args(ssh_args(&self.target, "true"))
+            .env("SSHPASS", &self.password)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success())
     }
 
     pub fn sh(&self, script: &str) -> Result<(bool, String)> {
