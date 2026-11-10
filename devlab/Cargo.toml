@@ -1,0 +1,12 @@
+[package]
+name = "devlab"
+version = "0.1.0"
+edition = "2021"
+description = "The device lab for Linux phones: reach a phone, try a kernel, test - for any device, from its manifest"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
