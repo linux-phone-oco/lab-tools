@@ -6,11 +6,16 @@
 //!   devlab phone put LOCAL REMOTE  copy a file to the phone
 //!   devlab phone reboot            reboot and wait until it answers again
 //!   devlab kernel install NAME VMLINUZ DTB MODULES.tgz | try NAME | log | remove NAME
+//!   devlab test                    the device's checks, now
+//!   devlab health                  against everything that worked before; exit 1 on a regression
+//!   devlab watch                   after every boot: health, silent when well, a board task when not
 //!                                  a test kernel beside stock, tried once, never stranding the phone
 
 mod device;
+mod health;
 mod kernel;
 mod phone;
+mod watch;
 
 use anyhow::{bail, Result};
 use clap::{Parser, Subcommand};
@@ -37,6 +42,12 @@ enum Cmd {
         #[command(subcommand)]
         action: PhoneCmd,
     },
+    /// Run the device's checks now
+    Test,
+    /// The checks against everything that worked before; exit 1 on a regression
+    Health,
+    /// Watch the phone: health after every boot, silent when well, a board task when not
+    Watch,
     /// A test kernel beside the stock one: tried once, falls back to stock by itself
     Kernel {
         #[command(subcommand)]
@@ -77,8 +88,35 @@ enum PhoneCmd {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    let (dev, _) = device::Device::load(cli.device.as_deref(), &std::env::current_dir()?)?;
+    let (dev, file) = device::Device::load(cli.device.as_deref(), &std::env::current_dir()?)?;
+    let here = file
+        .parent()
+        .map(std::path::Path::to_path_buf)
+        .unwrap_or_default();
     match cli.cmd {
+        Cmd::Test => {
+            let checks = health::run_checks(&dev, &here, &phone::Phone::find(&dev)?)?;
+            for c in &checks {
+                println!("{:5} {} - {}", c.outcome, c.key, c.detail);
+            }
+            let n = |o: &str| checks.iter().filter(|c| c.outcome == o).count();
+            println!("{} pass, {} fail, {} skip", n("pass"), n("fail"), n("skip"));
+        }
+        Cmd::Health => {
+            let r = health::health(&dev, &here, &phone::Phone::find(&dev)?)?;
+            if r.is_empty() {
+                println!(
+                    "all is well ({} checks in the baseline)",
+                    health::load_baseline(&dev).len()
+                );
+            } else {
+                for x in &r {
+                    println!("regressed: {x}");
+                }
+                std::process::exit(1);
+            }
+        }
+        Cmd::Watch => watch::watch(&dev, &here)?,
         Cmd::Kernel { action } => {
             let p = phone::Phone::find(&dev)?;
             match action {
