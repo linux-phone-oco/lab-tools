@@ -10,6 +10,8 @@ kind = "tool"
 parent = "linux-phone-oco"
 
 [exports]
+workings = "oco/workings.json"
+idea = "oco/idea.json"
 backlog = "oco/backlog.json"
 milestones = "oco/milestones.json"
 activity = "oco/gathered/activity.json@oco-data"
