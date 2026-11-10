@@ -1,0 +1,12 @@
+[package]
+name = "tone"
+version = "0.1.0"
+edition = "2021"
+description = "Make a test tone, and find it in a recording - so a device's speaker can test its microphone"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+hound = "3"
+serde_json = "1"
