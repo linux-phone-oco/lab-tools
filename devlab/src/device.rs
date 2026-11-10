@@ -17,6 +17,9 @@ pub struct Device {
     pub provision: Provision,
     #[serde(default)]
     pub flash: Flash,
+    /// what the lab's ear listens for
+    #[serde(default)]
+    pub hear: Hear,
 }
 
 /// How an image goes onto the phone, and what is baked into it.
@@ -260,5 +263,50 @@ mod tests {
         assert_eq!(d.device.codename, "xiaomi-surya");
         assert_eq!(f, root.join(MANIFEST));
         std::fs::remove_dir_all(root).unwrap();
+    }
+}
+
+/// The tones the lab's ear listens for (`devlab hear`); none named means one on each side.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+pub struct Hear {
+    #[serde(default)]
+    pub tone: Vec<HearTone>,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct HearTone {
+    /// the check's name
+    pub name: String,
+    /// left, right or both
+    pub channel: String,
+    #[serde(default = "default_freq")]
+    pub freq: f64,
+    /// the component it speaks for
+    #[serde(default = "default_component")]
+    pub component: String,
+}
+
+fn default_freq() -> f64 {
+    1000.0
+}
+
+fn default_component() -> String {
+    "audio-speaker".into()
+}
+
+impl Hear {
+    pub fn tones(&self) -> Vec<HearTone> {
+        if !self.tone.is_empty() {
+            return self.tone.clone();
+        }
+        ["left", "right"]
+            .iter()
+            .map(|c| HearTone {
+                name: format!("heard-{c}"),
+                channel: (*c).into(),
+                freq: default_freq(),
+                component: default_component(),
+            })
+            .collect()
     }
 }

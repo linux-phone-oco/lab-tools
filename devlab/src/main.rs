@@ -7,6 +7,7 @@
 //!   devlab phone reboot            reboot and wait until it answers again
 //!   devlab kernel install NAME VMLINUZ DTB MODULES.tgz | try NAME | log | remove NAME
 //!   devlab test                    the device's checks, now
+//!   devlab hear                    a tone on each speaker, heard through the lab's microphone
 //!   devlab health                  against everything that worked before; exit 1 on a regression
 //!   devlab watch                   after every boot: health, silent when well, a board task when not
 //!                                  a test kernel beside stock, tried once, never stranding the phone
@@ -14,6 +15,7 @@
 mod device;
 mod flash;
 mod health;
+mod hear;
 mod kernel;
 mod phone;
 mod provision;
@@ -60,6 +62,8 @@ enum Cmd {
     Provision { now: String },
     /// Run the device's checks now
     Test,
+    /// Listen: play a tone on each speaker and hear it through the lab's microphone
+    Hear,
     /// The checks against everything that worked before; exit 1 on a regression
     Health,
     /// Watch the phone: health after every boot, silent when well, a board task when not
@@ -130,6 +134,15 @@ fn main() -> Result<()> {
                 bail!("usage: devlab provision now - it shares this machine's connection with the phone for a while");
             }
             provision::provision(&dev, &here)?;
+        }
+        Cmd::Hear => {
+            let checks = hear::hear(&dev, &phone::Phone::find(&dev)?)?;
+            for c in &checks {
+                println!("{:<5} {}  {}", c.outcome, c.key, c.detail);
+            }
+            if checks.iter().any(|c| c.outcome != "pass") {
+                bail!("not every tone was heard");
+            }
         }
         Cmd::Test => {
             let checks = health::run_checks(&dev, &here, &phone::Phone::find(&dev)?)?;

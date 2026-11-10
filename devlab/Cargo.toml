@@ -6,6 +6,8 @@ description = "The device lab for Linux phones: reach a phone, try a kernel, tes
 license = "MIT OR Apache-2.0"
 
 [dependencies]
+hound = "3"
+tone = { path = "../tone" }
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
