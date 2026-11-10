@@ -15,6 +15,78 @@ pub struct Device {
     pub tests: Tests,
     #[serde(default)]
     pub provision: Provision,
+    #[serde(default)]
+    pub flash: Flash,
+}
+
+/// How an image goes onto the phone, and what is baked into it.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct Flash {
+    #[serde(default = "default_sector")]
+    pub sector_size: u32,
+    #[serde(default = "one")]
+    pub esp_partition: u32,
+    #[serde(default = "two")]
+    pub root_partition: u32,
+    #[serde(default = "boot_part")]
+    pub bootloader_partition: String,
+    #[serde(default = "userdata_part")]
+    pub image_partition: String,
+    /// Where the device tree lives in the image (esp:/... or root:/...), for --dtb and the fingerprint
+    #[serde(default)]
+    pub dtb: String,
+    #[serde(default)]
+    pub overlay: Vec<Overlay>,
+    /// Services masked in the image
+    #[serde(default)]
+    pub mask: Vec<String>,
+    /// Services enabled on first boot - always, even --as-is (the lab must reach the phone)
+    #[serde(default)]
+    pub enable: Vec<String>,
+}
+
+impl Default for Flash {
+    fn default() -> Self {
+        Flash {
+            sector_size: default_sector(),
+            esp_partition: 1,
+            root_partition: 2,
+            bootloader_partition: boot_part(),
+            image_partition: userdata_part(),
+            dtb: String::new(),
+            overlay: Vec::new(),
+            mask: Vec::new(),
+            enable: Vec::new(),
+        }
+    }
+}
+
+fn default_sector() -> u32 {
+    512
+}
+fn one() -> u32 {
+    1
+}
+fn two() -> u32 {
+    2
+}
+fn boot_part() -> String {
+    "boot".into()
+}
+fn userdata_part() -> String {
+    "userdata".into()
+}
+
+/// A file baked into the image: from the lab repository, to esp:/... or root:/...; skipped unless
+/// `if_exists` (also esp:/... or root:/...) exists in the image.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct Overlay {
+    pub from: String,
+    pub to: String,
+    #[serde(default = "default_mode")]
+    pub mode: String,
+    #[serde(default)]
+    pub if_exists: Option<String>,
 }
 
 /// What a freshly flashed phone gets.

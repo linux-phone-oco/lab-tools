@@ -17,6 +17,7 @@ Secrets and what is learned at run time stay outside repositories: `~/.config/de
     devlab phone root < script     commands as root
     devlab phone put LOCAL REMOTE
     devlab phone reboot            reboot, and wait until it answers again
+    devlab flash now IMAGE BOOT    the manifest's fixes baked in, the device tree fingerprinted
     devlab provision now           a freshly flashed phone: packages, files, Wi-Fi
     devlab test | health | watch   its checks; regressions against what worked; after every boot
 
