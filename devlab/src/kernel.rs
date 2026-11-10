@@ -95,7 +95,17 @@ fn pipeline(script: &str, args: &[&Path], dir: Option<&Path>) -> Result<String> 
     run(&mut c)
 }
 
-pub fn install(phone: &Phone, name: &str, vmlinuz: &Path, dtb: &Path, mods: &Path) -> Result<()> {
+pub fn install(
+    phone: &Phone,
+    name: &str,
+    vmlinuz: &Path,
+    dtb: &Path,
+    mods: &Path,
+    extra: &str,
+) -> Result<()> {
+    if extra.contains('\n') || extra.contains('$') || extra.contains('`') {
+        bail!("extra kernel options must be one line, without $ or backquotes");
+    }
     if !valid_name(name) {
         bail!("{name:?}: a test kernel's name is lowercase letters, digits and dashes");
     }
@@ -188,7 +198,7 @@ pub fn install(phone: &Phone, name: &str, vmlinuz: &Path, dtb: &Path, mods: &Pat
              cat > '/boot/loader/entries/pmos-{name}+1-0.conf' <<ENTRY\n{entry}ENTRY\n\
              rm -f /tmp/te-vmlinuz /tmp/te-dtb /tmp/te-mods.tgz /tmp/te-initramfs\n\
              echo \"installed: pmos-{name}+1-0.conf (one try), kernel {release}, $(find /lib/modules/{release} -name '*.ko*' | wc -l) modules\"\n",
-            entry = entry(name, dtbname, "$options")
+            entry = entry(name, dtbname, &format!("$options{}{extra}", if extra.is_empty() { "" } else { " " }))
         );
         let (ok, out) = phone.root(&script)?;
         print!("{out}");
