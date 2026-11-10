@@ -1,7 +1,7 @@
-{"id":"flash","title":"Flashing","status":"in-progress","note":"Dry run proven; the first real flash waits for the phone in fastboot.","opened":"2026-11-10"}
+{"id":"flash","title":"Flashing","status":"done","note":"devlab flash did its first real flash (2026-11-10): the pristine stock image, the manifest's fixes baked in, the device tree fingerprinted (a43d069d0a49adcd), the phone back with all 20 checks passing.","opened":"2026-11-10"}
 {"id":"health","title":"Health, after every boot","status":"done","note":"devlab test, health, watch: regressions raise one board task.","opened":"2026-11-10"}
 {"id":"kernel","title":"Safe test kernels","status":"done","note":"devlab kernel: one try by boot counting, a timeout that falls back to stock.","opened":"2026-11-10"}
 {"id":"manual-tests","title":"Half-manual tests","status":"open","note":"Sequential tests with an observer - a person now, a rig later.","opened":"2026-11-10"}
 {"id":"phone","title":"Reaches the phone","status":"done","note":"devlab phone: USB or Wi-Fi, no quoting layer, boot ids.","opened":"2026-11-10"}
 {"id":"pmos-conventions","title":"Built on postmarketOS's conventions","status":"open","note":"device.toml from deviceinfo; tests in the shape of pmOS's initramfs CI; bootrr.","opened":"2026-11-10"}
-{"id":"provision","title":"Provisioning","status":"done","note":"Packages, files by {compatible}, Wi-Fi; the shared connection undone by a guard.","opened":"2026-11-10"}
+{"id":"provision","title":"Provisioning","status":"done","note":"Packages, files by {compatible}, Wi-Fi; the shared connection undone by a guard. It sets a fresh phone's clock and grows its system to fill its partition first.","opened":"2026-11-10"}

@@ -175,6 +175,24 @@ impl Drop for Share<'_> {
     }
 }
 
+/// What a phone needs before anything can be installed on it, as a script for its root: the right
+/// time - a fresh image starts at its build date, so every certificate looks invalid - and a system
+/// that fills its partition - the first boot can grow the partition and leave the filesystem at
+/// the image's size. Each is done only when needed, and says so.
+pub fn first_boot_script(now: u64) -> String {
+    format!(
+        r#"old=$(date -u +%s)
+if [ $((old - {now})) -gt 120 ] || [ $(({now} - old)) -gt 120 ]; then
+	date -u -s "@{now}" >/dev/null 2>&1 && echo "clock: set from the lab machine (it was $((({now} - old) / 86400)) days behind)"
+fi
+src=$(findmnt -no SOURCE /); fs=$(df -B1 --output=size / | tail -n1 | tr -d ' '); dev=$(blockdev --getsize64 "$src" 2>/dev/null || echo 0)
+if [ "$dev" -gt 0 ] && [ $((fs * 100 / dev)) -lt 90 ]; then
+	resize2fs "$src" >/dev/null 2>&1 && echo "storage: the system grown to fill its partition (it was $((fs >> 30)) GB of $((dev >> 30)) GB)"
+fi
+"#
+    )
+}
+
 pub fn provision(device: &Device, manifest_dir: &Path) -> Result<()> {
     // sharing the connection needs the USB link: the manifest's first address
     let usb_addr = device
@@ -184,6 +202,18 @@ pub fn provision(device: &Device, manifest_dir: &Path) -> Result<()> {
         .context("no address in the manifest")?
         .clone();
     let phone = Phone::at(device, &usb_addr)?;
+    // what a freshly flashed phone needs before anything can be installed on it
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let (_, said) = phone.root(&first_boot_script(now))?;
+    for line in said
+        .lines()
+        .filter(|l| l.starts_with("clock:") || l.starts_with("storage:"))
+    {
+        println!("{line}");
+    }
     let list = manifest_dir.join(&device.provision.packages);
     let pkgs = packages(
         &std::fs::read_to_string(&list).with_context(|| format!("reading {}", list.display()))?,
@@ -281,6 +311,23 @@ mod tests {
                 "xiaomi,surya-huaxing"
             ),
             "p/sxmo_deviceprofile_xiaomi,surya-huaxing.sh"
+        );
+    }
+
+    #[test]
+    fn a_fresh_phone_gets_its_clock_and_its_storage_first() {
+        let script = first_boot_script(1_794_340_000);
+        assert!(
+            script.contains(r#"date -u -s "@1794340000""#),
+            "the clock, from this machine"
+        );
+        assert!(
+            script.contains("-gt 120"),
+            "only when it is off by more than two minutes"
+        );
+        assert!(
+            script.contains(r#"resize2fs "$src""#) && script.contains("-lt 90"),
+            "the system grown only when it does not fill its partition"
         );
     }
 }
