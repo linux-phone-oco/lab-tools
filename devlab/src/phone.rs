@@ -126,6 +126,12 @@ impl Phone {
         Ok(())
     }
 
+    /// This boot's identity: a random value the kernel makes anew at every boot.
+    pub fn boot_id(&self) -> Option<String> {
+        let (ok, out) = self.sh("cat /proc/sys/kernel/random/boot_id").ok()?;
+        ok.then(|| out.trim().to_string()).filter(|s| !s.is_empty())
+    }
+
     pub fn uptime(&self) -> Option<u64> {
         let (ok, out) = self.sh("cut -d. -f1 /proc/uptime").ok()?;
         ok.then(|| out.trim().parse().ok()).flatten()
@@ -149,13 +155,22 @@ fn password(device: &Device) -> Result<String> {
         .to_string())
 }
 
-/// Reboots the phone and waits until it answers again, freshly booted.
+/// Whether the phone answering is a new boot: a different boot id than before the reboot. Uptime
+/// cannot tell - a young boot still shutting down looks just like a new one.
+pub fn rebooted(before: Option<&str>, now: Option<&str>) -> bool {
+    matches!((before, now), (Some(b), Some(n)) if b != n)
+}
+
+/// Reboots the phone and waits until a new boot answers.
 pub fn reboot(device: &Device, phone: &Phone) -> Result<Phone> {
+    let before = phone
+        .boot_id()
+        .context("reading the boot id before rebooting")?;
     phone.root("systemd-run --on-active=2 systemctl reboot >/dev/null\n")?;
     std::thread::sleep(std::time::Duration::from_secs(20));
     for _ in 0..90 {
         if let Ok(p) = Phone::find(device) {
-            if p.uptime().is_some_and(|u| u < 300) {
+            if rebooted(Some(&before), p.boot_id().as_deref()) {
                 return Ok(p);
             }
         }
@@ -167,6 +182,16 @@ pub fn reboot(device: &Device, phone: &Phone) -> Result<Phone> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_different_boot_id_is_a_new_boot() {
+        assert!(rebooted(Some("a"), Some("b")));
+        assert!(
+            !rebooted(Some("a"), Some("a")),
+            "the old boot, still shutting down"
+        );
+        assert!(!rebooted(Some("a"), None), "no answer yet");
+    }
 
     #[test]
     fn the_script_never_rides_on_the_command_line() {
