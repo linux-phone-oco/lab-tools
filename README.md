@@ -5,6 +5,22 @@ gives (a WAV recording, a log) and does the work on the lab machine, so a new de
 toolchain of its own. Surya (Xiaomi POCO X3 NFC) is the first device they serve; the flows that use
 them live in its lab (linux-phone-oco/surya-lab).
 
+## devlab
+
+The device lab, for any phone: everything it knows about a device comes from the device's
+manifest, `device.toml`, in its lab repository (found like cargo finds Cargo.toml, or `--device`).
+Secrets and what is learned at run time stay outside repositories: `~/.config/devlab/CODENAME/`
+(the password, mode 600) and `~/.local/state/devlab/CODENAME/` (the Wi-Fi address).
+
+    devlab phone find              which address answers (the manifest's, then the remembered one)
+    devlab phone sh   < script     commands as the user - on standard input, so no quoting layer
+    devlab phone root < script     commands as root
+    devlab phone put LOCAL REMOTE
+    devlab phone reboot            reboot, and wait until it answers again
+
+Next: `devlab kernel install | try | log | remove` - the safe test-kernel boot (one try by boot
+counting, a stalled boot saves its log and falls back to stock), proven on surya.
+
 ## tone
 
 Make a test tone, and find it in a recording - a device's speaker tests its microphone:
