@@ -63,6 +63,9 @@ enum KernelCmd {
         vmlinuz: PathBuf,
         dtb: PathBuf,
         modules: PathBuf,
+        /// Extra kernel options for this entry only (e.g. dyndbg="file drivers/soundwire/* +p")
+        #[arg(long, default_value = "")]
+        cmdline: String,
     },
     /// Reboot into it once; any later boot is stock
     Try { name: String },
@@ -125,7 +128,8 @@ fn main() -> Result<()> {
                     vmlinuz,
                     dtb,
                     modules,
-                } => kernel::install(&p, &name, &vmlinuz, &dtb, &modules)?,
+                    cmdline,
+                } => kernel::install(&p, &name, &vmlinuz, &dtb, &modules, &cmdline)?,
                 KernelCmd::Try { name } => kernel::try_once(&p, &name)?,
                 KernelCmd::Log => kernel::log(&p)?,
                 KernelCmd::Remove { name } => kernel::remove(&p, &name)?,
