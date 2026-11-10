@@ -110,9 +110,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "hound",
  "serde",
  "serde_json",
  "toml",
+ "tone",
 ]
 
 [[package]]
