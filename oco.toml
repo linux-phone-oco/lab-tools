@@ -12,3 +12,6 @@ parent = "linux-phone-oco"
 [exports]
 backlog = "oco/backlog.json"
 milestones = "oco/milestones.json"
+activity = "oco/gathered/activity.json"
+releases = "oco/gathered/releases.json"
+ci = "oco/gathered/ci.json"
