@@ -86,6 +86,28 @@ impl Phone {
         self.run(script, AS_ROOT, &format!("{}\n", self.password))
     }
 
+    /// A root command's output as bytes (a file off the phone); fails if the command fails.
+    pub fn root_bytes(&self, script: &str) -> Result<Vec<u8>> {
+        let mut child = Command::new("sshpass")
+            .arg("-e")
+            .arg("ssh")
+            .args(ssh_args(&self.target, AS_ROOT))
+            .env("SSHPASS", &self.password)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .context("starting sshpass")?;
+        let mut stdin = child.stdin.take().context("ssh stdin")?;
+        stdin.write_all(format!("{}\n{script}", self.password).as_bytes())?;
+        drop(stdin);
+        let out = child.wait_with_output()?;
+        if !out.status.success() {
+            bail!("the phone's command failed");
+        }
+        Ok(out.stdout)
+    }
+
     /// Copies a local file to the phone.
     pub fn put(&self, local: &str, remote: &str) -> Result<()> {
         let mut a: Vec<String> = SSH_OPTS.iter().map(|s| s.to_string()).collect();

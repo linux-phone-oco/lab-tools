@@ -18,7 +18,7 @@ Secrets and what is learned at run time stay outside repositories: `~/.config/de
     devlab phone put LOCAL REMOTE
     devlab phone reboot            reboot, and wait until it answers again
 
-Next: `devlab kernel install | try | log | remove` - the safe test-kernel boot (one try by boot
+`devlab kernel install NAME VMLINUZ DTB MODULES.tgz | try NAME | log | remove NAME` - the safe test-kernel boot (one try by boot
 counting, a stalled boot saves its log and falls back to stock), proven on surya.
 
 ## tone
