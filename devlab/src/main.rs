@@ -12,6 +12,7 @@
 //!                                  a test kernel beside stock, tried once, never stranding the phone
 
 mod device;
+mod flash;
 mod health;
 mod kernel;
 mod phone;
@@ -42,6 +43,18 @@ enum Cmd {
     Phone {
         #[command(subcommand)]
         action: PhoneCmd,
+    },
+    /// Flash an image (say `now`): the manifest's fixes baked in, the device tree fingerprinted
+    Flash {
+        now: String,
+        image: PathBuf,
+        bootloader: PathBuf,
+        /// A device tree to put in the image's place for it
+        #[arg(long)]
+        dtb: Option<PathBuf>,
+        /// Bake in nothing but access - to tell an image's fault from ours
+        #[arg(long)]
+        as_is: bool,
     },
     /// Provision a freshly flashed phone: packages, files, Wi-Fi (say `now`: it changes this machine's networking for a while)
     Provision { now: String },
@@ -100,6 +113,18 @@ fn main() -> Result<()> {
         .map(std::path::Path::to_path_buf)
         .unwrap_or_default();
     match cli.cmd {
+        Cmd::Flash {
+            now,
+            image,
+            bootloader,
+            dtb,
+            as_is,
+        } => {
+            if now != "now" {
+                bail!("usage: devlab flash now IMAGE BOOTLOADER - it overwrites the phone");
+            }
+            flash::flash(&dev, &here, &image, &bootloader, dtb.as_deref(), as_is)?;
+        }
         Cmd::Provision { now } => {
             if now != "now" {
                 bail!("usage: devlab provision now - it shares this machine's connection with the phone for a while");
