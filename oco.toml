@@ -5,6 +5,7 @@ schema = 1
 [project]
 id = "linux-phone-oco/lab-tools"
 name = "devlab and tone: the conveyor's tools for any phone"
+title = "devlab"
 kind = "tool"
 parent = "linux-phone-oco"
 
