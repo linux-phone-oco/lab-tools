@@ -1,0 +1,11 @@
+# This repository's mark: how it fits the Open Commons Observatory's picture.
+# https://github.com/open-commons-observatory/open-commons-observatory.github.io/tree/main/marks
+schema = 1
+
+[project]
+id = "linux-phone-oco/lab-tools"
+name = "devlab and tone: the conveyor's tools for any phone"
+kind = "tool"
+parent = "linux-phone-oco"
+
+[exports]
