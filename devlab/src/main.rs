@@ -17,6 +17,7 @@ mod flash;
 mod health;
 mod hear;
 mod kernel;
+mod outcome;
 mod phone;
 mod provision;
 mod watch;
@@ -192,7 +193,9 @@ fn main() -> Result<()> {
                     modules,
                     cmdline,
                 } => kernel::install(&p, &name, &vmlinuz, &dtb, &modules, &cmdline)?,
-                KernelCmd::Try { name } => kernel::try_once(&p, &name)?,
+                KernelCmd::Try { name } => {
+                    println!("{}", outcome::try_and_report(&dev, &p, &name)?)
+                }
                 KernelCmd::Log => kernel::log(&p)?,
                 KernelCmd::Remove { name } => kernel::remove(&p, &name)?,
             }
