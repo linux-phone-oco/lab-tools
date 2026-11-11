@@ -63,6 +63,11 @@ pub fn module_names(listing: &str) -> Vec<String> {
         .collect()
 }
 
+/// An EFI program begins with "MZ" (the PE header the bootloader loads).
+pub fn is_efi_executable(head: &[u8]) -> bool {
+    head.starts_with(b"MZ")
+}
+
 /// The boot entry: sorted ahead of stock, both initramfs images, bless masked.
 pub fn entry(name: &str, dtb: &str, options: &str) -> String {
     format!(
@@ -103,6 +108,12 @@ pub fn install(
     mods: &Path,
     extra: &str,
 ) -> Result<()> {
+    // the bootloader starts an EFI program and nothing else: a gzip or raw Image never begins, and
+    // the try is lost before the kernel can log anything (2026-11-11: Image.gz was given)
+    let head = std::fs::read(vmlinuz).with_context(|| format!("reading {}", vmlinuz.display()))?;
+    if !is_efi_executable(&head) {
+        bail!("{} is not an EFI executable the bootloader can start: give the EFI image (vmlinuz.efi, or Image with the EFI stub)", vmlinuz.display());
+    }
     if extra.contains('\n') || extra.contains('$') || extra.contains('`') {
         bail!("extra kernel options must be one line, without $ or backquotes");
     }
@@ -300,5 +311,12 @@ mod tests {
             TIMEOUT_HOOK.contains("read -r pid1 < /proc/1/comm")
                 && TIMEOUT_HOOK.contains("[ \"$pid1\" = systemd ] && exit 0")
         );
+    }
+
+    #[test]
+    fn only_an_efi_program_is_offered_to_the_bootloader() {
+        assert!(is_efi_executable(b"MZ\x40\x00rest"));
+        assert!(!is_efi_executable(&[0x1f, 0x8b, 0x08]), "gzip");
+        assert!(!is_efi_executable(b""));
     }
 }
