@@ -22,6 +22,15 @@ const LEVEL: f64 = -12.0;
 /// How far a tone must stand above the noise around it, and above the silent room, to count as heard.
 const MIN_DB: f64 = 10.0;
 
+/// A listening test counts only when the microphone has been put by the phone: its keeper is told
+/// first, places it, and gives the word. Without that word nothing is played and nothing is judged.
+pub fn placed_or_refuse(placed: bool) -> Result<()> {
+    if placed {
+        return Ok(());
+    }
+    bail!("the microphone must be placed by the phone first: tell its keeper, wait for their word, then run this again with --placed")
+}
+
 /// The lab's microphone, as PipeWire names it.
 pub fn microphone() -> Result<String> {
     if let Ok(m) = std::env::var("DEVLAB_MICROPHONE") {
@@ -216,5 +225,15 @@ mod tests {
             "and no other pitch"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn nothing_is_heard_without_the_word_that_the_microphone_is_placed() {
+        let refused = placed_or_refuse(false).unwrap_err().to_string();
+        assert!(
+            refused.contains("--placed") && refused.contains("wait for their word"),
+            "{refused}"
+        );
+        assert!(placed_or_refuse(true).is_ok());
     }
 }

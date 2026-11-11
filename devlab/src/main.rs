@@ -63,12 +63,19 @@ enum Cmd {
     /// Run the device's checks now
     Test,
     /// Listen: play a tone on each speaker and hear it through the lab's microphone
-    Hear,
+    Hear {
+        /// The word that the microphone has been placed by the phone (its keeper told, and agreed)
+        #[arg(long)]
+        placed: bool,
+    },
     /// The checks against everything that worked before; exit 1 on a regression
     Health {
         /// Listen too: play a tone on each speaker and hear it through the lab's microphone
         #[arg(long)]
         hear: bool,
+        /// With --hear: the word that the microphone has been placed by the phone
+        #[arg(long)]
+        placed: bool,
     },
     /// Watch the phone: health after every boot, silent when well, a board task when not
     Watch,
@@ -139,7 +146,8 @@ fn main() -> Result<()> {
             }
             provision::provision(&dev, &here)?;
         }
-        Cmd::Hear => {
+        Cmd::Hear { placed } => {
+            hear::placed_or_refuse(placed)?;
             let checks = hear::hear(&dev, &phone::Phone::find(&dev)?)?;
             for c in &checks {
                 println!("{:<5} {}  {}", c.outcome, c.key, c.detail);
@@ -156,7 +164,10 @@ fn main() -> Result<()> {
             let n = |o: &str| checks.iter().filter(|c| c.outcome == o).count();
             println!("{} pass, {} fail, {} skip", n("pass"), n("fail"), n("skip"));
         }
-        Cmd::Health { hear } => {
+        Cmd::Health { hear, placed } => {
+            if hear {
+                hear::placed_or_refuse(placed)?;
+            }
             let r = health::health(&dev, &here, &phone::Phone::find(&dev)?, hear)?;
             if r.is_empty() {
                 println!(
