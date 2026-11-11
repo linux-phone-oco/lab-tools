@@ -59,7 +59,34 @@ pub fn grown(baseline: &BTreeSet<String>, now: &[Check]) -> BTreeSet<String> {
 }
 
 /// Runs the device's checks on the phone, as root; keeps the run in the state directory.
+/// Seconds a phone needs after booting before its checks mean anything: services are still starting
+/// and the audio processor is still loading. Read earlier, a check fails for the wrong reason.
+pub const SETTLE_SECS: u64 = 90;
+
+/// How long is still to wait, for a phone that has been up `up` seconds.
+pub fn still_to_settle(up: u64) -> u64 {
+    SETTLE_SECS.saturating_sub(up)
+}
+
+/// Waits until the phone has been up long enough for its checks to mean something - so nobody sleeps
+/// before a health check by hand. An unreadable uptime does not wait: the checks will tell.
+pub fn settle(phone: &Phone) {
+    let mut said = false;
+    while let Some(up) = phone.uptime() {
+        let wait = still_to_settle(up);
+        if wait == 0 {
+            return;
+        }
+        if !said {
+            eprintln!("waiting for the phone to settle (up {up} s of {SETTLE_SECS})");
+            said = true;
+        }
+        std::thread::sleep(std::time::Duration::from_secs(wait.min(15)));
+    }
+}
+
 pub fn run_checks(device: &Device, manifest_dir: &Path, phone: &Phone) -> Result<Vec<Check>> {
+    settle(phone);
     let script_path = manifest_dir.join(&device.tests.checks);
     let script = std::fs::read_to_string(&script_path)
         .with_context(|| format!("reading {}", script_path.display()))?;
@@ -238,5 +265,12 @@ mod tests {
             1,
             "heard before, silent now: a regression"
         );
+    }
+
+    #[test]
+    fn a_fresh_boot_waits_and_a_settled_phone_does_not() {
+        assert_eq!(still_to_settle(30), 60);
+        assert_eq!(still_to_settle(SETTLE_SECS), 0);
+        assert_eq!(still_to_settle(5000), 0);
     }
 }
