@@ -10,6 +10,7 @@ kind = "tool"
 parent = "linux-phone-oco"
 
 [exports]
+glimpses = "oco/glimpses.json"
 decisions = "oco/decisions.json"
 concepts = "oco/concepts.json"
 translations = "oco/translations.json"
