@@ -1,3 +1,9 @@
 [workspace]
-members = ["tone", "devlab"]
+members = ["tone", "devlab", "health"]
 resolver = "2"
+
+# the health runner ships to phones: small
+[profile.release]
+opt-level = "s"
+strip = true
+lto = true
