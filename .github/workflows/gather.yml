@@ -1,5 +1,5 @@
 name: gather
-# ocoeco gathers this repository's activity, releases and CI into oco/gathered/ - data made by work.
+# this place is gathered by ocoeco's gatherer: what it writes, and where, is said there, once.
 on:
   schedule:
     - cron: "41 3 * * *"
