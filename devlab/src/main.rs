@@ -11,6 +11,7 @@
 //!   devlab health                  against everything that worked before; exit 1 on a regression
 //!   devlab suite put now --runner F | run | latest   the health suite on the phone itself
 //!   devlab gather now [--docs DIR]  the phone's reports into this lab and the picture's tables
+//!   devlab mcp                    the phone for any agent: an MCP server (stdio)
 //!   devlab watch                   after every boot: health, silent when well, a board task when not
 //!                                  a test kernel beside stock, tried once, never stranding the phone
 
@@ -20,6 +21,7 @@ mod gather;
 mod health;
 mod hear;
 mod kernel;
+mod mcp;
 mod outcome;
 mod phone;
 mod provision;
@@ -95,6 +97,8 @@ enum Cmd {
         #[command(subcommand)]
         action: SuiteCmd,
     },
+    /// devlab's door for agents: an MCP server on standard input and output
+    Mcp,
     /// Watch the phone: health after every boot, silent when well, a board task when not
     Watch,
     /// A test kernel beside the stock one: tried once, falls back to stock by itself
@@ -178,7 +182,9 @@ fn main() -> Result<()> {
                 bail!("usage: devlab provision now - it shares this machine's connection with the phone for a while");
             }
             provision::provision(&dev, &here)?;
-            if !suite::after_change(&phone::Phone::find(&dev)?, &here, false)? {
+            let (well, said) = suite::after_change(&phone::Phone::find(&dev)?, &here, false)?;
+            println!("{said}");
+            if !well {
                 std::process::exit(1);
             }
         }
@@ -258,6 +264,7 @@ fn main() -> Result<()> {
                 SuiteCmd::Latest => print!("{}", suite::latest(&p)?),
             }
         }
+        Cmd::Mcp => mcp::serve(dev, here)?,
         Cmd::Watch => watch::watch(&dev, &here)?,
         Cmd::Kernel { action } => {
             let p = phone::Phone::find(&dev)?;
@@ -273,7 +280,9 @@ fn main() -> Result<()> {
                     println!("{}", outcome::try_and_report(&dev, &p, &name)?);
                     // the boot the try came to - the test kernel or stock - is measured like any other
                     let now = phone::Phone::find(&dev)?;
-                    if !suite::after_change(&now, &here, true)? {
+                    let (well, said) = suite::after_change(&now, &here, true)?;
+                    println!("{said}");
+                    if !well {
                         std::process::exit(1);
                     }
                 }
@@ -306,7 +315,9 @@ fn main() -> Result<()> {
                         bail!("back, but its uptime could not be read");
                     }
                     println!("back: {} (up {up}s)", back.target);
-                    if !suite::after_change(&back, &here, true)? {
+                    let (well, said) = suite::after_change(&back, &here, true)?;
+                    println!("{said}");
+                    if !well {
                         std::process::exit(1);
                     }
                 }

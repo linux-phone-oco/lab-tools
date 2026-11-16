@@ -41,6 +41,16 @@ phone; then it is a package.
 `devlab kernel install NAME VMLINUZ DTB MODULES.tgz | try NAME | log | remove NAME` - the safe test-kernel boot (one try by boot
 counting, a stalled boot saves its log and falls back to stock), proven on surya.
 
+## The phone for any agent
+
+`devlab mcp` is devlab's door for agents: an MCP server on standard input and output, with the tools
+`run` (commands as the user or root, no quoting layer), `put` and `get` (files), `health_report` and
+`health_run` (the phone's own suite, with its verdict), `kernel_install`, `kernel_try` (once, falling
+back by itself, then the health of the boot it came to), `kernel_status`, and `reboot` (and wait, and
+the new boot's health). Each calls what the command line calls.
+
+    claude mcp add --scope user phone -- devlab --device /path/to/LAB/device.toml mcp
+
 ## tone
 
 Make a test tone, and find it in a recording - a device's speaker tests its microphone:
