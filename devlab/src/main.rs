@@ -178,6 +178,9 @@ fn main() -> Result<()> {
                 bail!("usage: devlab provision now - it shares this machine's connection with the phone for a while");
             }
             provision::provision(&dev, &here)?;
+            if !suite::after_change(&phone::Phone::find(&dev)?, &here, false)? {
+                std::process::exit(1);
+            }
         }
         Cmd::Hear { placed } => {
             hear::placed_or_refuse(placed)?;
@@ -267,7 +270,12 @@ fn main() -> Result<()> {
                     cmdline,
                 } => kernel::install(&p, &name, &vmlinuz, &dtb, &modules, &cmdline)?,
                 KernelCmd::Try { name } => {
-                    println!("{}", outcome::try_and_report(&dev, &p, &name)?)
+                    println!("{}", outcome::try_and_report(&dev, &p, &name)?);
+                    // the boot the try came to - the test kernel or stock - is measured like any other
+                    let now = phone::Phone::find(&dev)?;
+                    if !suite::after_change(&now, &here, true)? {
+                        std::process::exit(1);
+                    }
                 }
                 KernelCmd::Log => kernel::log(&p)?,
                 KernelCmd::Remove { name } => kernel::remove(&p, &name)?,
@@ -298,6 +306,9 @@ fn main() -> Result<()> {
                         bail!("back, but its uptime could not be read");
                     }
                     println!("back: {} (up {up}s)", back.target);
+                    if !suite::after_change(&back, &here, true)? {
+                        std::process::exit(1);
+                    }
                 }
             }
         }

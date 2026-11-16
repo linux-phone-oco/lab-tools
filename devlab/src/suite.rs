@@ -223,6 +223,80 @@ pub fn run(phone: &Phone) -> Result<Ran> {
     })
 }
 
+/// Whether a report was written in the boot `boot` (each line carries the boot it was made in).
+pub fn of_boot(report: &str, boot: &str) -> bool {
+    report
+        .lines()
+        .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+        .any(|v| v["boot"] == boot)
+}
+
+/// The report of the boot the phone is in: the one its timer writes after every boot. Waits for it
+/// (the timer runs 120 s after boot; six minutes at most); None where the suite is not on the phone.
+pub fn of_this_boot(phone: &Phone) -> Result<Option<Ran>> {
+    let (has, _) = phone.sh("command -v devlab-health >/dev/null\n")?;
+    if !has {
+        return Ok(None);
+    }
+    let boot = phone.boot_id().context("reading the boot id")?;
+    let start = std::time::Instant::now();
+    loop {
+        let (_, report) = phone.root(
+            "devlab-health latest; echo \"# $(journalctl -b 0 -t devlab-health -o cat --no-pager | tail -n1)\"\n",
+        )?;
+        if of_boot(&report, &boot) {
+            let verdict = report
+                .lines()
+                .rev()
+                .find_map(|l| l.strip_prefix("# "))
+                .unwrap_or_default()
+                .to_string();
+            let well = verdict.contains(": healthy");
+            return Ok(Some(Ran {
+                report,
+                verdict,
+                well,
+            }));
+        }
+        if start.elapsed() > std::time::Duration::from_secs(360) {
+            bail!("this boot wrote no health report within six minutes - is devlab-health.timer enabled?");
+        }
+        std::thread::sleep(std::time::Duration::from_secs(15));
+    }
+}
+
+/// What every change to the phone ends with: its health, said, and the report brought to the lab.
+/// `rebooted`: the change booted the phone anew, so the report is the one that boot writes by itself;
+/// otherwise the suite runs now. Returns whether the phone is well (true where it has no suite yet,
+/// said as such).
+pub fn after_change(phone: &Phone, manifest_dir: &Path, rebooted: bool) -> Result<bool> {
+    let ran = if rebooted {
+        of_this_boot(phone)?
+    } else {
+        let (has, _) = phone.sh("command -v devlab-health >/dev/null\n")?;
+        if has {
+            Some(run(phone)?)
+        } else {
+            None
+        }
+    };
+    let Some(ran) = ran else {
+        println!("health: the suite is not on the phone - devlab suite put now --runner ...");
+        return Ok(true);
+    };
+    let brought = crate::gather::fetch(phone, &manifest_dir.join("tests/results"))?;
+    println!(
+        "health: {} (report brought to the lab: {})",
+        ran.verdict,
+        if brought.is_empty() {
+            "it was there already".to_string()
+        } else {
+            brought.join(" ")
+        }
+    );
+    Ok(ran.well)
+}
+
 /// The latest report the phone keeps (after its last boot, or the last run asked for).
 pub fn latest(phone: &Phone) -> Result<String> {
     let (_, out) = phone.root("devlab-health latest\n")?;
@@ -279,6 +353,16 @@ mod tests {
                 outcome: "pass".into(),
                 detail: "wlan0".into()
             }]
+        );
+    }
+
+    #[test]
+    fn a_report_is_known_by_the_boot_it_was_made_in() {
+        let r = "{\"boot\":\"b1\",\"test\":\"t\"}\n# devlab-health r: healthy\n";
+        assert!(of_boot(r, "b1"));
+        assert!(
+            !of_boot(r, "b2"),
+            "a report from before the reboot is not this boot's"
         );
     }
 
