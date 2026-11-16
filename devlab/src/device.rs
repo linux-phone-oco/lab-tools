@@ -20,6 +20,9 @@ pub struct Device {
     /// what the lab's ear listens for
     #[serde(default)]
     pub hear: Hear,
+    /// what the phone's own health suite expects of it
+    #[serde(default)]
+    pub health: Health,
 }
 
 /// How an image goes onto the phone, and what is baked into it.
@@ -131,6 +134,60 @@ fn default_mode() -> String {
     "644".into()
 }
 
+/// What the phone's own health suite expects of this phone (devlab-health, on the phone). Every
+/// field is a fact about the hardware; what it says becomes /etc/devlab/health.env there.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Health {
+    /// Sound cards that must be registered: names as /proc/asound/cards shows them
+    #[serde(default)]
+    pub sound_cards: Vec<String>,
+    /// Signal processors that must be running: remoteproc name -> the component that rests on it
+    #[serde(default)]
+    pub remoteprocs: std::collections::BTreeMap<String, String>,
+    /// Kernel warnings known at boot (file:line), each with its reason beside it in the manifest
+    #[serde(default)]
+    pub known_warnings: Vec<String>,
+    /// Units known to fail on this phone, each with its reason beside it in the manifest
+    #[serde(default)]
+    pub known_failed_units: Vec<String>,
+    /// Parts this phone does not have at all (wifi, modem, bluetooth, nfc, fingerprint, camera, jack,
+    /// display, touchscreen, haptics, sensors, usb-otg): skipped, never failing
+    #[serde(default)]
+    pub absent: Vec<String>,
+    /// Components this phone has never had working (docs component ids), each with its reason beside it:
+    /// still measured and reported, but a failure there is a known gap, not ill health
+    #[serde(default)]
+    pub gaps: Vec<String>,
+    /// This phone's own checks, relative to the manifest: base/*.sh and shell/*.sh beneath it
+    #[serde(default)]
+    pub checks: Option<String>,
+}
+
+impl Health {
+    /// The env file the suite sources on the phone. Values are written as single-quoted shell words.
+    pub fn env(&self, codename: &str) -> String {
+        let q = |s: &str| format!("'{}'", s.replace('\'', "'\\''"));
+        let procs: Vec<String> = self
+            .remoteprocs
+            .iter()
+            .map(|(n, c)| format!("{n}:{c}"))
+            .collect();
+        format!(
+            "# written by devlab from the device's manifest ([health]) - do not edit here\n\
+             DEVICE={}\nSOUND_CARDS={}\nREMOTEPROCS={}\nKNOWN_WARNINGS={}\nKNOWN_FAILED_UNITS={}\n\
+             ABSENT={}\nGAPS={}\n",
+            q(codename),
+            q(&self.sound_cards.join(";")),
+            q(&procs.join(" ")),
+            q(&self.known_warnings.join(" ")),
+            q(&self.known_failed_units.join(" ")),
+            q(&self.absent.join(" ")),
+            q(&self.gaps.join(" ")),
+        )
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct Tests {
     /// The checks script, relative to the manifest; run on the phone as root, one JSON line per check
@@ -220,6 +277,23 @@ pub fn candidates(manifest: &[String], remembered: Option<&str>) -> Vec<String> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn health_expectations_become_the_suites_env_file() {
+        let h: Health = toml::from_str(
+            "sound_cards = [\"POCO X3\"]\nremoteprocs = { adsp = \"audio-speaker\", modem = \"modem-data\" }\nknown_failed_units = [\"qbootctl.service\"]\nabsent = [\"modem\"]",
+        )
+        .unwrap();
+        let e = h.env("xiaomi-surya");
+        assert!(e.contains("DEVICE='xiaomi-surya'\n"));
+        assert!(e.contains("SOUND_CARDS='POCO X3'\n"));
+        assert!(e.contains("REMOTEPROCS='adsp:audio-speaker modem:modem-data'\n"));
+        assert!(e.contains("ABSENT='modem'\n"));
+        assert!(
+            toml::from_str::<Health>("sound_card = []").is_err(),
+            "a misspelt field is refused"
+        );
+    }
 
     const SURYA: &str = "[device]\ncodename = \"xiaomi-surya\"\n[connection]\nuser = \"user\"\naddresses = [\"172.16.42.1\"]\n";
 

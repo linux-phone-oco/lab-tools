@@ -9,6 +9,7 @@
 //!   devlab test                    the device's checks, now
 //!   devlab hear                    a tone on each speaker, heard through the lab's microphone
 //!   devlab health                  against everything that worked before; exit 1 on a regression
+//!   devlab suite put now --runner F | run | latest   the health suite on the phone itself
 //!   devlab watch                   after every boot: health, silent when well, a board task when not
 //!                                  a test kernel beside stock, tried once, never stranding the phone
 
@@ -20,6 +21,7 @@ mod kernel;
 mod outcome;
 mod phone;
 mod provision;
+mod suite;
 mod watch;
 
 use anyhow::{bail, Result};
@@ -78,6 +80,11 @@ enum Cmd {
         #[arg(long)]
         placed: bool,
     },
+    /// The phone's own health suite: put it on the phone, run it, read its latest report
+    Suite {
+        #[command(subcommand)]
+        action: SuiteCmd,
+    },
     /// Watch the phone: health after every boot, silent when well, a board task when not
     Watch,
     /// A test kernel beside the stock one: tried once, falls back to stock by itself
@@ -105,6 +112,21 @@ enum KernelCmd {
     Log,
     /// Remove it and its modules
     Remove { name: String },
+}
+
+#[derive(Subcommand)]
+enum SuiteCmd {
+    /// Put the suite on the phone (say `now`): the runner, the checks, the manifest's [health], the timer
+    Put {
+        now: String,
+        /// The runner built for the phone (target/aarch64-unknown-linux-musl/release/devlab-health)
+        #[arg(long)]
+        runner: PathBuf,
+    },
+    /// Run it on the phone now, and say what it found; exit 1 when unhealthy
+    Run,
+    /// The latest report the phone keeps, as it is (JSON lines)
+    Latest,
 }
 
 #[derive(Subcommand)]
@@ -180,6 +202,26 @@ fn main() -> Result<()> {
                     println!("regressed: {x}");
                 }
                 std::process::exit(1);
+            }
+        }
+        Cmd::Suite { action } => {
+            let p = phone::Phone::find(&dev)?;
+            match action {
+                SuiteCmd::Put { now, runner } => {
+                    if now != "now" {
+                        bail!("usage: devlab suite put now --runner FILE - it changes the phone");
+                    }
+                    suite::put(&dev, &here, &p, &runner)?;
+                }
+                SuiteCmd::Run => {
+                    let ran = suite::run(&p)?;
+                    print!("{}", suite::said(&suite::rows(&ran.report)));
+                    println!("the phone says: {}", ran.verdict);
+                    if !ran.well {
+                        std::process::exit(1);
+                    }
+                }
+                SuiteCmd::Latest => print!("{}", suite::latest(&p)?),
             }
         }
         Cmd::Watch => watch::watch(&dev, &here)?,
