@@ -186,7 +186,7 @@ pub fn install(
             &[&initrd],
             Some(&rd),
         )?;
-        println!("second initramfs: {carried} modules + the timeout hook");
+        eprintln!("second initramfs: {carried} modules + the timeout hook");
         // onto the phone
         let dtbname = dtb
             .file_name()
@@ -212,7 +212,7 @@ pub fn install(
             entry = entry(name, dtbname, &format!("$options{}{extra}", if extra.is_empty() { "" } else { " " }))
         );
         let (ok, out) = phone.root(&script)?;
-        print!("{out}");
+        eprint!("{out}");
         if !ok {
             bail!("installing on the phone failed");
         }
@@ -230,7 +230,7 @@ pub fn try_once(phone: &Phone, name: &str) -> Result<()> {
         "set -e\nls /boot/loader/entries/ | grep -q '^pmos-{name}+[1-9]' || {{ echo 'pmos-{name} has no try left: install it again' >&2; exit 1; }}\n\
          rm -f /boot/test-boot.log /boot/test-boot.dmesg\nsync; systemd-run --on-active=2 systemctl reboot >/dev/null\necho 'trying pmos-{name} once'\n"
     ))?;
-    print!("{out}");
+    eprint!("{out}");
     if !ok {
         bail!("no try started");
     }
@@ -252,7 +252,7 @@ pub fn remove(phone: &Phone, name: &str) -> Result<()> {
          rm -f /boot/loader/entries/pmos-{name}.conf /boot/loader/entries/pmos-{name}+*.conf /boot/vmlinuz-{name} /boot/initramfs-{name} /boot/test-boot.log /boot/test-boot.dmesg\n\
          rm -rf /boot/dtbs-{name}\n[ -z \"$release\" ] || rm -rf \"/lib/modules/$release\"\necho \"removed: pmos-{name}${{release:+ and the modules of $release}}\"\n"
     ))?;
-    print!("{out}");
+    eprint!("{out}");
     if !ok {
         bail!("removing failed");
     }

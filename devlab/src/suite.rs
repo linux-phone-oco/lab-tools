@@ -189,7 +189,7 @@ pub fn put(device: &Device, manifest_dir: &Path, phone: &Phone, runner: &Path) -
     if !ok {
         bail!("installing the suite on the phone failed: {out}");
     }
-    print!("{out}");
+    eprint!("{out}");
     Ok(())
 }
 
@@ -268,8 +268,8 @@ pub fn of_this_boot(phone: &Phone) -> Result<Option<Ran>> {
 /// What every change to the phone ends with: its health, said, and the report brought to the lab.
 /// `rebooted`: the change booted the phone anew, so the report is the one that boot writes by itself;
 /// otherwise the suite runs now. Returns whether the phone is well (true where it has no suite yet,
-/// said as such).
-pub fn after_change(phone: &Phone, manifest_dir: &Path, rebooted: bool) -> Result<bool> {
+/// said as such), and what to say of it.
+pub fn after_change(phone: &Phone, manifest_dir: &Path, rebooted: bool) -> Result<(bool, String)> {
     let ran = if rebooted {
         of_this_boot(phone)?
     } else {
@@ -281,11 +281,13 @@ pub fn after_change(phone: &Phone, manifest_dir: &Path, rebooted: bool) -> Resul
         }
     };
     let Some(ran) = ran else {
-        println!("health: the suite is not on the phone - devlab suite put now --runner ...");
-        return Ok(true);
+        return Ok((
+            true,
+            "health: the suite is not on the phone - devlab suite put now --runner ...".into(),
+        ));
     };
     let brought = crate::gather::fetch(phone, &manifest_dir.join("tests/results"))?;
-    println!(
+    let said = format!(
         "health: {} (report brought to the lab: {})",
         ran.verdict,
         if brought.is_empty() {
@@ -294,7 +296,7 @@ pub fn after_change(phone: &Phone, manifest_dir: &Path, rebooted: bool) -> Resul
             brought.join(" ")
         }
     );
-    Ok(ran.well)
+    Ok((ran.well, said))
 }
 
 /// The latest report the phone keeps (after its last boot, or the last run asked for).
