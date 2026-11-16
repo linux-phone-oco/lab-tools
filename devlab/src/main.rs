@@ -10,11 +10,13 @@
 //!   devlab hear                    a tone on each speaker, heard through the lab's microphone
 //!   devlab health                  against everything that worked before; exit 1 on a regression
 //!   devlab suite put now --runner F | run | latest   the health suite on the phone itself
+//!   devlab gather now [--docs DIR]  the phone's reports into this lab and the picture's tables
 //!   devlab watch                   after every boot: health, silent when well, a board task when not
 //!                                  a test kernel beside stock, tried once, never stranding the phone
 
 mod device;
 mod flash;
+mod gather;
 mod health;
 mod hear;
 mod kernel;
@@ -79,6 +81,14 @@ enum Cmd {
         /// With --hear: the word that the microphone has been placed by the phone
         #[arg(long)]
         placed: bool,
+    },
+    /// Gather (say `now`): every report the phone keeps that the lab lacks, into this lab's tests/results,
+    /// and every run not yet filed, into the picture's test_runs and test_results
+    Gather {
+        now: String,
+        /// The picture's place (default: docs beside this lab: ../docs)
+        #[arg(long)]
+        docs: Option<PathBuf>,
     },
     /// The phone's own health suite: put it on the phone, run it, read its latest report
     Suite {
@@ -203,6 +213,27 @@ fn main() -> Result<()> {
                 }
                 std::process::exit(1);
             }
+        }
+        Cmd::Gather { now, docs } => {
+            if now != "now" {
+                bail!("usage: devlab gather now [--docs DIR] - it writes into this lab and the picture");
+            }
+            let results = here.join("tests/results");
+            let docs = docs.unwrap_or_else(|| here.join("../docs"));
+            match phone::Phone::find(&dev) {
+                Ok(p) => println!(
+                    "brought from the phone: {}",
+                    gather::fetch(&p, &results)?.len()
+                ),
+                Err(e) => println!("the phone is not reachable ({e:#}); filing what the lab has"),
+            }
+            let filed = gather::file(&results, &docs)?;
+            println!(
+                "filed into {}: {} runs {}",
+                docs.display(),
+                filed.len(),
+                filed.join(" ")
+            );
         }
         Cmd::Suite { action } => {
             let p = phone::Phone::find(&dev)?;
