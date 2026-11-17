@@ -68,6 +68,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
+name = "argenv"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5414494aac0f50dda8a5816bc8c85aac13e2de988440d8ca5cd42eec6cc4f8e6"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "argenv-resolve"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f3afb7c62f9041212e82acf5ccc4c250c6b3baeb54cfa4c971fcd11c025244c4"
+dependencies = [
+ "argenv",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -245,6 +266,7 @@ dependencies = [
  "anyhow",
  "clap",
  "hound",
+ "ideal-agent",
  "rmcp",
  "serde",
  "serde_json",
@@ -444,6 +466,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f31827a206f56af32e590ba56d5d2d085f558508192593743f16b2306495269f"
 dependencies = [
  "cc",
+]
+
+[[package]]
+name = "ideal-agent"
+version = "0.1.1"
+source = "git+https://github.com/grenudi/ideal-agent?rev=5967ea8101f9b502ec2c2dd3bf47b64a5ba90c8d#5967ea8101f9b502ec2c2dd3bf47b64a5ba90c8d"
+dependencies = [
+ "anyhow",
+ "argenv",
+ "argenv-resolve",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
