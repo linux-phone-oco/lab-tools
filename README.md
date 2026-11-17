@@ -43,7 +43,7 @@ day (`once_a_day NAME` in lib.sh, skipping with "ran today" after); mobile data 
 boot over the modem's own interface, about 150 kB, 5 MB once a week for throughput, each run's bytes kept
 in the month's ledger (`lpoco-health data`) and skipped once the month has spent the manifest's
 `data_budget_mb` (250 by default). Each run is one report on the phone, `/var/lib/lpoco-health/RUN.jsonl`, a line per test
-in the shape of linux-phone-oco/docs' `test_results`; an unhealthy run keeps its evidence beside it
+in the shape of the device base's `test_results` (docs' when the lab has no base); an unhealthy run keeps its evidence beside it
 (kernel log, errors, failed units) and says what is wrong, in plain words, in the journal. A part the
 phone never had working is a `gap` in the manifest: still measured, not ill health; a gap that starts
 to pass is said.

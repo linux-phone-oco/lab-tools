@@ -10,7 +10,7 @@
 //!   devlab hear                    a tone on each speaker, heard through the lab's microphone
 //!   devlab health                  against everything that worked before; exit 1 on a regression
 //!   devlab suite put now [--runner [F]] | run | latest   the health suite on the phone itself
-//!   devlab gather now [--docs DIR]  the phone's reports into this lab and the picture's tables
+//!   devlab gather now [--land] [--docs DIR]  the phone's reports into this lab, their runs into its base (docs with --docs)
 //!   devlab mcp                    the phone for any agent: an MCP server (stdio)
 //!   devlab fastboot state | getvar NAME | boot now IMAGE | reboot now | set-active now SLOT   by serial
 //!   devlab keeper take|renew|release NAME | status   the phone's keeper, one at a time
@@ -92,13 +92,13 @@ enum Cmd {
         placed: bool,
     },
     /// Gather (say `now`): every report the phone keeps that the lab lacks, into this lab's tests/results,
-    /// and every run not yet filed, into the picture's test_runs and test_results
+    /// and every run not yet filed, into test_runs and test_results of the lab's own base (it has a devicebase.toml), else of docs
     Gather {
         now: String,
-        /// The picture's place (default: docs beside this lab: ../docs)
+        /// File into docs at this place instead (default: the lab itself when it has a devicebase.toml, else ../docs)
         #[arg(long)]
         docs: Option<PathBuf>,
-        /// Land it too: in devlab's own clones of the lab and the picture, each through `land`
+        /// Land it too: in devlab's own clone of the lab (and of docs, with --docs or a lab without a base), through `land`
         #[arg(long)]
         land: bool,
     },
@@ -344,7 +344,7 @@ fn main() -> Result<()> {
         }
         Cmd::Gather { now, docs, land } => {
             if now != "now" {
-                bail!("usage: devlab gather now [--docs DIR] [--land] - it writes into this lab and the picture");
+                bail!("usage: devlab gather now [--docs DIR] [--land] - it writes into this lab (and docs without a base)");
             }
             println!("{}", gather::gather(&dev, &here, docs, land)?);
         }
