@@ -181,17 +181,13 @@ enum SuiteCmd {
         now: String,
         /// A runner built here, copied with the generic checks - to try what is not released yet: alone,
         /// the runner built (health/build.sh) from the lab-tools this devlab was built from, whose generic
-        /// checks it carries; or a FILE built elsewhere. This is the default; `--package` takes the Alpine package
-        #[arg(long, value_name = "FILE", num_args = 0..=1, conflicts_with = "package")]
+        /// checks it carries; or a FILE built elsewhere. Without it, the Alpine package (lpoco-health)
+        #[arg(long, value_name = "FILE", num_args = 0..=1)]
         runner: Option<Option<PathBuf>>,
         /// The lab's checks and manifest as this clone holds them, not as its main has them - to try
         /// a check before it lands
         #[arg(long)]
         here: bool,
-        /// The runner and generic checks from the Alpine package (lpoco-health), once the package conveyor
-        /// publishes it, instead of a runner built here
-        #[arg(long)]
-        package: bool,
     },
     /// Run it on the phone now, and say what it found; exit 1 when unhealthy
     Run,
@@ -331,16 +327,14 @@ fn main() -> Result<()> {
                     now,
                     runner,
                     here: as_is,
-                    package,
                 } => {
                     if now != "now" {
-                        bail!("usage: devlab suite put now [--runner [FILE] | --package] [--here] - it changes the phone");
+                        bail!("usage: devlab suite put now [--runner [FILE]] [--here] - it changes the phone");
                     }
                     let runner = match runner {
                         Some(None) => Some(suite::built_runner()?),
                         Some(Some(file)) => Some(file),
-                        None if package => None,
-                        None => Some(suite::built_runner()?),
+                        None => None,
                     };
                     if as_is {
                         suite::put(&dev, &here, &p, runner.as_deref())?;
