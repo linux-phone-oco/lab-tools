@@ -1,0 +1,30 @@
+name: Release
+
+# release-plz cuts devlab-health's releases (release-plz.toml): a release PR for what changed, and on
+# its merge the tag devlab-health-vX.Y.Z with its GitHub release. The Alpine repository follows by
+# itself (packages.yml).
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: release-plz-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-plz:
+    name: release-plz
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: MarcoIeni/release-plz-action@v0.5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,64 @@
+name: Packages
+
+# A signed Alpine repository on GitHub Pages - devlab-health for postmarketOS phones - rebuilt after
+# every release (or by hand), so a phone's apk upgrade brings the suite with the rest of its system.
+# Building, signing, checking, publishing and a real install live in the package conveyor; this
+# repository keeps its declaration (packaging/conveyor.toml), its APKBUILD and its public key. The
+# private key is the secret APK_SIGNING_KEY, given to the one conveyor step that signs.
+on:
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish (default - the newest devlab-health-v tag)
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: packages
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    name: which release?
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - id: tag
+        env:
+          EVENT: ${{ github.event_name }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          git fetch --tags --force
+          if [ "$EVENT" = workflow_dispatch ]; then
+            tag="${INPUT_TAG:-$(git tag --list 'devlab-health-v*' --sort=-v:refname | head -n1)}"
+          else
+            tag="$(git tag --points-at "$HEAD_SHA" | grep -E '^devlab-health-v[0-9]' | head -n1 || true)"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "release tag: ${tag:-none (a push that cut no release)}"
+  alpine:
+    name: the package conveyor
+    needs: tag
+    if: needs.tag.outputs.tag != ''
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: linux-package-distribution-oco/conveyor/.github/workflows/alpine.yml@v1
+    with:
+      tag: ${{ needs.tag.outputs.tag }}
+    secrets:
+      APK_SIGNING_KEY: ${{ secrets.APK_SIGNING_KEY }}

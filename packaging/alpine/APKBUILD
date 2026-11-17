@@ -1,0 +1,31 @@
+# The phone's own health suite, as postmarketOS takes it: devlab-health (the runner), the generic checks
+# and their words, and the timer that runs them 120 s after every boot. A phone's own checks and what its
+# manifest expects of it (/etc/devlab/health.env) are the lab's, put by devlab. Published by the package
+# conveyor (packaging/conveyor.toml): pkgver and the checksums are filled in for each release tag.
+pkgname=devlab-health
+pkgver=0.1.0
+pkgrel=0
+pkgdesc="The phone's health, measured on the phone after every boot (linux-phone-oco devlab)"
+url="https://github.com/linux-phone-oco/lab-tools"
+arch="aarch64 x86_64"
+license="MIT OR Apache-2.0"
+makedepends="cargo"
+options="net !check"
+source="$pkgname-$pkgver.tar.gz::https://github.com/linux-phone-oco/lab-tools/archive/refs/tags/devlab-health-v$pkgver.tar.gz"
+builddir="$srcdir/lab-tools-devlab-health-v$pkgver"
+
+build() {
+	cargo build --release --locked -p devlab-health
+}
+
+package() {
+	install -Dm755 target/release/devlab-health "$pkgdir"/usr/bin/devlab-health
+	install -Dm644 health/suite/lib.sh "$pkgdir"/usr/lib/devlab/health/lib.sh
+	for f in health/suite/checks/*/*.sh; do
+		install -Dm644 "$f" "$pkgdir/usr/lib/devlab/health/${f#health/suite/}"
+	done
+	install -Dm644 health/suite/devlab-health.service "$pkgdir"/usr/lib/systemd/system/devlab-health.service
+	install -Dm644 health/suite/devlab-health.timer "$pkgdir"/usr/lib/systemd/system/devlab-health.timer
+}
+
+sha512sums=""

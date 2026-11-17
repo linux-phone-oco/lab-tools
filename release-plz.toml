@@ -1,0 +1,22 @@
+[workspace]
+dependencies_update = false
+# delivered as Alpine packages (packaging/conveyor.toml), not through crates.io
+publish = false
+git_only = true
+git_tag_enable = true
+git_release_enable = false
+
+[[package]]
+name = "devlab-health"
+# the conveyor reads this prefix (packaging/conveyor.toml)
+git_tag_name = "devlab-health-v{{ version }}"
+git_release_enable = true
+
+# devlab and tone run on the lab machine, built from main; not released yet
+[[package]]
+name = "devlab"
+release = false
+
+[[package]]
+name = "tone"
+release = false
