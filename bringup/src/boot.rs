@@ -32,6 +32,8 @@ pub struct Boot {
     pub kernel_compression: Option<String>,
     pub ramdisk_compression: Option<String>,
     pub avb_footer: Option<bool>,
+    /// step name to executable (relative to the manifest): `parts` runs on kernel and ramdisk before packing
+    pub hooks: Option<std::collections::BTreeMap<String, String>>,
 }
 
 #[derive(Deserialize)]
