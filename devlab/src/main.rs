@@ -12,7 +12,7 @@
 //!   devlab suite put now [--runner F] | run | latest   the health suite on the phone itself
 //!   devlab gather now [--docs DIR]  the phone's reports into this lab and the picture's tables
 //!   devlab mcp                    the phone for any agent: an MCP server (stdio)
-//!   devlab guard tool | start      the ways, held for agents: what Claude Code's hooks on the lab call
+//!   devlab guard tool              the phone's way, held for agents: no ssh/scp to a phone outside devlab (a hook)
 //!   devlab watch                   after every boot: health, silent when well, a board task when not
 //!                                  a test kernel beside stock, tried once, never stranding the phone
 
@@ -121,10 +121,8 @@ enum Cmd {
 
 #[derive(Subcommand)]
 enum GuardCmd {
-    /// PreToolUse: the hook's JSON on standard input; a refused command exits 2, saying why
+    /// PreToolUse: the hook's JSON on standard input; ssh/scp to a phone outside devlab exits 2, saying why
     Tool,
-    /// SessionStart: the live practices and the unread messages
-    Start,
 }
 
 #[derive(Subcommand)]
@@ -196,7 +194,6 @@ fn main() -> Result<()> {
     if let Cmd::Guard { event } = &cli.cmd {
         return match event {
             GuardCmd::Tool => guard::tool(),
-            GuardCmd::Start => guard::start(),
         };
     }
     let (dev, file) = device::Device::load(cli.device.as_deref(), &std::env::current_dir()?)?;

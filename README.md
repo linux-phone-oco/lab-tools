@@ -81,22 +81,22 @@ keeps a state joins devlab-health as a subcommand the same way (decision 2026-11
 Development: `nix-shell` (nixpkgs pinned, as in lab-agent), `cargo test`. The command line uses clap
 for now; moving it onto argenv, as lab-agent uses, is a contained change.
 
-## The ways, held for agents
+## The phone's way, held for agents
 
-`devlab guard` is what Claude Code's hooks on the lab call, so that a way an agent must keep is
-held when it is tried, not remembered. It needs no manifest.
+`devlab guard tool` is what Claude Code's PreToolUse hook on the lab calls, so that changing the phone
+outside devlab is refused when it is tried, not remembered: a Bash command that reaches a phone by ssh,
+scp, sftp, rsync or sshpass exits 2, saying why. It needs no manifest.
 
-    devlab guard tool     PreToolUse: refuses (exit 2, saying why) a Bash command that pushes to main,
-                          runs python or pip, or reaches a phone by ssh, scp, sftp, rsync or sshpass
-    devlab guard start    SessionStart: lab-agent guide and lab-agent inbox, for the session to read
+The ways every project shares - no git push to main, no Python, the practices and the inbox at every
+session start - are the hooks of the ideal-agent plugin (https://github.com/grenudi/ideal-agent), installed
+on the lab since 2026-11-17; devlab keeps only what is its phone's.
 
 A phone's addresses are the ones devlab has met: every manifest it loads leaves its addresses in
 `~/.local/state/devlab/CODENAME/addresses`, beside the Wi-Fi address it learned. In the lab's
 `~/.claude/settings.json`:
 
     "hooks": {
-      "PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "~/.local/bin/devlab guard tool", "timeout": 10}]}],
-      "SessionStart": [{"hooks": [{"type": "command", "command": "~/.local/bin/devlab guard start", "timeout": 30}]}]
+      "PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "~/.local/bin/devlab guard tool", "timeout": 10}]}]
     }
 
 ## What must never be touched
