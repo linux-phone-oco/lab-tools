@@ -119,3 +119,11 @@ installed. One kernel is kept at a time.
 `devlab kernel try NAME --dtb FILE` boots installed kernel NAME - its kernel, initramfs and modules -
 once with another device tree, as the entry NAME-dt: a device-tree change is one boot, even on the kept
 kernel. A try is judged by the entry the bootloader says it booted (LoaderEntrySelected).
+
+## The phone's keeper
+
+One session owns a phone's flow at a time - its keeper, taking up the phone's queue (docs: `tad q
+phone-queue`) one change at a time; devlab still holds the phone for every change. `devlab keeper take
+NAME` takes the lease (refused while another keeper is live), `renew NAME` as the keeper works, `release
+NAME` as it ends, `status` says who keeps the phone. A lease left unrenewed for 90 minutes has lapsed: its
+keeper ended or was cut off, and the next one may take it.
