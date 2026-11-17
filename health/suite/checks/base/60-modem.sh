@@ -12,4 +12,4 @@ mst=$(printf '%s\n' "$info" | awk -F': ' '/ state:/ && !/power/ {print $2; exit}
 why=$(printf '%s\n' "$info" | awk -F': ' '/failed reason:/ {print $2; exit}')
 if printf '%s\n' "$info" | grep -q '/SIM/'; then
 	check modem-registered modem-data "$(case "$mst" in registered|connected|enabled|connecting) echo true;; esac)" "modem state: ${mst:-unknown}"
-else say modem-registered modem-data skip "no SIM card seen (modem state: ${mst:-unknown}${why:+, $why})"; fi
+else say modem-registered modem-data skip "no SIM card (modem state: ${mst:-unknown}${why:+, $why})"; fi
