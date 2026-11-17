@@ -241,6 +241,7 @@ pub fn try_once(phone: &Phone, name: &str) -> Result<()> {
 pub const KEEP_TRIES: u32 = 3;
 
 /// What a root shell does to keep test kernel NAME as the default: its entry rewritten - a kept title
+/// and a sort key after every test entry's (a try still comes first) but before stock's, a kept title
 /// and sort key, systemd-bless-boot no longer masked, KEEP_TRIES tries - so that its first good boot is
 /// blessed (the counter dropped: the default from then on), and three bad ones in a row sort it last
 /// (stock boots by itself). One kernel is kept at a time.
@@ -249,9 +250,9 @@ pub fn keep_script(name: &str) -> String {
         "set -e\ncd /boot/loader/entries\n\
          from=$(ls pmos-{name}.conf pmos-{name}+*.conf 2>/dev/null | head -n1)\n\
          [ -n \"$from\" ] || {{ echo 'pmos-{name} is not installed: devlab kernel install {name} ... first' >&2; exit 1; }}\n\
-         other=$(grep -l '^sort-key 0-kept-' *.conf 2>/dev/null | grep -v \"^pmos-{name}[.+]\" || true)\n\
+         other=$(grep -l '^sort-key 1-kept-' *.conf 2>/dev/null | grep -v \"^pmos-{name}[.+]\" || true)\n\
          [ -z \"$other\" ] || {{ echo \"another kernel is kept ($other): devlab kernel unkeep it first\" >&2; exit 1; }}\n\
-         sed -e 's/^title .*/title postmarketOS (kept kernel: {name})/' -e 's/^sort-key .*/sort-key 0-kept-{name}/' \
+         sed -e 's/^title .*/title postmarketOS (kept kernel: {name})/' -e 's/^sort-key .*/sort-key 1-kept-{name}/' \
          -e 's/ systemd.mask=systemd-bless-boot.service//' \"$from\" > /tmp/kept-entry\n\
          rm -f pmos-{name}.conf pmos-{name}+*.conf\n\
          install -m 644 /tmp/kept-entry 'pmos-{name}+{KEEP_TRIES}-0.conf' && rm -f /tmp/kept-entry\n\
@@ -266,7 +267,7 @@ pub fn unkeep_script(name: &str) -> String {
         "set -e\ncd /boot/loader/entries\n\
          from=$(ls pmos-{name}.conf pmos-{name}+*.conf 2>/dev/null | head -n1)\n\
          [ -n \"$from\" ] || {{ echo 'pmos-{name} is not installed' >&2; exit 1; }}\n\
-         grep -q '^sort-key 0-kept-{name}$' \"$from\" || {{ echo 'pmos-{name} is not kept' >&2; exit 1; }}\n\
+         grep -q '^sort-key 1-kept-{name}$' \"$from\" || {{ echo 'pmos-{name} is not kept' >&2; exit 1; }}\n\
          sed -e 's/^title .*/title postmarketOS (test kernel: {name})/' -e 's/^sort-key .*/sort-key 0-test-{name}/' \
          -e '/^options /s/$/ systemd.mask=systemd-bless-boot.service/' \"$from\" > /tmp/test-entry\n\
          rm -f pmos-{name}.conf pmos-{name}+*.conf\n\
@@ -334,13 +335,20 @@ mod tests {
     #[test]
     fn a_kept_kernel_is_blessed_once_and_falls_back_after_three_bad_boots() {
         let k = keep_script("mic");
-        assert!(k.contains("s/^sort-key .*/sort-key 0-kept-mic/"));
+        assert!(k.contains("s/^sort-key .*/sort-key 1-kept-mic/"));
         assert!(
             k.contains("s/ systemd.mask=systemd-bless-boot.service//"),
             "bless no longer masked"
         );
         assert!(k.contains("install -m 644 /tmp/kept-entry 'pmos-mic+3-0.conf'"));
         assert!(k.contains("another kernel is kept"), "one kept at a time");
+        let mut keys = ["postmarketOS", "1-kept-mic", "0-test-wcd"];
+        keys.sort();
+        assert_eq!(
+            keys,
+            ["0-test-wcd", "1-kept-mic", "postmarketOS"],
+            "a try first, then the kept kernel, then stock"
+        );
         let u = unkeep_script("mic");
         assert!(
             u.contains("'pmos-mic+0-0.conf'"),
@@ -348,7 +356,7 @@ mod tests {
         );
         assert!(u.contains("/^options /s/$/ systemd.mask=systemd-bless-boot.service/"));
         assert!(
-            u.contains("grep -q '^sort-key 0-kept-mic$'"),
+            u.contains("grep -q '^sort-key 1-kept-mic$'"),
             "only a kept kernel is unkept"
         );
     }
