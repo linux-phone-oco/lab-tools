@@ -8,7 +8,12 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 #[derive(Parser)]
-#[command(version, about = "Make a test tone, and find it in a recording")]
+#[command(
+    name = "lpoco-tone",
+    bin_name = "lpoco-tone",
+    version,
+    about = "Make a test tone, and find it in a recording"
+)]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,

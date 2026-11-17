@@ -5,7 +5,9 @@ gives (a WAV recording, a log) and does the work on the lab machine, so a new de
 toolchain of its own. Surya (Xiaomi POCO X3 NFC) is the first device they serve; the flows that use
 them live in its lab (linux-phone-oco/surya-lab).
 
-## devlab
+## devlab (lpoco lab)
+
+One program under two names: `lpoco lab` (the program `lpoco-lab`) and `devlab` run the same code; likewise `lpoco tone` (`lpoco-tone`) and `tone`. The family has one version (`lpoco list`). The old names stay.
 
 The device lab, for any phone: everything it knows about a device comes from the device's
 manifest, `device.toml`, in its lab repository (found like cargo finds Cargo.toml, or `--device`).
