@@ -222,14 +222,6 @@ fn git(dir: &Path, args: &[&str]) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
-/// Whether a place keeps its record of work in glimpses: its mark exports them.
-pub fn says_glimpses(dir: &Path) -> bool {
-    std::fs::read_to_string(dir.join("oco.toml"))
-        .unwrap_or_default()
-        .lines()
-        .any(|l| l.trim_start().starts_with("glimpses") && l.contains('='))
-}
-
 impl Place {
     /// devlab's own clone of the repository `of` is a clone of, at its main as GitHub has it now.
     pub fn at_main(of: &Path, under: &Path) -> Result<Place> {
@@ -253,8 +245,9 @@ impl Place {
     }
 
     /// Lands what changed here: its own branch, one commit signed by devlab - the record of the work - and
-    /// `land`, which waits for every check. A place that still keeps glimpses gets one (`says_glimpses`);
-    /// linux-phone's places keep none since 2026-11-17. Nothing changed, nothing landed.
+    /// `land`, which waits for every check. No ocoeco: linux-phone keeps no glimpses since 2026-11-17, and
+    /// depends on ocoeco for nothing (docs decision 2026-11-17-the-face-from-docs-own-data). Nothing changed,
+    /// nothing landed.
     pub fn land(&self, branch: &str, summary: &str) -> Result<bool> {
         if git(&self.dir, &["status", "--porcelain"])?.is_empty() {
             return Ok(false);
@@ -271,13 +264,8 @@ impl Place {
                 .status()
                 .is_ok_and(|s| s.success())
         };
-        let recorded = if says_glimpses(&self.dir) {
-            ok(Command::new("ocoeco").args(["glimpse", summary, "--kind", "docs"]))
-                && ok(Command::new("ocoeco").arg("commit"))
-        } else {
-            ok(Command::new("git").args(["add", "-A"]))
-                && ok(Command::new("git").args(["commit", "-q", "-m", &format!("docs: {summary}")]))
-        };
+        let recorded = ok(Command::new("git").args(["add", "-A"]))
+            && ok(Command::new("git").args(["commit", "-q", "-m", &format!("docs: {summary}")]));
         if !recorded
             || !ok(Command::new("land")
                 .arg("--no-manual")
@@ -329,21 +317,6 @@ mod tests {
             derivations(&d.join("none")).is_empty(),
             "a picture with nothing to derive"
         );
-        let _ = std::fs::remove_dir_all(&d);
-    }
-
-    #[test]
-    fn a_place_says_whether_it_keeps_glimpses() {
-        let d = std::env::temp_dir().join(format!("devlab-glimpses-{}", std::process::id()));
-        std::fs::create_dir_all(&d).unwrap();
-        std::fs::write(
-            d.join("oco.toml"),
-            "[exports]\nglimpses = \"oco/glimpses.json\"\n",
-        )
-        .unwrap();
-        assert!(says_glimpses(&d));
-        std::fs::write(d.join("oco.toml"), "# its glimpses ended\n[exports]\n").unwrap();
-        assert!(!says_glimpses(&d), "a comment naming them is not an export");
         let _ = std::fs::remove_dir_all(&d);
     }
 
