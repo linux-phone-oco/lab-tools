@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.2.1...lpoco-bringup-v0.2.2) - 2026-11-17
+
+### Added
+
+- --help and -h print the usage in lpoco, lpoco-host, lpoco-bringup and lpoco-health ([#93](https://github.com/linux-phone-oco/lab-tools/pull/93))
+
 ## [0.2.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.2.0...lpoco-bringup-v0.2.1) - 2026-11-17
 
 ### Other
