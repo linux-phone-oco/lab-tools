@@ -12,12 +12,14 @@
 //!   devlab suite put now [--runner [F]] | run | latest   the health suite on the phone itself
 //!   devlab gather now [--docs DIR]  the phone's reports into this lab and the picture's tables
 //!   devlab mcp                    the phone for any agent: an MCP server (stdio)
+//!   devlab fastboot state | getvar NAME | boot now IMAGE | reboot now   by serial; nothing written
 //!   devlab keeper take|renew|release NAME | status   the phone's keeper, one at a time
 //!   devlab guard tool              the phone's way, held for agents: no ssh/scp to a phone outside devlab (a hook)
 //!   devlab watch                   after every boot: health, silent when well, a board task when not
 //!                                  a test kernel beside stock, tried once, never stranding the phone
 
 mod device;
+mod fastboot;
 mod flash;
 mod gather;
 mod guard;
@@ -109,6 +111,12 @@ enum Cmd {
     Mcp,
     /// Watch the phone: health after every boot, silent when well, a board task when not
     Watch,
+    /// The phone over fastboot, by its manifest.s serial: read it, boot an image from memory, reboot -
+    /// nothing written, the slots as they were
+    Fastboot {
+        #[command(subcommand)]
+        action: FastbootCmd,
+    },
     /// The phone's keeper: the one session that owns its flow - a lease, so two keepers never run
     Keeper {
         #[command(subcommand)]
@@ -172,6 +180,22 @@ enum KernelCmd {
     Keep { name: String, now: String },
     /// Give the default back to stock (say `now`); the kernel stays installed
     Unkeep { name: String, now: String },
+}
+
+#[derive(Subcommand)]
+enum FastbootCmd {
+    /// Whether it is in fastboot now, and what its bootloader says of itself (read only)
+    State,
+    /// One bootloader variable (read only)
+    Getvar { name: String },
+    /// Boot an Android boot image from memory (say `now`): nothing written, both slots as they were
+    Boot { now: String, image: PathBuf },
+    /// Leave fastboot to the active slot (say `now`), or with --bootloader come back into fastboot
+    Reboot {
+        now: String,
+        #[arg(long)]
+        bootloader: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -367,6 +391,24 @@ fn main() -> Result<()> {
         }
         Cmd::Mcp => mcp::serve(dev)?,
         Cmd::Watch => watch::watch(&dev, &here)?,
+        Cmd::Fastboot { action } => {
+            match action {
+                FastbootCmd::State => print!("{}", fastboot::state(&dev)?),
+                FastbootCmd::Getvar { name } => println!("{}", fastboot::getvar(&dev, &name)?),
+                FastbootCmd::Boot { now, image } => {
+                    if now != "now" {
+                        bail!("usage: devlab fastboot boot now IMAGE - it boots the phone");
+                    }
+                    println!("{}", fastboot::boot(&dev, &image)?);
+                }
+                FastbootCmd::Reboot { now, bootloader } => {
+                    if now != "now" {
+                        bail!("usage: devlab fastboot reboot now [--bootloader] - it reboots the phone");
+                    }
+                    println!("{}", fastboot::reboot(&dev, bootloader)?);
+                }
+            }
+        }
         Cmd::Keeper { action } => match action {
             KeeperCmd::Take { name } => println!("{}", keeper::take(&dev, &name)?),
             KeeperCmd::Renew { name } => println!("{}", keeper::renew(&dev, &name)?),

@@ -62,6 +62,19 @@ impl Drop for Mounted {
     }
 }
 
+/// Writing over fastboot is the manifest's to allow, never assumed: a phone whose slots must stay as
+/// they are says nothing (google-walleye, decision 2026-11-17-walleye-fastboot-first).
+pub fn may_write(device: &Device) -> Result<()> {
+    if !device.fastboot.writes {
+        bail!(
+            "{}'s device.toml does not say [fastboot] writes = true - nothing is flashed on it \
+             (devlab fastboot boot now IMAGE boots from memory without writing)",
+            device.device.codename
+        );
+    }
+    Ok(())
+}
+
 pub fn flash(
     device: &Device,
     manifest_dir: &Path,
@@ -71,6 +84,8 @@ pub fn flash(
     as_is: bool,
 ) -> Result<()> {
     let f = &device.flash;
+    may_write(device)?;
+    let serial = crate::fastboot::serial(device)?;
     let work = std::env::temp_dir().join(format!("devlab-flash-{}", std::process::id()));
     std::fs::create_dir_all(work.join("esp"))?;
     std::fs::create_dir_all(work.join("root"))?;
@@ -180,16 +195,17 @@ pub fn flash(
                 println!("enabled on first boot: {}", f.enable.join(" "));
             }
         } // unmounted and detached
-        let fb = Command::new("fastboot").arg("devices").output()?;
-        if !String::from_utf8_lossy(&fb.stdout).contains("fastboot") {
-            bail!("the phone is not in fastboot - nothing flashed");
+          // by its own serial only: a lab may hold two phones in fastboot (2026-11-17: google-walleye
+          // sat in fastboot beside surya, and `fastboot flash` without -s would have written to it)
+        if !crate::fastboot::present(serial)? {
+            bail!("{serial} is not in fastboot - nothing flashed");
         }
         for (part, file) in [
             (f.bootloader_partition.as_str(), bootloader),
             (f.image_partition.as_str(), copy.as_path()),
         ] {
             let ok = Command::new("fastboot")
-                .args(["flash", part])
+                .args(["-s", serial, "flash", part])
                 .arg(file)
                 .status()?
                 .success();
@@ -198,7 +214,7 @@ pub fn flash(
             }
         }
         let _ = Command::new("timeout")
-            .args(["30", "fastboot", "reboot"])
+            .args(["30", "fastboot", "-s", serial, "reboot"])
             .status();
         println!("flashed; the first boot of a fresh image is slow (it resizes the storage)");
         Ok(())

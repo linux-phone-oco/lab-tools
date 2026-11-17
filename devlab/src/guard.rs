@@ -74,6 +74,12 @@ pub fn refused(command: &str, phones: &BTreeSet<String>) -> Option<String> {
             }
             continue;
         }
+        if program == "fastboot" {
+            if let Some(why) = fastboot_changes(args) {
+                return Some(why);
+            }
+            continue;
+        }
         if matches!(program, "ssh" | "scp" | "sftp" | "rsync" | "sshpass") {
             if let Some(addr) = args
                 .iter()
@@ -88,6 +94,53 @@ pub fn refused(command: &str, phones: &BTreeSet<String>) -> Option<String> {
         }
     }
     None
+}
+
+/// Raw fastboot outside devlab only reads (devices, getvar, help, --version): anything else boots,
+/// writes, erases or switches a slot on whichever phone it reaches - devlab names the phone by its
+/// serial, holds it, and writes only where its manifest says so (2026-11-17, google-walleye beside surya).
+fn fastboot_changes(args: &[String]) -> Option<String> {
+    const VALUED: &[&str] = &[
+        "-s",
+        "-S",
+        "-i",
+        "-b",
+        "-n",
+        "-c",
+        "-p",
+        "--slot",
+        "--os-version",
+        "--os-patch-level",
+    ];
+    let mut verb = None;
+    let mut skip = false;
+    for a in args {
+        if skip {
+            skip = false;
+            continue;
+        }
+        if a == "-w" || a.starts_with("--set-active") || a == "--wipe-and-use-fbe" {
+            verb = Some(a.as_str());
+            break;
+        }
+        if VALUED.contains(&a.as_str()) {
+            skip = true;
+            continue;
+        }
+        if a.starts_with('-') {
+            continue;
+        }
+        verb = Some(a.as_str());
+        break;
+    }
+    match verb {
+        None | Some("devices" | "getvar" | "help") => None,
+        Some(v) => Some(format!(
+            "`fastboot {v}` is refused outside devlab: it changes whichever phone it reaches - devlab fastboot \
+             state|getvar NAME|boot now IMAGE|reboot now names the phone by its manifest's serial and holds it; \
+             writing (devlab flash) only where the manifest says [fastboot] writes = true."
+        )),
+    }
 }
 
 /// Whether an argument names this address as its host: `addr`, `user@addr`, `addr:path`, `user@addr:path`.
@@ -136,6 +189,34 @@ mod tests {
             "echo ssh user@172.16.42.1",
         ] {
             assert!(says(c).is_none(), "allowed: {c}");
+        }
+    }
+
+    #[test]
+    fn raw_fastboot_only_reads() {
+        for c in [
+            "fastboot devices",
+            "fastboot -s FA81N1A00790 getvar all",
+            "fastboot getvar current-slot 2>&1 | head",
+            "fastboot --version",
+            "echo fastboot flash boot x.img",
+        ] {
+            assert!(says(c).is_none(), "reads: {c}");
+        }
+        for c in [
+            "fastboot flash boot boot.img",
+            "fastboot -s FA81N1A00790 boot boot.img",
+            "fastboot --slot b flash boot x",
+            "fastboot erase userdata",
+            "fastboot set_active b",
+            "fastboot --set-active=b reboot",
+            "fastboot -w getvar all",
+            "fastboot reboot",
+            "fastboot flashing lock",
+            "sudo fastboot oem unlock",
+            "bash -c 'fastboot flash boot x'",
+        ] {
+            assert!(says(c).is_some(), "changes: {c}");
         }
     }
 

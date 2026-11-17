@@ -17,7 +17,10 @@ Secrets and what is learned at run time stay outside repositories: `~/.config/de
     devlab phone root < script     commands as root
     devlab phone put LOCAL REMOTE
     devlab phone reboot            reboot, and wait until it answers again
-    devlab flash now IMAGE BOOT    the manifest's fixes baked in, the device tree fingerprinted
+    devlab flash now IMAGE BOOT    the manifest's fixes baked in, the device tree fingerprinted -
+                                   by [fastboot] serial, only where the manifest says writes = true
+    devlab fastboot state | getvar NAME | boot now BOOT.IMG | reboot now [--bootloader]
+                                   a phone in fastboot, by its serial: read it, boot from memory
     devlab provision now           a freshly flashed phone: packages, files, Wi-Fi
     devlab test | health | watch   its checks; regressions against what worked; after every boot
 
@@ -100,7 +103,8 @@ for now; moving it onto argenv, as lab-agent uses, is a contained change.
 
 `devlab guard tool` is what Claude Code's PreToolUse hook on the lab calls, so that changing the phone
 outside devlab is refused when it is tried, not remembered: a Bash command that reaches a phone by ssh,
-scp, sftp, rsync or sshpass exits 2, saying why. It needs no manifest.
+scp, sftp, rsync or sshpass exits 2, saying why. So does raw `fastboot` with any verb but `devices`, `getvar` and
+`help` (and `-w` or `--set-active` with any): it would change whichever phone it reaches. It needs no manifest.
 
 The ways every project shares - no git push to main, no Python, the practices and the inbox at every
 session start - are the hooks of the ideal-agent plugin (https://github.com/grenudi/ideal-agent), installed
@@ -134,6 +138,23 @@ installed. One kernel is kept at a time.
 `devlab kernel try NAME --dtb FILE` boots installed kernel NAME - its kernel, initramfs and modules -
 once with another device tree, as the entry NAME-dt: a device-tree change is one boot, even on the kept
 kernel. A try is judged by the entry the bootloader says it booted (LoaderEntrySelected).
+
+## A phone over fastboot
+
+A phone that speaks only fastboot until Linux runs on it (google-walleye), or any phone sitting in its
+bootloader, is reached by its manifest's serial - never "whichever phone is in fastboot", as a lab may
+hold two:
+
+    [fastboot]
+    serial = "FA81N1A00790"   # as fastboot devices lists it
+    writes = false            # the default: devlab flash refuses this phone; say true only by a decision
+
+`devlab fastboot state` says whether it is in fastboot and what its bootloader says of itself (product,
+unlocked, slot-count, current-slot, versions); `getvar NAME` reads one. `boot now BOOT.IMG` boots an
+Android boot image from memory - nothing written, both slots as they were, a power cycle comes back to
+them - and says whether the phone left fastboot. `reboot now` goes to the active slot, `--bootloader`
+back to fastboot. None of them writes, erases or switches a slot. The lease and the hold are the
+phone's own (by codename), so one phone's keeper never blocks another's.
 
 ## The phone's keeper
 
