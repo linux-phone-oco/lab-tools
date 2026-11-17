@@ -13,6 +13,10 @@
 //!
 //!   devlab-health           run every check now; exit 1 when unhealthy
 //!   devlab-health latest    print the latest report
+//!   devlab-health tone make|find ...   a test tone made, and found in a recording (src/tone.rs) -
+//!                           what a check computes, it asks of this one binary, not of awk
+
+mod tone;
 
 use serde_json::{json, Value};
 use std::io::Read;
@@ -304,6 +308,10 @@ fn prune(out: &Path) {
 
 fn main() {
     let out = Path::new(OUT);
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("tone") {
+        std::process::exit(tone::main(&args[1..]));
+    }
     if std::env::args().nth(1).as_deref() == Some("latest") {
         print!(
             "{}",

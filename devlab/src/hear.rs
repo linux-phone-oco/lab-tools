@@ -65,28 +65,7 @@ pub fn write_tone(path: &Path, freq: f64, channel: &str, level_dbfs: f64) -> Res
 
 /// A recording as one channel of samples in -1..1, and its rate.
 pub fn read_mono(path: &Path) -> Result<(Vec<f64>, u32)> {
-    let mut r =
-        hound::WavReader::open(path).with_context(|| format!("reading {}", path.display()))?;
-    let spec = r.spec();
-    let all: Vec<f64> = match spec.sample_format {
-        hound::SampleFormat::Float => r
-            .samples::<f32>()
-            .map(|s| s.map(f64::from))
-            .collect::<Result<_, _>>()?,
-        hound::SampleFormat::Int => {
-            let full = f64::from(1u32 << (spec.bits_per_sample - 1));
-            r.samples::<i32>()
-                .map(|s| s.map(|v| f64::from(v) / full))
-                .collect::<Result<_, _>>()?
-        }
-    };
-    let ch = usize::from(spec.channels.max(1));
-    Ok((
-        all.chunks(ch)
-            .map(|c| c.iter().sum::<f64>() / ch as f64)
-            .collect(),
-        spec.sample_rate,
-    ))
+    tone::wav::read_mono(path).with_context(|| format!("reading {}", path.display()))
 }
 
 /// Whether the tone was heard: it stands out of the noise around it, and above the silent room.

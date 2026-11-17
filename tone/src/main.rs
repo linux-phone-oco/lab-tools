@@ -51,29 +51,15 @@ fn main() -> Result<()> {
             rate,
             channels,
             out,
-        } => {
-            let spec = hound::WavSpec {
-                channels,
-                sample_rate: rate,
-                bits_per_sample: 16,
-                sample_format: hound::SampleFormat::Int,
-            };
-            let mut w = hound::WavWriter::create(&out, spec)
-                .with_context(|| format!("writing {}", out.display()))?;
-            for s in tone::tone(freq, secs, level, rate) {
-                for _ in 0..channels {
-                    w.write_sample((s * f64::from(i16::MAX)).round() as i16)?;
-                }
-            }
-            w.finalize()?;
-            Ok(())
-        }
+        } => tone::wav::write(&out, &tone::tone(freq, secs, level, rate), rate, channels)
+            .with_context(|| format!("writing {}", out.display())),
         Cmd::Find {
             freq,
             min_snr,
             input,
         } => {
-            let (samples, rate) = read_mono(&input)?;
+            let (samples, rate) = tone::wav::read_mono(&input)
+                .with_context(|| format!("reading {}", input.display()))?;
             let f = tone::find(&samples, rate, freq, min_snr);
             let r = |x: f64| (x * 10.0).round() / 10.0;
             println!(
@@ -84,30 +70,4 @@ fn main() -> Result<()> {
             std::process::exit(if f.found { 0 } else { 1 });
         }
     }
-}
-
-/// A WAV file as one channel (the channels averaged), samples in -1..1, and its rate.
-fn read_mono(path: &PathBuf) -> Result<(Vec<f64>, u32)> {
-    let mut r =
-        hound::WavReader::open(path).with_context(|| format!("reading {}", path.display()))?;
-    let spec = r.spec();
-    let ch = usize::from(spec.channels.max(1));
-    let flat: Vec<f64> = match spec.sample_format {
-        hound::SampleFormat::Float => r
-            .samples::<f32>()
-            .map(|s| s.map(f64::from))
-            .collect::<Result<_, _>>()?,
-        hound::SampleFormat::Int => {
-            let full = f64::from(1u32 << (spec.bits_per_sample - 1));
-            r.samples::<i32>()
-                .map(|s| s.map(|v| f64::from(v) / full))
-                .collect::<Result<_, _>>()?
-        }
-    };
-    Ok((
-        flat.chunks(ch)
-            .map(|c| c.iter().sum::<f64>() / c.len() as f64)
-            .collect(),
-        spec.sample_rate,
-    ))
 }

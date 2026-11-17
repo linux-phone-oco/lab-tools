@@ -69,6 +69,12 @@ Make a test tone, and find it in a recording - a device's speaker tests its micr
 neighbouring frequencies, off the tone and its harmonics: found means it stands `--min-snr` dB
 (20 by default) above them.
 
+On the phone the same crate answers as `devlab-health tone make|find` (no clap: the runner stays small;
+`--raw` makes or reads s16le mono as `pacat`/`parecord --raw` do, `--from`/`--to` keep the seconds where
+the tone sounds): a check that plays a tone and listens hands the numbers to this tested code instead of
+awk, and reads its JSON line with `json_field` from the suite's `lib.sh`. Analysis that counts, times or
+keeps a state joins devlab-health as a subcommand the same way (decision 2026-11-17-health-checks-shell-and-rust).
+
 Development: `nix-shell` (nixpkgs pinned, as in lab-agent), `cargo test`. The command line uses clap
 for now; moving it onto argenv, as lab-agent uses, is a contained change.
 
