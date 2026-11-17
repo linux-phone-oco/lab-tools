@@ -348,6 +348,21 @@ mod tests {
     }
 
     #[test]
+    fn test_sounds_are_quiet_unless_the_manifest_says_otherwise() {
+        let h = Hear::default();
+        assert_eq!((h.level(), h.volume()), (-40.0, 25), "quiet by default");
+        assert_eq!(h.env(), "TEST_TONE_DBFS='-40'\nTEST_VOLUME='25%'\n");
+        let loud: Hear = toml::from_str("level_dbfs = 6.0\nvolume = 250").unwrap();
+        assert_eq!(
+            (loud.level(), loud.volume()),
+            (0.0, 100),
+            "never above full scale or 100%"
+        );
+        let said: Hear = toml::from_str("level_dbfs = -30.0\nvolume = 40").unwrap();
+        assert_eq!((said.level(), said.volume()), (-30.0, 40));
+    }
+
+    #[test]
     fn health_expectations_become_the_suites_env_file() {
         let h: Health = toml::from_str(
             "sound_cards = [\"POCO X3\"]\nremoteprocs = { adsp = \"audio-speaker\", modem = \"modem-data\" }\nknown_failed_units = [\"qbootctl.service\"]\nabsent = [\"modem\"]",
@@ -409,11 +424,38 @@ mod tests {
     }
 }
 
-/// The tones the lab's ear listens for (`devlab hear`); none named means one on each side.
-#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+/// The tones the lab's ear listens for (`devlab hear`); none named means one on each side. How loud
+/// any test sound may be is said here too, quiet by default: a phone in a home must never shout - a
+/// full-scale tone at night once woke the author. Every check that plays sound reads the same two
+/// values (TEST_TONE_DBFS, TEST_VOLUME in the phone's health.env).
+#[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct Hear {
     #[serde(default)]
     pub tone: Vec<HearTone>,
+    /// the tone's level in the file, dBFS (at most 0)
+    #[serde(default = "quiet_dbfs")]
+    pub level_dbfs: f64,
+    /// the phone's output volume while a test sound plays, percent (at most 100)
+    #[serde(default = "quiet_volume")]
+    pub volume: u32,
+}
+
+fn quiet_dbfs() -> f64 {
+    -40.0
+}
+
+fn quiet_volume() -> u32 {
+    25
+}
+
+impl Default for Hear {
+    fn default() -> Self {
+        Hear {
+            tone: Vec::new(),
+            level_dbfs: quiet_dbfs(),
+            volume: quiet_volume(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -438,6 +480,25 @@ fn default_component() -> String {
 }
 
 impl Hear {
+    /// The level, never above full scale.
+    pub fn level(&self) -> f64 {
+        self.level_dbfs.min(0.0)
+    }
+
+    /// The volume, never above 100%.
+    pub fn volume(&self) -> u32 {
+        self.volume.min(100)
+    }
+
+    /// The lines every check that plays sound reads from the phone's health.env.
+    pub fn env(&self) -> String {
+        format!(
+            "TEST_TONE_DBFS='{}'\nTEST_VOLUME='{}%'\n",
+            self.level(),
+            self.volume()
+        )
+    }
+
     pub fn tones(&self) -> Vec<HearTone> {
         if !self.tone.is_empty() {
             return self.tone.clone();

@@ -17,8 +17,6 @@ use tone::Finding;
 
 const RATE: u32 = 48_000;
 const SECONDS: f64 = 2.0;
-/// The tone's level in the file, dBFS; the phone's volume is set to a known value while it plays.
-const LEVEL: f64 = -12.0;
 /// How far a tone must stand above the noise around it, and above the silent room, to count as heard.
 const MIN_DB: f64 = 10.0;
 
@@ -47,7 +45,7 @@ pub fn microphone() -> Result<String> {
 }
 
 /// A stereo file with the tone on the named channel (left, right or both) and silence on the other.
-pub fn write_tone(path: &Path, freq: f64, channel: &str) -> Result<()> {
+pub fn write_tone(path: &Path, freq: f64, channel: &str, level_dbfs: f64) -> Result<()> {
     let spec = hound::WavSpec {
         channels: 2,
         sample_rate: RATE,
@@ -56,7 +54,7 @@ pub fn write_tone(path: &Path, freq: f64, channel: &str) -> Result<()> {
     };
     let mut w = hound::WavWriter::create(path, spec)
         .with_context(|| format!("writing {}", path.display()))?;
-    for x in tone::tone(freq, SECONDS, LEVEL, RATE) {
+    for x in tone::tone(freq, SECONDS, level_dbfs.min(0.0), RATE) {
         let v = (x * f64::from(i16::MAX)) as i16;
         w.write_sample(if channel != "right" { v } else { 0 })?;
         w.write_sample(if channel != "left" { v } else { 0 })?;
@@ -151,13 +149,16 @@ pub fn hear(device: &Device, phone: &Phone) -> Result<Vec<Check>> {
         let (room_samples, room_rate) = read_mono(&silent)?;
         for t in &tones {
             let local = work.join("tone.wav");
-            write_tone(&local, t.freq, &t.channel)?;
+            write_tone(&local, t.freq, &t.channel, device.hear.level())?;
             phone.put(local.to_str().context("path")?, "/tmp/devlab-tone.wav")?;
             let heard_file = work.join(format!("{}.wav", t.name));
-            // a known volume while it plays, and the phone's own volume back afterwards
-            let play = "export XDG_RUNTIME_DIR=/run/user/$(id -u); v=$(pactl get-sink-volume @DEFAULT_SINK@ | grep -o '[0-9]*%' | head -n1); pactl set-sink-volume @DEFAULT_SINK@ 60%; paplay /tmp/devlab-tone.wav; pactl set-sink-volume @DEFAULT_SINK@ \"${v:-50%}\"\n";
+            // the manifest's quiet volume while it plays, and the phone's own volume back afterwards
+            let play = format!(
+                "export XDG_RUNTIME_DIR=/run/user/$(id -u); v=$(pactl get-sink-volume @DEFAULT_SINK@ | grep -o '[0-9]*%' | head -n1); pactl set-sink-volume @DEFAULT_SINK@ {}%; paplay /tmp/devlab-tone.wav; pactl set-sink-volume @DEFAULT_SINK@ \"${{v:-50%}}\"\n",
+                device.hear.volume()
+            );
             record(&mic, &heard_file, SECONDS + 2.5, || {
-                let (ok, out) = phone.sh(play)?;
+                let (ok, out) = phone.sh(&play)?;
                 if !ok {
                     bail!("the phone could not play the tone: {}", out.trim());
                 }
@@ -215,7 +216,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("devlab-hear-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let f = dir.join("left.wav");
-        write_tone(&f, 1000.0, "left").unwrap();
+        write_tone(&f, 1000.0, "left", -12.0).unwrap();
         let (samples, rate) = read_mono(&f).unwrap();
         assert_eq!(rate, RATE);
         let found = tone::find(&samples, rate, 1000.0, MIN_DB);
