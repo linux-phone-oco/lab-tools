@@ -1,0 +1,19 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [0.1.0](https://github.com/linux-phone-oco/lab-tools/releases/tag/devlab-health-v0.1.0) - 2026-11-17
+
+### Added
+
+- Deep sleep's check: soc-sleeps reads the SoC's own counters after every boot ([#39](https://github.com/linux-phone-oco/lab-tools/pull/39))
+- The phone checks its own health after every boot: devlab-health and devlab suite ([#29](https://github.com/linux-phone-oco/lab-tools/pull/29))
+
+### Fixed
+
+- Test sounds are quiet: a level and volume per phone, -40 dBFS at 25% by default ([#45](https://github.com/linux-phone-oco/lab-tools/pull/45))
