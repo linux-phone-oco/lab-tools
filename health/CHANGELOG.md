@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-health-v0.1.7...lpoco-health-v0.2.0) - 2026-11-17
+
+### Added
+
+- devlab becomes lpoco-lab and tone lpoco-tone, old names kept as second binaries ([#86](https://github.com/linux-phone-oco/lab-tools/pull/86))
+
+### Other
+
+- lpoco dispatcher ([#83](https://github.com/linux-phone-oco/lab-tools/pull/83))
+
 ## [0.1.7](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-health-v0.1.6...lpoco-health-v0.1.7) - 2026-11-17
 
 ### Fixed
