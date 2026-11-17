@@ -9,14 +9,8 @@ title = "devlab"
 kind = "tool"
 parent = "linux-phone-oco"
 
+# Its records - backlog, decisions, research, log, milestones and the rest - are kept in linux-phone-oco/docs,
+# the project's one database, each row naming this place (project = "linux-phone-oco/lab-tools"), and written there
+# through tad's named records (tad r NAME --project lab-tools ...). The record of its work is its commits and pull
+# requests. Decided 2026-11-17: docs' decision 2026-11-17-one-database.
 [exports]
-glimpses = "oco/glimpses.json"
-decisions = "oco/decisions.json"
-concepts = "oco/concepts.json"
-translations = "oco/translations.json"
-workings = "oco/workings.json"
-idea = "oco/idea.json"
-backlog = "oco/backlog.json"
-milestones = "oco/milestones.json"
-session_log = "oco/session_log.json"
-research = "oco/research.json"
