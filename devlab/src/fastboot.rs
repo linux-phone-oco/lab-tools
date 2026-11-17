@@ -38,9 +38,6 @@ const SLOTS: &[&str] = &[
     "slot-retry-count:b",
 ];
 
-/// Google's vendor and the product its Android adb gadget answers with.
-const ANDROID_ADB: &str = "18d1:4ee7";
-
 /// The phone's serial, as its manifest says it: there is no reaching it by fastboot without one.
 pub fn serial(device: &Device) -> Result<&str> {
     let s = device.fastboot.serial.trim();
@@ -163,9 +160,10 @@ pub fn state(device: &Device) -> Result<String> {
         return Ok(format!(
             "{}: {s} is not in fastboot now ({})",
             device.device.codename,
-            elsewhere(device, s).unwrap_or("running a system, off, or not plugged in")
+            elsewhere(device, s).unwrap_or_else(|| "gone from USB: neither its serial nor anything on its USB port answers - off, or it needs hands".into())
         ));
     }
+    remember_port(device, s);
     let mut out = format!("{}: {s} is in fastboot\n", device.device.codename);
     for name in STATE {
         let (_, said) = fastboot(s, &["getvar", name])?;
@@ -178,27 +176,67 @@ pub fn state(device: &Device) -> Result<String> {
     Ok(out)
 }
 
-/// Where the phone answers, when not in fastboot: Android's adb, or Linux on its USB network.
-fn elsewhere(device: &Device, serial: &str) -> Option<&'static str> {
-    let adb = Command::new("adb").arg("devices").output().ok();
-    if adb.is_some_and(|o| {
-        String::from_utf8_lossy(&o.stdout)
-            .lines()
-            .any(|l| l.split_whitespace().next() == Some(serial))
-    }) {
-        return Some("Android, its adb answering");
+/// A USB device as sysfs says it: its port path (e.g. "1-4"), vendor:product, and serial ("" where none).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Usb {
+    pub port: String,
+    pub id: String,
+    pub serial: String,
+}
+
+fn usb_devices() -> Vec<Usb> {
+    let Ok(dir) = std::fs::read_dir("/sys/bus/usb/devices") else {
+        return Vec::new();
+    };
+    let read = |p: &Path, f: &str| {
+        std::fs::read_to_string(p.join(f))
+            .map(|s| s.trim().to_string())
+            .unwrap_or_default()
+    };
+    dir.flatten()
+        .filter_map(|e| {
+            let p = e.path();
+            let vendor = read(&p, "idVendor");
+            (!vendor.is_empty()).then(|| Usb {
+                port: e.file_name().to_string_lossy().into_owned(),
+                id: format!("{vendor}:{}", read(&p, "idProduct")),
+                serial: read(&p, "serial"),
+            })
+        })
+        .collect()
+}
+
+/// The USB port this phone sits on while in fastboot, remembered in its state: another phone's gadget
+/// never answers for it (2026-11-17: surya's postmarketOS gadget was taken for walleye's Linux).
+fn remember_port(device: &Device, serial: &str) {
+    if let Some(u) = usb_devices().into_iter().find(|u| u.serial == serial) {
+        let _ = std::fs::create_dir_all(device.state_dir());
+        let _ = std::fs::write(device.state_dir().join("usb-port"), &u.port);
     }
-    let usb = Command::new("lsusb").output().ok();
-    if usb.is_some_and(|o| String::from_utf8_lossy(&o.stdout).contains(ANDROID_ADB)) {
-        return Some("Android's adb gadget on USB (18d1:4ee7)");
+}
+
+/// Where this phone answers when not in fastboot - found only by its own serial, or on the USB port it
+/// sat on in fastboot; never by a vendor:product alone or by an address another phone may share.
+pub fn whereabouts(devices: &[Usb], serial: &str, port: Option<&str>) -> Option<String> {
+    let says = |u: &Usb| match u.id.as_str() {
+        "18d1:4ee7" | "18d1:4ee2" | "18d1:4ee8" => "Android, its adb gadget".to_string(),
+        "18d1:d001" => "Linux, the postmarketOS USB gadget".to_string(),
+        "18d1:4ee0" | "18d1:d00d" => "its bootloader".to_string(),
+        id => format!("a USB device {id}"),
+    };
+    if let Some(u) = devices.iter().find(|u| u.serial == serial) {
+        return Some(format!("{} (its serial, port {})", says(u), u.port));
     }
-    let linux = device.connection.addresses.iter().any(|a| {
-        Command::new("ping")
-            .args(["-c", "1", "-W", "1", a])
-            .output()
-            .is_ok_and(|o| o.status.success())
-    });
-    linux.then_some("Linux, its USB network answering")
+    let port = port?;
+    devices
+        .iter()
+        .find(|u| u.port == port)
+        .map(|u| format!("{} (on its USB port {port})", says(u)))
+}
+
+fn elsewhere(device: &Device, serial: &str) -> Option<String> {
+    let port = std::fs::read_to_string(device.state_dir().join("usb-port")).ok();
+    whereabouts(&usb_devices(), serial, port.as_deref().map(str::trim))
 }
 
 /// Whether the file is an Android boot image (its magic), the only thing `fastboot boot` takes here.
@@ -228,12 +266,14 @@ pub fn boot(device: &Device, image: &Path) -> Result<String> {
     }
     let _held = crate::hold::hold(device)?;
     need(s)?;
+    remember_port(device, s);
     let before = slots(s)?;
     let mut out = format!("before: {}\n", said_slots(&before));
     let path = image.to_str().context("the image's path")?;
     let (ok, said) = fastboot(s, &["boot", path])?;
     let start = Instant::now();
     let mut left = None;
+    let mut came = false;
     while start.elapsed() < Duration::from_secs(180) {
         let here = present(s)?;
         match left {
@@ -264,12 +304,19 @@ pub fn boot(device: &Device, image: &Path) -> Result<String> {
                         "came back as {where_} after {} s\n",
                         start.elapsed().as_secs()
                     ));
+                    came = true;
                     break;
                 }
             }
             None => {}
         }
         std::thread::sleep(Duration::from_secs(3));
+    }
+    if left.is_some() && !came && !present(s)? {
+        out.push_str(
+            "gone from USB after three minutes: neither its serial nor anything on its USB port answers - \
+             it needs hands (power, a button), not a guess\n",
+        );
     }
     if left.is_some() && !ok {
         out.push_str(&format!(
@@ -382,6 +429,33 @@ mod tests {
             "the slots' flags changed: current-slot a -> b, slot-unbootable:a no -> yes"
         );
         assert_eq!(changed(&before, &before), "the slots' flags did not change");
+    }
+
+    #[test]
+    fn a_phone_is_found_by_its_serial_or_its_port_never_by_another_phones_gadget() {
+        let u = |port: &str, id: &str, serial: &str| Usb {
+            port: port.into(),
+            id: id.into(),
+            serial: serial.into(),
+        };
+        // 2026-11-17: walleye left USB; surya's postmarketOS gadget sat on another port
+        let surya = u("3-2", "18d1:d001", "");
+        assert_eq!(
+            whereabouts(std::slice::from_ref(&surya), "FA81N1A00790", Some("1-4")),
+            None,
+            "another phone's gadget is not this phone"
+        );
+        assert_eq!(
+            whereabouts(std::slice::from_ref(&surya), "FA81N1A00790", None),
+            None
+        );
+        let adb = u("1-4", "18d1:4ee7", "FA81N1A00790");
+        assert!(whereabouts(&[surya.clone(), adb], "FA81N1A00790", None)
+            .unwrap()
+            .starts_with("Android"));
+        let linux = u("1-4", "18d1:d001", "");
+        let w = whereabouts(&[surya, linux], "FA81N1A00790", Some("1-4")).unwrap();
+        assert!(w.starts_with("Linux") && w.contains("1-4"), "{w}");
     }
 
     #[test]
