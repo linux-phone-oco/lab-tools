@@ -40,3 +40,10 @@ name = "lpoco-tone"
 version_group = "lpoco"
 git_tag_name = "lpoco-tone-v{{ version }}"
 git_release_enable = true
+
+# lpoco-host prepares the lab host (udev access, modules, the host's tools at pins)
+[[package]]
+name = "lpoco-host"
+version_group = "lpoco"
+git_tag_name = "lpoco-host-v{{ version }}"
+git_release_enable = true

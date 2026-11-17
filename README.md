@@ -209,3 +209,25 @@ From the release tags, with cargo; the family has one version, so the tags of on
 
 `lpoco --version` is the tag's version and `lpoco list` shows bringup. Proof: `lpoco/tests/install_from_tag.rs`
 installs the newest release into a clean root and checks both, and that bringup refuses a wrong pin.
+
+## lpoco host: the lab host prepared from declarations
+
+`lpoco-host` (run as `lpoco host ...`) prepares the machine the lab runs on from two declarations: the lab's own
+`lab.toml` (`--lab FILE` / `LPOCO_LAB`; default `~/Projects/lab-machine/lab.toml`: `devices` a glob, default
+`~/Projects/linux-phone-oco/*/device.toml`; `root` a prefix; `[tools]` each host tool at its pin) and each device's
+`device.toml` `[host]` (`modules`, and a `[[host.gadget]]` per `serial` with `access = ["block", "tty"]`).
+
+    lpoco host [plan]        a diff per file and the exact root commands; changes nothing
+    lpoco host prepare now   write /etc/udev/rules.d/70-lpoco-CODENAME.rules and /etc/modules-load.d/lpoco.conf,
+                             reload and trigger udev, modprobe, install the tools - only where they differ
+    lpoco host check         the lab user opens each declared node that is present; each tool is at its pin
+
+Root is one prefix, `LPOCO_ROOT`, then `DEVLAB_ROOT`, then `sudo -n lab-agent root-exec --`; the commands are a fixed
+list the plan prints. `lab.toml` tools: `lpoco = "0.2.0"` installs the family from its release tags with cargo into
+`~/.local`; `[tools.NAME]` with `git`, `path`, `rev`, `version` installs a script of another repository at a commit
+into `~/.local/bin`. A device whose `[tools] lpoco` the lab's pin does not meet is named and nothing is prepared for it.
+
+`lpoco = "X.Y.Z"` must be a full version (it names the release tags); a tool with no source yet is `oco-work = "unknown"`
+and is listed as "not known yet". Codenames, serials, module and tool names that reach a root command or a file name are
+refused unless letters, digits, `.`, `_`, `-`. `/etc/udev/rules.d/51-android.rules` is named as a wide rule and kept:
+prepare never edits or removes it. An old `devlab`/`tone` first on PATH that is off the pin is named by plan and check.
