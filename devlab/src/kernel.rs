@@ -226,6 +226,50 @@ pub fn install(
     result
 }
 
+/// What a root shell does to set up a device-tree try of installed kernel NAME: an entry NAME-dt with
+/// one try, NAME's kernel, initramfs and modules and the device tree put at /tmp/te-dtb, bless masked -
+/// whatever NAME is (kept or test). The entry says NAME's release, so removing NAME-dt keeps the modules.
+pub fn with_dtb_script(name: &str, dtb: &str) -> String {
+    format!(
+        "set -e\ncd /boot/loader/entries\n\
+         from=$(ls pmos-{name}.conf pmos-{name}+*.conf 2>/dev/null | head -n1)\n\
+         [ -n \"$from\" ] || {{ echo 'pmos-{name} is not installed' >&2; rm -f /tmp/te-dtb; exit 1; }}\n\
+         rm -f pmos-{name}-dt.conf pmos-{name}-dt+*.conf\nrm -rf /boot/dtbs-{name}-dt\n\
+         mkdir -p /boot/dtbs-{name}-dt/qcom && install -m 644 /tmp/te-dtb /boot/dtbs-{name}-dt/qcom/{dtb} && rm -f /tmp/te-dtb\n\
+         release=$(sed -n 's/^{RELEASE_MARK}//p' \"$from\")\n\
+         {{ [ -z \"$release\" ] || echo \"{RELEASE_MARK}$release\"\n\
+         sed -e '/^{RELEASE_MARK}/d' -e 's/^title .*/title postmarketOS (test device tree: {name}, {dtb})/' -e 's/^sort-key .*/sort-key 0-test-{name}-dt/' \
+         -e 's|^devicetree .*|devicetree dtbs-{name}-dt/qcom/{dtb}|' \
+         -e '/^options /s/ systemd.mask=systemd-bless-boot.service//' -e '/^options /s/$/ systemd.mask=systemd-bless-boot.service/' \"$from\"; }} > 'pmos-{name}-dt+1-0.conf'\n\
+         sync\necho 'installed: pmos-{name}-dt+1-0.conf (one try): the kernel of pmos-{name} with {dtb}'\n"
+    )
+}
+
+/// Sets up a device-tree try of installed kernel NAME; the try is then NAME-dt's.
+pub fn with_dtb(phone: &Phone, name: &str, dtb: &Path) -> Result<String> {
+    if !valid_name(name) {
+        bail!("{name:?}: not a test kernel name");
+    }
+    let file = dtb
+        .file_name()
+        .and_then(|f| f.to_str())
+        .context("the device tree's file name")?;
+    if !file.ends_with(".dtb")
+        || !file
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+    {
+        bail!("{file:?}: a device tree is a .dtb, its name letters, digits, - _ and .");
+    }
+    phone.put(dtb.to_str().context("path")?, "/tmp/te-dtb")?;
+    let (ok, out) = phone.root(&with_dtb_script(name, file))?;
+    eprint!("{out}");
+    if !ok {
+        bail!("setting up the device-tree try failed");
+    }
+    Ok(format!("{name}-dt"))
+}
+
 pub fn try_once(phone: &Phone, name: &str) -> Result<()> {
     if !valid_name(name) {
         bail!("{name:?}: not a test kernel name");
@@ -471,6 +515,27 @@ mod tests {
         assert!(ok && said.contains("does not say which release"), "{said}");
         assert!(root.join("lib/modules/7.1.0-x").exists());
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_device_tree_try_reuses_the_kernel_once() {
+        let s = with_dtb_script("mic", "sm7150-xiaomi-surya-huaxing.dtb");
+        assert!(s.contains("> 'pmos-mic-dt+1-0.conf'"), "one try");
+        assert!(s.contains(
+            "s|^devicetree .*|devicetree dtbs-mic-dt/qcom/sm7150-xiaomi-surya-huaxing.dtb|"
+        ));
+        assert!(
+            s.contains("s/^sort-key .*/sort-key 0-test-mic-dt/"),
+            "ahead of the kept kernel"
+        );
+        assert!(
+            s.contains("'/^options /s/$/ systemd.mask=systemd-bless-boot.service/'"),
+            "never blessed"
+        );
+        assert!(
+            s.contains("echo \"# devlab release $release\""),
+            "its release said, so remove keeps the modules"
+        );
     }
 
     #[test]
