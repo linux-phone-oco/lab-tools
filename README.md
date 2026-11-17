@@ -175,3 +175,20 @@ keeper ended or was cut off, and the next one may take it.
 a program whose `--version` differs from lpoco's is refused, naming both. `lpoco list` shows the
 programs found with versions; `lpoco completions SHELL` and `lpoco man` come from the argenv declaration.
 Lab-side only: the phone runs `lpoco-health` directly and gets no dispatcher.
+
+## lpoco bringup: boot images on the host
+
+`lpoco-bringup` (run as `lpoco bringup ...`) makes the files that bring a phone up, on the host; devlab puts them
+on the phone. First piece, boot images with header v0, the header facts read from the `[boot]` table of the
+device's `device.toml` (postmarketOS deviceinfo's words: `kernel_offset`, `ramdisk_offset`, `tags_offset`,
+`pagesize`, `cmdline`, `partition_size`, `msm_id`, `os_version`, `os_patch_level`, ...):
+
+    lpoco bringup image pack --kernel K [--dtb DTB] --ramdisk R --out IMG    byte for byte as mkbootimg writes it
+    lpoco bringup image check IMG        count it against [boot]: magic, v0, size, offsets, os words, cmdline,
+                                         the appended dtb and its qcom,msm-id; exit 1 on a miss
+    lpoco bringup image info IMG         the header's facts as a [boot] table
+    lpoco bringup image unpack IMG --out DIR
+
+`--device FILE` (or `LPOCO_DEVICE`) names the manifest; `device.toml` in the current folder otherwise. The packer
+is proven against mkbootimg by test (`bringup/tests/pack_v0.rs`; where android-tools is absent the test says
+"not measured: no mkbootimg"). Swap, initramfs and the rest are their own items.

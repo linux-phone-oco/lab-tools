@@ -8,3 +8,13 @@ license = "MIT OR Apache-2.0"
 
 [lib]
 name = "lpoco_bringup"
+
+[dependencies]
+# the header layer: parse and write the Android boot image header (v0 proven byte for byte against mkbootimg,
+# tests/pack_v0.rs; research bringup-image-v0-oxide-writes-v0)
+abootimg-oxide = "0.5"
+sha1 = "0.10"
+toml = "0.8"
+serde = { version = "1", features = ["derive"] }
+# the command line is declared once (argenv), not parsed by hand
+argenv-resolve = "0.4"
