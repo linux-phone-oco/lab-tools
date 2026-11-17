@@ -46,6 +46,7 @@ fn run(r: &argenv_resolve::Resolution) -> Result<i32, String> {
     let device = Contract::DEVICE
         .get_from(r)
         .unwrap_or_else(|| "device.toml".into());
+    lpoco_bringup::pin::check(Path::new(&device), VERSION)?;
     match verb {
         Verb::Info => {
             let bytes = read(&need(Contract::IMAGE.get_from(r), "an image (IMG)")?)?;
@@ -78,7 +79,10 @@ fn run(r: &argenv_resolve::Resolution) -> Result<i32, String> {
             if let Some(dtb) = Contract::DTB.get_from(r) {
                 kernel.extend(read(&dtb)?);
             }
-            let ramdisk = read(&need(Contract::RAMDISK.get_from(r), "--ramdisk FILE")?)?;
+            let mut ramdisk = read(&need(Contract::RAMDISK.get_from(r), "--ramdisk FILE")?)?;
+            if let Some(exe) = boot.hooks.as_ref().and_then(|h| h.get("parts")) {
+                (kernel, ramdisk) = hook_parts(exe, Path::new(&device), kernel, ramdisk)?;
+            }
             let out = need(Contract::OUT.get_from(r), "--out IMG")?;
             let img = image::pack(&boot, &kernel, &ramdisk)?;
             if let Some(max) = boot.partition_size {
@@ -110,4 +114,30 @@ fn run(r: &argenv_resolve::Resolution) -> Result<i32, String> {
             Ok(if fail == 0 { 0 } else { 1 })
         }
     }
+}
+
+/// The `parts` hook: the kernel and ramdisk are put in a scratch folder (the user's files stay as they are),
+/// the manifest's executable is called with their two paths (kernel, ramdisk) and may change them, and what
+/// they hold afterwards is what gets packed.
+fn hook_parts(
+    exe: &str,
+    device: &Path,
+    kernel: Vec<u8>,
+    ramdisk: Vec<u8>,
+) -> Result<(Vec<u8>, Vec<u8>), String> {
+    let dir = std::env::temp_dir().join(format!("lpoco-bringup-parts-{}", std::process::id()));
+    fs::create_dir_all(&dir).map_err(|e| format!("cannot make {}: {e}", dir.display()))?;
+    let (k, rd) = (dir.join("kernel"), dir.join("ramdisk"));
+    let result = (|| {
+        fs::write(&k, &kernel).map_err(|e| format!("cannot write {}: {e}", k.display()))?;
+        fs::write(&rd, &ramdisk).map_err(|e| format!("cannot write {}: {e}", rd.display()))?;
+        let mdir = device
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or(Path::new("."));
+        lpoco_bringup::hooks::run("parts", exe, mdir, &[&k, &rd])?;
+        Ok((read(k.to_str().unwrap())?, read(rd.to_str().unwrap())?))
+    })();
+    let _ = fs::remove_dir_all(&dir);
+    result
 }
