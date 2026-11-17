@@ -27,15 +27,30 @@ pub enum Came {
 /// Judges a try from what the phone says after the new boot: the running release, the boot entries
 /// listing, and whether the timeout hook's log is there.
 /// `selected` is the entry the bootloader says it booted (LoaderEntrySelected): the surest word, as
-/// two entries may share one release; the release's name is read only where the bootloader says none.
-pub fn judge(release: &str, name: &str, entries: &str, timed_out: bool, selected: &str) -> Came {
+/// two entries may share one release. Where the bootloader says none, the running `cmdline`'s
+/// `initrd=initramfs-NAME` says it (2026-11-17: a try whose release equalled the test kernel's was read
+/// as stock five times); the release's name is read only where neither says.
+pub fn judge(
+    release: &str,
+    name: &str,
+    entries: &str,
+    timed_out: bool,
+    selected: &str,
+    cmdline: &str,
+) -> Came {
     let release = release.trim().to_string();
     let selected = selected.trim();
     if selected == format!("pmos-{name}.conf") || selected.starts_with(&format!("pmos-{name}+")) {
         return Came::Booted { release };
     }
-    if selected.is_empty() && release.ends_with(&format!("-{name}")) {
-        return Came::Booted { release };
+    if selected.is_empty() {
+        let booted = match booted_initrd(cmdline) {
+            Some(running) => running == name,
+            None => release.ends_with(&format!("-{name}")),
+        };
+        if booted {
+            return Came::Booted { release };
+        }
     }
     let mine: Vec<&str> = entries
         .lines()
@@ -59,11 +74,21 @@ pub fn judge(release: &str, name: &str, entries: &str, timed_out: bool, selected
     }
 }
 
+/// The entry whose own initramfs the running command line carries (`initrd=initramfs-NAME`, with
+/// or without a leading slash): only a test entry adds one; none where stock runs.
+pub fn booted_initrd(cmdline: &str) -> Option<&str> {
+    cmdline.split_whitespace().find_map(|t| {
+        t.strip_prefix("initrd=")?
+            .trim_start_matches(['/', '\\'])
+            .strip_prefix("initramfs-")
+    })
+}
+
 impl Came {
     /// In plain words, with what to do next.
     pub fn say(&self, name: &str) -> String {
         match self {
-            Came::Booted { release } => format!("booted the test kernel {release} - reboot to return to stock"),
+            Came::Booted { release } => format!("booted the test kernel {release}: the phone stays on it until the next reboot (devlab phone reboot returns it to stock; a kernel of the same release installs only after that)"),
             Came::NotChosen { release } => format!("the bootloader did not choose pmos-{name}: stock {release} runs, and the entry still has its try"),
             Came::StoppedEarly { release } => format!("pmos-{name} was chosen and stopped before it could log anything - is it an EFI image? stock {release} came back"),
             Came::TimedOut { release } => format!("pmos-{name} ran for five minutes without reaching a system; its log is saved (devlab kernel log); stock {release} came back"),
@@ -98,12 +123,14 @@ pub fn try_and_report(device: &Device, phone: &Phone, name: &str) -> Result<Stri
         "ls /boot/loader/entries/; [ -f /boot/test-boot.log ] && echo TEST-BOOT-LOG; true\n",
     )?;
     let (_, selected) = p.sh(SELECTED)?;
+    let (_, cmdline) = p.sh("cat /proc/cmdline\n")?;
     let came = judge(
         &release,
         name,
         &entries,
         entries.contains("TEST-BOOT-LOG"),
         &selected,
+        &cmdline,
     );
     Ok(format!(
         "after {} s: {}",
@@ -125,6 +152,7 @@ mod tests {
                 "wcd",
                 "pmos-wcd+0-1.conf\npmos.conf",
                 false,
+                "",
                 ""
             ),
             Came::Booted {
@@ -132,11 +160,11 @@ mod tests {
             }
         );
         assert_eq!(
-            judge(r, "wcd", "pmos-wcd+1-0.conf\npmos.conf", false, ""),
+            judge(r, "wcd", "pmos-wcd+1-0.conf\npmos.conf", false, "", ""),
             Came::NotChosen { release: r.into() }
         );
         assert_eq!(
-            judge(r, "wcd", "pmos-wcd+0-1.conf\npmos.conf", false, ""),
+            judge(r, "wcd", "pmos-wcd+0-1.conf\npmos.conf", false, "", ""),
             Came::StoppedEarly { release: r.into() }
         );
         assert_eq!(
@@ -145,17 +173,43 @@ mod tests {
                 "wcd",
                 "pmos-wcd+0-1.conf\npmos.conf\nTEST-BOOT-LOG",
                 true,
+                "",
                 ""
             ),
             Came::TimedOut { release: r.into() }
         );
         assert_eq!(
-            judge(r, "wcd", "pmos.conf", false, ""),
+            judge(r, "wcd", "pmos.conf", false, "", ""),
             Came::Unclear { release: r.into() }
         );
         assert!(
-            judge(r, "wcd", "pmos-wcdx+0-1.conf", false, "") == Came::Unclear { release: r.into() },
+            judge(r, "wcd", "pmos-wcdx+0-1.conf", false, "", "")
+                == Came::Unclear { release: r.into() },
             "another entry's name is not this one's"
+        );
+    }
+
+    #[test]
+    fn the_running_initramfs_decides_where_the_bootloader_says_none() {
+        // 2026-11-17: try wcdswr built a kernel whose release equals the test kernel wcd's
+        let r = "7.1.0-rc3-sm7150-wcd";
+        let e = "pmos-wcdswr+0-1.conf\npmos-wcd.conf\npmos.conf";
+        let cmdline = "root=UUID=x initrd=\\initramfs initrd=\\initramfs-wcdswr pmos_boot_uuid=y\n";
+        assert_eq!(
+            judge(r, "wcdswr", e, false, "", cmdline),
+            Came::Booted { release: r.into() }
+        );
+        assert_ne!(
+            judge(r, "wcd", e, false, "", cmdline),
+            Came::Booted { release: r.into() },
+            "another entry's initramfs is not this one's"
+        );
+        assert_eq!(booted_initrd("initrd=/initramfs-mic quiet"), Some("mic"));
+        assert_eq!(booted_initrd("initrd=initramfs-mic-dt"), Some("mic-dt"));
+        assert_eq!(
+            booted_initrd("initrd=initramfs quiet"),
+            None,
+            "stock carries only the shared one"
         );
     }
 
@@ -164,13 +218,13 @@ mod tests {
         let shared = "7.1.0-sm7150-mic+";
         let e = "pmos-mic.conf\npmos-mic-dt+0-1.conf\npmos.conf";
         assert_eq!(
-            judge(shared, "mic-dt", e, false, "pmos-mic-dt+0-1.conf\n"),
+            judge(shared, "mic-dt", e, false, "pmos-mic-dt+0-1.conf\n", ""),
             Came::Booted {
                 release: shared.into()
             }
         );
         assert_eq!(
-            judge(shared, "mic-dt", e, false, "pmos-mic.conf\n"),
+            judge(shared, "mic-dt", e, false, "pmos-mic.conf\n", ""),
             Came::StoppedEarly {
                 release: shared.into()
             },
