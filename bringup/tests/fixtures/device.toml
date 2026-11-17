@@ -1,0 +1,19 @@
+# The fixture's manifest: walleye's boot header facts (a [boot] table, in postmarketOS deviceinfo's words).
+[device]
+codename = "google-walleye"
+
+[connection]
+user = "user"
+addresses = ["172.16.43.1"]
+
+[boot]
+header_version = 0
+base = 0x0
+kernel_offset = 0x8000
+ramdisk_offset = 0x1000000
+second_offset = 0xf00000
+tags_offset = 0x100
+pagesize = 4096
+cmdline = "earlycon=msm_serial_dm,0xc1b0000 console=ttyGS0,115200"
+partition_size = 0x2000000
+msm_id = [0x124, 0x20001]

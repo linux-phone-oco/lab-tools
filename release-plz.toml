@@ -22,6 +22,12 @@ version_group = "lpoco"
 git_tag_name = "lpoco-health-v{{ version }}"
 git_release_enable = true
 
+[[package]]
+name = "lpoco-bringup"
+version_group = "lpoco"
+git_tag_name = "lpoco-bringup-v{{ version }}"
+git_release_enable = true
+
 # devlab and tone run on the lab machine, built from main; not released yet
 [[package]]
 name = "devlab"
