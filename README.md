@@ -199,3 +199,13 @@ device's `device.toml` (postmarketOS deviceinfo's words: `kernel_offset`, `ramdi
 `--device FILE` (or `LPOCO_DEVICE`) names the manifest; `device.toml` in the current folder otherwise. The packer
 is proven against mkbootimg by test (`bringup/tests/pack_v0.rs`; where android-tools is absent the test says
 "not measured: no mkbootimg"). Swap, initramfs and the rest are their own items.
+
+## Install on a lab host
+
+From the release tags, with cargo; the family has one version, so the tags of one release agree:
+
+    cargo install --locked --git https://github.com/linux-phone-oco/lab-tools --tag lpoco-v0.2.0 lpoco
+    cargo install --locked --git https://github.com/linux-phone-oco/lab-tools --tag lpoco-bringup-v0.2.0 lpoco-bringup
+
+`lpoco --version` is the tag's version and `lpoco list` shows bringup. Proof: `lpoco/tests/install_from_tag.rs`
+installs the newest release into a clean root and checks both, and that bringup refuses a wrong pin.

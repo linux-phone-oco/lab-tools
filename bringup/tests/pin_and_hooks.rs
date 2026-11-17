@@ -61,7 +61,7 @@ fn pack(dev: &str, out: &str) -> Output {
 #[test]
 fn bringup_refuses_wrong_pin() {
     let dir = tmp("pin");
-    let dev = manifest(&dir, "[tools]\nlpoco = \"0.2\"\n", "");
+    let dev = manifest(&dir, "[tools]\nlpoco = \"99.0\"\n", "");
     let out = dir.join("a.img");
     for args in [
         vec!["image", "check", &fx("kernel"), "--device", &dev],
@@ -72,7 +72,7 @@ fn bringup_refuses_wrong_pin() {
         let err = String::from_utf8_lossy(&o.stderr).to_string();
         assert_eq!(err.trim().lines().count(), 1, "{err}");
         assert!(
-            err.contains("0.2") && err.contains(env!("CARGO_PKG_VERSION")),
+            err.contains("99.0") && err.contains(env!("CARGO_PKG_VERSION")),
             "{err}"
         );
     }
