@@ -85,6 +85,20 @@ fn tad(docs: &Path, args: &[&str]) -> Result<()> {
     Ok(())
 }
 
+/// The statements the picture derives from its tables, in order: derive/*.sql. devlab knows none of them -
+/// what a part's status is, is the picture's to say.
+pub fn derivations(docs: &Path) -> Vec<PathBuf> {
+    let mut v: Vec<PathBuf> = std::fs::read_dir(docs.join("derive"))
+        .map(|d| {
+            d.filter_map(|e| e.ok().map(|e| e.path()))
+                .filter(|p| p.extension().is_some_and(|x| x == "sql"))
+                .collect()
+        })
+        .unwrap_or_default();
+    v.sort();
+    v
+}
+
 /// Files every run in `results` that the picture's database does not hold yet, through tad; then its
 /// pages are rendered again, as its checks ask. The runs filed.
 pub fn file(results: &Path, docs: &Path) -> Result<Vec<String>> {
@@ -114,6 +128,11 @@ pub fn file(results: &Path, docs: &Path) -> Result<Vec<String>> {
         done.push(run);
     }
     if !done.is_empty() {
+        // what the picture derives from its runs - each statement it keeps in derive/ - follows them
+        for rule in derivations(docs) {
+            let rule = rule.to_string_lossy().into_owned();
+            tad(docs, &["sql", "--file", &rule]).with_context(|| format!("deriving by {rule}"))?;
+        }
         tad(docs, &["canon"])?;
         tad(docs, &["render"])?;
     }
@@ -260,6 +279,25 @@ mod tests {
         assert!(!is_report("latest.jsonl"));
         assert!(!is_report("20261116-232731.evidence"));
         assert!(!is_report(".20261116-232731.jsonl.part"));
+    }
+
+    #[test]
+    fn the_picture_says_what_it_derives() {
+        let d = std::env::temp_dir().join(format!("devlab-derive-{}", std::process::id()));
+        std::fs::create_dir_all(d.join("derive")).unwrap();
+        for f in ["b.sql", "a.sql", "notes.md"] {
+            std::fs::write(d.join("derive").join(f), "").unwrap();
+        }
+        let names: Vec<String> = derivations(&d)
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, ["a.sql", "b.sql"]);
+        assert!(
+            derivations(&d.join("none")).is_empty(),
+            "a picture with nothing to derive"
+        );
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]
