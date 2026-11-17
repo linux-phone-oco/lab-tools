@@ -99,3 +99,9 @@ A phone's manifest names what harms it to touch, each with what it did:
 
 devlab refuses any command it carries to the phone - `devlab phone sh|root`, the MCP door - that names
 one, saying why; the phone is never reached for it.
+
+`devlab kernel keep NAME now` makes an installed test kernel the phone's default: its entry sorted
+ahead of stock with three tries and boot blessing on, so its first good boot is blessed (the default
+from then on), and three bad boots in a row put stock back by themselves - the initramfs timeout still
+guards each boot. `devlab kernel unkeep NAME now` gives the default back to stock; the kernel stays
+installed. One kernel is kept at a time.

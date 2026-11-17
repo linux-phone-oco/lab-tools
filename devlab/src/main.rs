@@ -5,7 +5,7 @@
 //!   devlab phone root < script     run commands as root
 //!   devlab phone put LOCAL REMOTE  copy a file to the phone
 //!   devlab phone reboot            reboot and wait until it answers again
-//!   devlab kernel install NAME VMLINUZ DTB MODULES.tgz | try NAME | log | remove NAME
+//!   devlab kernel install NAME VMLINUZ DTB MODULES.tgz | try NAME | log | remove NAME | keep|unkeep NAME now
 //!   devlab test                    the device's checks, now
 //!   devlab hear                    a tone on each speaker, heard through the lab's microphone
 //!   devlab health                  against everything that worked before; exit 1 on a regression
@@ -145,6 +145,11 @@ enum KernelCmd {
     Log,
     /// Remove it and its modules
     Remove { name: String },
+    /// Keep it (say `now`): the default from the next boot, blessed by its first good boot; after 3 bad
+    /// boots in a row stock boots by itself
+    Keep { name: String, now: String },
+    /// Give the default back to stock (say `now`); the kernel stays installed
+    Unkeep { name: String, now: String },
 }
 
 #[derive(Subcommand)]
@@ -194,7 +199,12 @@ fn main() -> Result<()> {
             action: PhoneCmd::Reboot | PhoneCmd::Root | PhoneCmd::Put { .. },
         } => Some(hold::hold(&dev)?),
         Cmd::Kernel {
-            action: KernelCmd::Install { .. } | KernelCmd::Try { .. } | KernelCmd::Remove { .. },
+            action:
+                KernelCmd::Install { .. }
+                | KernelCmd::Try { .. }
+                | KernelCmd::Remove { .. }
+                | KernelCmd::Keep { .. }
+                | KernelCmd::Unkeep { .. },
         } => Some(hold::hold(&dev)?),
         Cmd::Suite {
             action: SuiteCmd::Put { .. },
@@ -315,6 +325,11 @@ fn main() -> Result<()> {
                 }
                 KernelCmd::Log => kernel::log(&p)?,
                 KernelCmd::Remove { name } => kernel::remove(&p, &name)?,
+                KernelCmd::Keep { name, now } | KernelCmd::Unkeep { name, now } if now != "now" => {
+                    bail!("usage: devlab kernel keep|unkeep {name} now - it changes which kernel the phone boots")
+                }
+                KernelCmd::Keep { name, .. } => kernel::keep(&p, &name)?,
+                KernelCmd::Unkeep { name, .. } => kernel::unkeep(&p, &name)?,
             }
         }
         Cmd::Phone { action } => {
