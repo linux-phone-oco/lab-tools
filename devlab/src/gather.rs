@@ -1,7 +1,7 @@
 //! Gathering: every report the phone keeps that the lab does not have yet, brought into the device's
 //! lab repository (tests/results/RUN.jsonl, as each run was written), and every run not yet filed,
-//! filed into the picture's tables - linux-phone-oco/docs' test_results, a row per test, and
-//! test_runs, a row per run with its counts. Nothing is retyped: the rows are the report's lines.
+//! filed into the tables of the device's own base (the lab repository, when it has a devicebase.toml: test_results,
+//! a row per test, and test_runs, a row per run with its counts), else of linux-phone-oco/docs Nothing is retyped: the rows are the report's lines.
 
 use crate::phone::Phone;
 use anyhow::{bail, Context, Result};
@@ -149,8 +149,29 @@ pub fn file(results: &Path, docs: &Path, gaps: &[String]) -> Result<Vec<String>>
     Ok(done)
 }
 
-/// Gathering, whole: the phone's reports brought, every unfiled run filed through tad. With `land`, in
-/// devlab's own clones of the lab and the picture, each landed - and the face is drawn again by itself.
+/// Where the runs are filed: the device's own base, or docs' database.
+#[derive(Debug, PartialEq)]
+pub enum Target {
+    /// The lab repository is the device's tad base (it has a devicebase.toml): runs, rows and reports
+    /// are one change in the lab.
+    OwnBase,
+    /// docs' database, at this place - the old way, and what `--docs` asks for.
+    Docs(PathBuf),
+}
+
+/// Chooses the target: `--docs` says docs, whatever the lab has; else the lab's own base when it has a
+/// devicebase.toml; else docs beside the lab (../docs).
+pub fn target(here: &Path, docs: Option<PathBuf>) -> Target {
+    match docs {
+        Some(d) => Target::Docs(d),
+        None if here.join("devicebase.toml").is_file() => Target::OwnBase,
+        None => Target::Docs(here.join("../docs")),
+    }
+}
+
+/// Gathering, whole: the phone's reports brought, every unfiled run filed through tad - into the lab's
+/// own base when it is one, else into docs. With `land`, in devlab's own clone(s) - the lab alone for a
+/// base (reports and rows in one change), the lab and docs otherwise - each through `land`.
 /// What it did, in words.
 pub fn gather(
     device: &crate::device::Device,
@@ -158,46 +179,68 @@ pub fn gather(
     docs: Option<PathBuf>,
     land: bool,
 ) -> Result<String> {
-    let docs = docs.unwrap_or_else(|| here.join("../docs"));
-    let (lab, picture) = if land {
-        let under = device.state_dir().join("places");
-        (
-            Some(Place::at_main(here, &under)?),
-            Some(Place::at_main(&docs, &under)?),
-        )
+    let target = target(here, docs);
+    let under = device.state_dir().join("places");
+    let lab = if land {
+        Some(Place::at_main(here, &under)?)
     } else {
-        (None, None)
+        None
     };
     let lab_dir = lab.as_ref().map_or(here.to_path_buf(), |p| p.dir.clone());
-    let docs_dir = picture.as_ref().map_or(docs, |p| p.dir.clone());
+    // the picture's place (a clone of docs for the old way); the lab itself when it is the base
+    let (picture, picture_dir) = match &target {
+        Target::OwnBase => (None, lab_dir.clone()),
+        Target::Docs(d) if land => {
+            let p = Place::at_main(d, &under)?;
+            let dir = p.dir.clone();
+            (Some(p), dir)
+        }
+        Target::Docs(d) => (None, d.clone()),
+    };
     let results = lab_dir.join("tests/results");
     let mut said = match Phone::find(device) {
         Ok(p) => format!("brought from the phone: {}", fetch(&p, &results)?.len()),
         Err(e) => format!("the phone is not reachable ({e:#}): filing what the lab has"),
     };
-    let filed = file(&results, &docs_dir, &device.health.gaps)?;
+    let filed = file(&results, &picture_dir, &device.health.gaps)?;
+    let into = match &target {
+        Target::OwnBase => format!("the device's own base ({})", picture_dir.display()),
+        Target::Docs(_) => format!("docs ({})", picture_dir.display()),
+    };
     said += &format!(
-        "; filed through tad: {} runs {}",
+        "; filed through tad into {into}: {} runs {}",
         filed.len(),
         filed.join(" ")
     );
-    if let (Some(lab), Some(picture)) = (lab, picture) {
+    if let Some(lab) = lab {
         let codename = &device.device.codename;
         let stamp = filed.last().cloned().unwrap_or_else(|| "reports".into());
-        if lab.land(
-            &format!("gathered/{stamp}"),
-            &format!("{codename}'s own health reports, gathered"),
-        )? {
+        let (branch, summary) = match &target {
+            Target::OwnBase => (
+                format!("gathered/{stamp}"),
+                format!(
+                    "{codename}'s own health reports gathered, {} runs filed into its base",
+                    filed.len()
+                ),
+            ),
+            Target::Docs(_) => (
+                format!("gathered/{stamp}"),
+                format!("{codename}'s own health reports, gathered"),
+            ),
+        };
+        if lab.land(&branch, &summary)? {
             said += "; landed in the lab";
         }
-        if picture.land(
-            &format!("filed/{codename}-{stamp}"),
-            &format!(
-                "{} runs of {codename} filed by devlab, from the phone's own reports",
-                filed.len()
-            ),
-        )? {
-            said += "; landed in the picture - its face is drawn again by itself";
+        if let Some(picture) = picture {
+            if picture.land(
+                &format!("filed/{codename}-{stamp}"),
+                &format!(
+                    "{} runs of {codename} filed by devlab, from the phone's own reports",
+                    filed.len()
+                ),
+            )? {
+                said += "; landed in docs - its face is drawn again by itself";
+            }
         }
     }
     Ok(said)
@@ -316,6 +359,25 @@ mod tests {
         assert!(
             derivations(&d.join("none")).is_empty(),
             "a picture with nothing to derive"
+        );
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn the_lab_files_into_its_own_base_when_it_is_one() {
+        let d = std::env::temp_dir().join(format!("devlab-target-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        assert_eq!(
+            target(&d, None),
+            Target::Docs(d.join("../docs")),
+            "no devicebase.toml: docs beside the lab, as before"
+        );
+        std::fs::write(d.join("devicebase.toml"), "parts = 1\n").unwrap();
+        assert_eq!(target(&d, None), Target::OwnBase);
+        assert_eq!(
+            target(&d, Some("/x/docs".into())),
+            Target::Docs("/x/docs".into()),
+            "--docs asks for the old path, whatever the lab has"
         );
         let _ = std::fs::remove_dir_all(&d);
     }
