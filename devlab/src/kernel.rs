@@ -69,9 +69,13 @@ pub fn is_efi_executable(head: &[u8]) -> bool {
 }
 
 /// The boot entry: sorted ahead of stock, both initramfs images, bless masked.
-pub fn entry(name: &str, dtb: &str, options: &str) -> String {
+/// The release whose modules an entry boots with is said in the entry itself (a comment, which the
+/// bootloader skips), so that removing one kernel never takes the modules another still boots with.
+pub const RELEASE_MARK: &str = "# devlab release ";
+
+pub fn entry(name: &str, dtb: &str, options: &str, release: &str) -> String {
     format!(
-        "title postmarketOS (test kernel: {name})\nsort-key 0-test-{name}\nlinux vmlinuz-{name}\ninitrd initramfs\ninitrd initramfs-{name}\ndevicetree dtbs-{name}/qcom/{dtb}\noptions {options} systemd.mask=systemd-bless-boot.service\n"
+        "{RELEASE_MARK}{release}\ntitle postmarketOS (test kernel: {name})\nsort-key 0-test-{name}\nlinux vmlinuz-{name}\ninitrd initramfs\ninitrd initramfs-{name}\ndevicetree dtbs-{name}/qcom/{dtb}\noptions {options} systemd.mask=systemd-bless-boot.service\n"
     )
 }
 
@@ -209,7 +213,7 @@ pub fn install(
              cat > '/boot/loader/entries/pmos-{name}+1-0.conf' <<ENTRY\n{entry}ENTRY\n\
              rm -f /tmp/te-vmlinuz /tmp/te-dtb /tmp/te-mods.tgz /tmp/te-initramfs\n\
              echo \"installed: pmos-{name}+1-0.conf (one try), kernel {release}, $(find /lib/modules/{release} -name '*.ko*' | wc -l) modules\"\n",
-            entry = entry(name, dtbname, &format!("$options{}{extra}", if extra.is_empty() { "" } else { " " }))
+            entry = entry(name, dtbname, &format!("$options{}{extra}", if extra.is_empty() { "" } else { " " }), &release)
         );
         let (ok, out) = phone.root(&script)?;
         eprint!("{out}");
@@ -310,16 +314,41 @@ pub fn remove(phone: &Phone, name: &str) -> Result<()> {
     if !valid_name(name) {
         bail!("{name:?}: not a test kernel name");
     }
-    let (ok, out) = phone.root(&format!(
-        "set -e\nrelease=$(ls /lib/modules | grep -- '-{name}$' || true)\n\
-         rm -f /boot/loader/entries/pmos-{name}.conf /boot/loader/entries/pmos-{name}+*.conf /boot/vmlinuz-{name} /boot/initramfs-{name} /boot/test-boot.log /boot/test-boot.dmesg\n\
-         rm -rf /boot/dtbs-{name}\n[ -z \"$release\" ] || rm -rf \"/lib/modules/$release\"\necho \"removed: pmos-{name}${{release:+ and the modules of $release}}\"\n"
-    ))?;
+    let (ok, out) = phone.root(&remove_script(name))?;
     eprint!("{out}");
     if !ok {
         bail!("removing failed");
     }
     Ok(())
+}
+
+/// What a root shell does to remove test kernel NAME: its entry and files - and its release's modules
+/// only when nothing else may boot with them. They stay when the running kernel is that release,
+/// another entry says it uses it, another entry does not say which it uses (one installed before
+/// entries said it), or a package owns them; the kept kernel is not removed at all (unkeep it first).
+pub fn remove_script(name: &str) -> String {
+    format!(
+        "set -e\ncd /boot/loader/entries\n\
+         mine=$(ls pmos-{name}.conf pmos-{name}+*.conf 2>/dev/null | head -n1)\n\
+         if [ -n \"$mine\" ] && grep -q '^sort-key 1-kept-' \"$mine\"; then echo 'pmos-{name} is the kept kernel: devlab kernel unkeep {name} now first' >&2; exit 1; fi\n\
+         release=''\n[ -z \"$mine\" ] || release=$(sed -n 's/^{RELEASE_MARK}//p' \"$mine\")\n\
+         [ -n \"$release\" ] || release=$(ls /lib/modules | grep -- '-{name}$' || true)\n\
+         keep=''\n\
+         if [ -n \"$release\" ]; then\n\
+         [ \"$(uname -r)\" != \"$release\" ] || keep=\"the running kernel is $release\"\n\
+         for e in *.conf; do\n\
+         case \"$e\" in pmos-{name}.conf|pmos-{name}+*|pmos.conf) continue ;; esac\n\
+         r=$(sed -n 's/^{RELEASE_MARK}//p' \"$e\")\n\
+         if [ \"$r\" = \"$release\" ]; then keep=\"$e boots with it\"; elif [ -z \"$r\" ] && [ -z \"$keep\" ]; then keep=\"$e does not say which release it boots with\"; fi\n\
+         done\n\
+         apk info -q --who-owns \"/lib/modules/$release\" >/dev/null 2>&1 && keep=\"a package owns them\"\n\
+         fi\n\
+         rm -f pmos-{name}.conf pmos-{name}+*.conf /boot/vmlinuz-{name} /boot/initramfs-{name} /boot/test-boot.log /boot/test-boot.dmesg\n\
+         rm -rf /boot/dtbs-{name}\n\
+         if [ -z \"$release\" ]; then echo 'removed: pmos-{name} (no modules of its own found)'\n\
+         elif [ -n \"$keep\" ]; then echo \"removed: pmos-{name}; the modules of $release stay: $keep\"\n\
+         else rm -rf \"/lib/modules/$release\"; echo \"removed: pmos-{name} and the modules of $release\"; fi\n"
+    )
 }
 
 fn tempdir() -> Result<PathBuf> {
@@ -361,6 +390,89 @@ mod tests {
         );
     }
 
+    /// Runs remove_script in a fake root: /boot and /lib/modules under `root`, uname saying `running`.
+    fn removed(root: &Path, name: &str, running: &str) -> (bool, String) {
+        let r = root.to_string_lossy();
+        let script = remove_script(name)
+            .replace("/boot/", &format!("{r}/boot/"))
+            .replace("/lib/modules", &format!("{r}/lib/modules"));
+        std::fs::create_dir_all(root.join("bin")).unwrap();
+        std::fs::write(
+            root.join("bin/uname"),
+            format!("#!/bin/sh\necho {running}\n"),
+        )
+        .unwrap();
+        std::fs::write(root.join("bin/apk"), "#!/bin/sh\nexit 1\n").unwrap();
+        for b in ["uname", "apk"] {
+            std::fs::set_permissions(
+                root.join("bin").join(b),
+                std::os::unix::fs::PermissionsExt::from_mode(0o755),
+            )
+            .unwrap();
+        }
+        let out = Command::new("sh")
+            .arg("-c")
+            .arg(&script)
+            .env("PATH", format!("{r}/bin:/usr/bin:/bin"))
+            .output()
+            .unwrap();
+        (
+            out.status.success(),
+            String::from_utf8_lossy(&out.stdout).into_owned()
+                + &String::from_utf8_lossy(&out.stderr),
+        )
+    }
+
+    #[test]
+    fn removing_a_kernel_never_takes_modules_another_boots_with() {
+        let root = std::env::temp_dir().join(format!("devlab-remove-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let e = root.join("boot/loader/entries");
+        std::fs::create_dir_all(&e).unwrap();
+        std::fs::create_dir_all(root.join("lib/modules/7.1.0-mic+")).unwrap();
+        std::fs::create_dir_all(root.join("lib/modules/7.1.0-other")).unwrap();
+        std::fs::write(e.join("pmos.conf"), "title postmarketOS\n").unwrap();
+        std::fs::write(
+            e.join("pmos-mic.conf"),
+            "# devlab release 7.1.0-mic+\nsort-key 1-kept-mic\n",
+        )
+        .unwrap();
+        std::fs::write(
+            e.join("pmos-ear+0-1.conf"),
+            "# devlab release 7.1.0-mic+\nsort-key 0-test-ear\n",
+        )
+        .unwrap();
+        std::fs::write(
+            e.join("pmos-old+0-1.conf"),
+            "# devlab release 7.1.0-other\nsort-key 0-test-old\n",
+        )
+        .unwrap();
+        // the kept kernel is not removed at all
+        let (ok, said) = removed(&root, "mic", "6.1-stock");
+        assert!(!ok && said.contains("unkeep"), "{said}");
+        // ear shares the kept kernel's release: its entry goes, the modules stay
+        let (ok, said) = removed(&root, "ear", "6.1-stock");
+        assert!(ok && said.contains("pmos-mic.conf boots with it"), "{said}");
+        assert!(
+            !e.join("pmos-ear+0-1.conf").exists() && root.join("lib/modules/7.1.0-mic+").exists()
+        );
+        // old is the only one with its release: the modules go with it
+        let (ok, said) = removed(&root, "old", "6.1-stock");
+        assert!(
+            ok && said.contains("and the modules of 7.1.0-other"),
+            "{said}"
+        );
+        assert!(!root.join("lib/modules/7.1.0-other").exists());
+        // an entry that does not say its release: nothing is taken on a guess
+        std::fs::create_dir_all(root.join("lib/modules/7.1.0-x")).unwrap();
+        std::fs::write(e.join("pmos-x+0-1.conf"), "# devlab release 7.1.0-x\n").unwrap();
+        std::fs::write(e.join("pmos-legacy+0-1.conf"), "sort-key 0-test-legacy\n").unwrap();
+        let (ok, said) = removed(&root, "x", "6.1-stock");
+        assert!(ok && said.contains("does not say which release"), "{said}");
+        assert!(root.join("lib/modules/7.1.0-x").exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn names_are_safe_for_the_esp() {
         assert!(valid_name("wcd") && valid_name("wcd-2"));
@@ -388,7 +500,16 @@ mod tests {
 
     #[test]
     fn the_entry_sorts_first_carries_both_initramfs_and_masks_bless() {
-        let e = entry("wcd", "sm7150-xiaomi-surya-huaxing.dtb", "quiet splash");
+        let e = entry(
+            "wcd",
+            "sm7150-xiaomi-surya-huaxing.dtb",
+            "quiet splash",
+            "7.1.0-wcd",
+        );
+        assert!(
+            e.starts_with("# devlab release 7.1.0-wcd\n"),
+            "the release said, as a comment"
+        );
         assert!(
             e.contains("sort-key 0-test-wcd\n"),
             "'0' sorts before 'postmarketOS'"
