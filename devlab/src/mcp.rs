@@ -81,6 +81,44 @@ pub struct KernelName {
     pub name: String,
 }
 
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct Image {
+    /// A boot image on the lab machine
+    pub image: String,
+    /// The device manifest to count it against (default: device.toml here or above)
+    pub device: Option<String>,
+}
+
+/// The family's program `lpoco-NAME`: beside this one, else on PATH.
+fn family_program(name: &str) -> std::path::PathBuf {
+    let beside = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.join(name)))
+        .filter(|p| p.is_file());
+    beside.unwrap_or_else(|| name.into())
+}
+
+/// Runs a family program; what it printed, and whether it succeeded.
+fn family_run(name: &str, args: &[&str]) -> Result<String, String> {
+    let o = std::process::Command::new(family_program(name))
+        .args(args)
+        .output()
+        .map_err(|e| format!("cannot run {name}: {e}"))?;
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&o.stdout),
+        String::from_utf8_lossy(&o.stderr)
+    );
+    Ok(format!(
+        "{}{text}",
+        if o.status.success() {
+            ""
+        } else {
+            "(the program failed)\n"
+        }
+    ))
+}
+
 fn said<T>(r: anyhow::Result<T>) -> Result<T, String> {
     r.map_err(|e| format!("{e:#}"))
 }
@@ -258,14 +296,88 @@ impl Door {
         let (_, health) = said(suite::after_change(&back, true))?;
         Ok(format!("back at {}\n{health}", back.target))
     }
+    /// The facts of a boot image's header (lpoco-bringup image info), as a [boot] table.
+    #[tool]
+    async fn bringup_image_info(&self, Parameters(a): Parameters<Image>) -> Result<String, String> {
+        family_run("lpoco-bringup", &["image", "info", &a.image])
+    }
+
+    /// Count a boot image against the device manifest's [boot] (lpoco-bringup image check): each fact ok,
+    /// failed or not measured.
+    #[tool]
+    async fn bringup_image_check(
+        &self,
+        Parameters(a): Parameters<Image>,
+    ) -> Result<String, String> {
+        let mut args = vec!["image", "check", a.image.as_str()];
+        if let Some(d) = a.device.as_deref() {
+            args.extend(["--device", d]);
+        }
+        family_run("lpoco-bringup", &args)
+    }
+}
+
+/// The family's tools under their program's name: devlab's own tools (run, put, kernel_try ...) are
+/// the lab's, so they also answer as lab_run, lab_put, lab_kernel_try ...; the names they had before stay.
+/// The health and bringup tools already carry their program's name.
+fn lab_name(name: &str) -> Option<String> {
+    const LAB: &[&str] = &[
+        "run",
+        "put",
+        "get",
+        "kernel_install",
+        "kernel_try",
+        "kernel_status",
+        "reboot",
+    ];
+    LAB.contains(&name).then(|| format!("lab_{name}"))
 }
 
 #[tool_handler(
     router = self.tool_router,
-    name = "devlab",
-    instructions = "The phone in this lab, by its manifest (device.toml): run commands on it, move files, read and measure its health, try a test kernel once (it falls back to stock by itself), reboot and wait. A failure in a component the phone says is a known gap is not ill health: read the phone's verdict."
+    name = "lpoco",
+    instructions = "One door for the lpoco family. lab_* (and the older bare names run, put, get, kernel_*, reboot): the phone in this lab, by its manifest (device.toml). health_*: its health suite. bringup_*: boot images, read and checked against the manifest. The phone in this lab, by its manifest (device.toml): run commands on it, move files, read and measure its health, try a test kernel once (it falls back to stock by itself), reboot and wait. A failure in a component the phone says is a known gap is not ill health: read the phone's verdict."
 )]
-impl ServerHandler for Door {}
+impl ServerHandler for Door {
+    async fn list_tools(
+        &self,
+        _request: Option<rmcp::model::PaginatedRequestParams>,
+        _context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> Result<rmcp::model::ListToolsResult, rmcp::ErrorData> {
+        let mut tools = self.tool_router.list_all();
+        let extra: Vec<_> = tools
+            .iter()
+            .filter_map(|t| {
+                lab_name(&t.name).map(|n| {
+                    let mut c = t.clone();
+                    c.name = n.into();
+                    c
+                })
+            })
+            .collect();
+        tools.extend(extra);
+        tools.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(rmcp::model::ListToolsResult {
+            tools,
+            ..Default::default()
+        })
+    }
+
+    async fn call_tool(
+        &self,
+        mut request: rmcp::model::CallToolRequestParams,
+        context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> Result<rmcp::model::CallToolResponse, rmcp::ErrorData> {
+        // lab_run is run: the one function behind both names
+        if let Some(old) = request.name.strip_prefix("lab_") {
+            if lab_name(old).is_some() {
+                request.name = old.to_string().into();
+            }
+        }
+        let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
+        self.tool_router.call(tcc).await
+    }
+}
 
 /// Serves the door on standard input and output until the agent goes.
 pub fn serve(device: Device) -> anyhow::Result<()> {

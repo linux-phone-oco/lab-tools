@@ -5,6 +5,7 @@
 //!   lpoco NAME args...            run lpoco-NAME with args, exit with its exit code
 //!   lpoco list                    the lpoco-* programs found, with their versions
 //!   lpoco completions SHELL       shell completions (bash, zsh, fish, nushell)
+//!   lpoco mcp                     the one MCP server for the family: the tools of lab, health and bringup
 //!   lpoco man                     the manual page, in roff
 //!   lpoco --version               this program's version (the family's)
 
@@ -16,10 +17,11 @@ pub enum Command {
     List,
     Completions,
     Man,
+    Mcp,
 }
 
 impl Command {
-    pub const TOKENS: &'static [&'static str] = &["list", "completions", "man"];
+    pub const TOKENS: &'static [&'static str] = &["list", "completions", "man", "mcp"];
 }
 
 impl FromRaw for Command {
@@ -28,6 +30,7 @@ impl FromRaw for Command {
             "list" => Command::List,
             "completions" => Command::Completions,
             "man" => Command::Man,
+            "mcp" => Command::Mcp,
             _ => return None,
         })
     }
