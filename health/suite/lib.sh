@@ -51,6 +51,9 @@ skip_on() {
 	[ -n "$_d" ] || return 1
 	say "$2" "$3" skip "$_d"
 }
+# no_sim - the name the phone's own checks used before conditions: succeeds when the phone found out it has
+# no SIM card (condition no-sim). Kept so that a check that calls it needs no change; new checks say skip_on.
+no_sim() { condition no-sim; }
 # switched_off TEST COMPONENT - a test somebody switched off (lpoco-health off TEST --reason ...) says so and
 # succeeds: a check that costs something or makes noise asks it first.  switched_off mobile-data modem-data && exit 0
 switched_off() {

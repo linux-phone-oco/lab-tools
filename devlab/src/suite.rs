@@ -196,8 +196,9 @@ move /var/lib/devlab/health-once /var/lib/lpoco-health/once\n\
 rm -rf /usr/lib/devlab/health /etc/devlab/health.env /usr/bin/devlab-health\n\
 ";
 
-/// `devlab-health`, kept as another name of the program until nothing calls it by that name.
-const ALIAS: &str = "ln -sf lpoco-health /usr/bin/devlab-health\n";
+/// `devlab-health` and `/usr/lib/devlab/health`, kept as other names of the program and its library until
+/// the phone's own checks (surya-lab tests/health) source and call the new ones.
+const ALIAS: &str = "ln -sf lpoco-health /usr/bin/devlab-health; mkdir -p /usr/lib/devlab; ln -sfn /usr/lib/lpoco-health /usr/lib/devlab/health\n";
 
 /// WORD as one shell word: single-quoted, so that nothing in it is read by the shell.
 pub fn sq(word: &str) -> String {
