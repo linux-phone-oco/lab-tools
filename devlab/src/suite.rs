@@ -62,6 +62,11 @@ const FILES: &[(&str, &str, &str)] = &[
         "644",
     ),
     (
+        "usr/lib/devlab/health/checks/base/90-sleep.sh",
+        include_str!("../../health/suite/checks/base/90-sleep.sh"),
+        "644",
+    ),
+    (
         "usr/lib/devlab/health/checks/shell/10-sound-output.sh",
         include_str!("../../health/suite/checks/shell/10-sound-output.sh"),
         "644",
