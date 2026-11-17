@@ -17,6 +17,9 @@ pub struct Device {
     pub provision: Provision,
     #[serde(default)]
     pub flash: Flash,
+    /// How the lab reaches the phone over fastboot, and whether it may write to it there
+    #[serde(default)]
+    pub fastboot: Fastboot,
     /// what the lab's ear listens for
     #[serde(default)]
     pub hear: Hear,
@@ -50,6 +53,21 @@ impl Device {
                 )
             })
     }
+}
+
+/// The phone as fastboot knows it. Every fastboot call devlab makes names this serial, so a lab with two
+/// phones in fastboot never reaches the wrong one; and nothing is written over fastboot (flash) unless the
+/// manifest says `writes = true` - a phone whose slots must stay as they are says nothing, or false
+/// (google-walleye: decision 2026-11-17-walleye-fastboot-first).
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Fastboot {
+    /// As `fastboot devices` lists it
+    #[serde(default)]
+    pub serial: String,
+    /// Whether devlab may write partitions over fastboot (devlab flash); false unless said
+    #[serde(default)]
+    pub writes: bool,
 }
 
 /// How an image goes onto the phone, and what is baked into it.
