@@ -70,3 +70,17 @@ fn lpoco_refuses_mixed_versions() {
     let err = text(&o.stderr);
     assert!(err.contains("9.9.9") && err.contains(VERSION), "{err}");
 }
+
+#[test]
+fn version_list_completions_and_man_come_from_the_declaration() {
+    let d = tmp("builtins");
+    fixture(&d, VERSION);
+    let o = lpoco(&d, &["--version"]);
+    assert_eq!(text(&o.stdout), format!("lpoco {VERSION}\n"));
+    let o = lpoco(&d, &["list"]);
+    assert!(text(&o.stdout).contains("fake"), "{}", text(&o.stdout));
+    let o = lpoco(&d, &["completions", "bash"]);
+    assert!(text(&o.stdout).contains("complete -F _lpoco lpoco"));
+    let o = lpoco(&d, &["man"]);
+    assert!(text(&o.stdout).starts_with(".TH LPOCO 1"));
+}

@@ -8,3 +8,4 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 argenv-resolve = "0.4"
+serde = { version = "1", features = ["derive"] }

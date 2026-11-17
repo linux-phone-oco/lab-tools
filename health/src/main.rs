@@ -429,6 +429,10 @@ fn main() {
         std::process::exit(data::main(&args[1..]));
     }
     let r = cli::Contract::parse_and_lint(OnProblems::FailOnError);
+    if cli::Contract::VERSION.get_from(&r).unwrap_or(false) {
+        println!("lpoco-health {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
     match cli::Contract::COMMAND.get_from(&r) {
         Some(cli::Command::Latest) => {
             print!(

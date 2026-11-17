@@ -6,8 +6,18 @@ git_only = true
 git_tag_enable = true
 git_release_enable = false
 
+# the lpoco family is released together: one version for the dispatcher and every lpoco-* program
+# (version_group), so `lpoco NAME` can refuse a program of another version. Tags stay per package:
+# the conveyor reads lpoco-health-v* for the phone package; the dispatcher is lab-side only.
+[[package]]
+name = "lpoco"
+version_group = "lpoco"
+git_tag_name = "lpoco-v{{ version }}"
+git_release_enable = true
+
 [[package]]
 name = "lpoco-health"
+version_group = "lpoco"
 # the conveyor reads this prefix (packaging/conveyor.toml)
 git_tag_name = "lpoco-health-v{{ version }}"
 git_release_enable = true
