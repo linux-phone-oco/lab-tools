@@ -163,7 +163,12 @@ pub fn put(device: &Device, manifest_dir: &Path, phone: &Phone, runner: &Path) -
     }
     write(
         "etc/devlab/health.env",
-        device.health.env(&device.device.codename).as_bytes(),
+        format!(
+            "{}{}",
+            device.health.env(&device.device.codename),
+            device.hear.env()
+        )
+        .as_bytes(),
         "644",
     )?;
     let tarball = stage.with_extension("tar");

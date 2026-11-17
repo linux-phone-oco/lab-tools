@@ -3,6 +3,9 @@
 # COMPONENT is a linux-phone-oco/docs component id. A skip says what could not be measured and why:
 # what nobody measured is unknown, never broken. What a phone is expected to have comes from
 # /etc/devlab/health.env, written from the device's manifest (device.toml, [health]).
+# A check that plays sound plays it quietly: at TEST_TONE_DBFS (the file's level) and TEST_VOLUME (the
+# output volume, restored afterwards), both from the manifest's [hear] - quiet by default (-40 dBFS, 25%).
+# A phone in a home must never shout.
 . /etc/devlab/health.env 2>/dev/null
 
 # the kernel log of this boot, whole: dmesg is a ring that verbose drivers overwrite within minutes
