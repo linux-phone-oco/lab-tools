@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.7](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-health-v0.1.6...lpoco-health-v0.1.7) - 2026-11-17
+
+### Fixed
+
+- *(lpoco-health)* keep no_sim and the old library path for the phone's own checks ([#76](https://github.com/linux-phone-oco/lab-tools/pull/76))
+
 ## [0.1.6](https://github.com/linux-phone-oco/lab-tools/compare/devlab-health-v0.1.5...devlab-health-v0.1.6) - 2026-11-17
 
 ### Added
