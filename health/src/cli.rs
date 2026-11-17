@@ -79,6 +79,15 @@ contract! {
         ..Input::EMPTY
     };
 
+    VERSION: bool = Input {
+        key: "version",
+        ty: Type::Bool,
+        default: Some(false),
+        arg: Some(Arg::long("version")),
+        summary: "Print the version (the lpoco family's one version) and stop.",
+        ..Input::EMPTY
+    };
+
     FORCE: bool, Command = Input {
         key: "force",
         ty: Type::Bool,

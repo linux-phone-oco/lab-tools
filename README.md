@@ -167,3 +167,11 @@ phone-queue`) one change at a time; devlab still holds the phone for every chang
 NAME` takes the lease (refused while another keeper is live), `renew NAME` as the keeper works, `release
 NAME` as it ends, `status` says who keeps the phone. A lease left unrenewed for 90 minutes has lapsed: its
 keeper ended or was cut off, and the next one may take it.
+
+## lpoco: one front door
+
+`lpoco NAME args...` finds `lpoco-NAME` beside itself or on PATH and runs it, returning its exit code
+(`lpoco health latest`). The family is released together under one version (release-plz `version_group`):
+a program whose `--version` differs from lpoco's is refused, naming both. `lpoco list` shows the
+programs found with versions; `lpoco completions SHELL` and `lpoco man` come from the argenv declaration.
+Lab-side only: the phone runs `lpoco-health` directly and gets no dispatcher.
