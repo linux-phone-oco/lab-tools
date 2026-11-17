@@ -45,16 +45,25 @@ pub fn fetch(phone: &Phone, results: &Path) -> Result<Vec<String>> {
 }
 
 /// The statement that files one run into the picture's tables, through tad: every line of the report a
-/// test_results row, and the run's test_runs row counted from them. tad keeps it only if every rule of
-/// the tables still holds.
-pub fn statement(run: &str, report: &Path) -> String {
-    let path = report.to_string_lossy().replace('\'', "''");
+/// test_results row, and the run's test_runs row counted from them - a failure in one of the phone's
+/// known gaps (its manifest's [health] gaps: parts it never had working) counted apart from the
+/// failures, as the phone's own verdict counts it. tad keeps it only if every rule of the tables holds.
+pub fn statement(run: &str, report: &Path, gaps: &[String]) -> String {
+    let q = |t: &str| t.replace('\'', "''");
+    let path = q(&report.to_string_lossy());
+    let gaps: Vec<String> = gaps.iter().map(|g| format!("'{}'", q(g))).collect();
+    let in_gap = format!(
+        "list_contains([{}]::VARCHAR[], component_id)",
+        gaps.join(", ")
+    );
     format!(
         "INSERT INTO test_results SELECT '{run}-' || component || '-' || test, '{run}', device, component, test, \
          outcome, detail, CAST(\"at\" AS TIMESTAMP), kernel, shell \
          FROM read_json_auto('{path}', format = 'newline_delimited'); \
-         INSERT INTO test_runs SELECT run, any_value(device_id), min(run_at), any_value(kernel), any_value(shell), \
-         count_if(outcome = 'pass'), count_if(outcome = 'fail'), count_if(outcome = 'skip') \
+         INSERT INTO test_runs (id, device_id, run_at, kernel, shell, passed, failed, gaps, skipped) \
+         SELECT run, any_value(device_id), min(run_at), any_value(kernel), any_value(shell), \
+         count_if(outcome = 'pass'), count_if(outcome = 'fail' AND NOT {in_gap}), \
+         count_if(outcome = 'fail' AND {in_gap}), count_if(outcome = 'skip') \
          FROM test_results WHERE run = '{run}' GROUP BY run"
     )
 }
@@ -101,7 +110,7 @@ pub fn derivations(docs: &Path) -> Vec<PathBuf> {
 
 /// Files every run in `results` that the picture's database does not hold yet, through tad; then its
 /// pages are rendered again, as its checks ask. The runs filed.
-pub fn file(results: &Path, docs: &Path) -> Result<Vec<String>> {
+pub fn file(results: &Path, docs: &Path, gaps: &[String]) -> Result<Vec<String>> {
     let have = filed(docs);
     let mut reports: Vec<PathBuf> = std::fs::read_dir(results)
         .with_context(|| format!("reading {}", results.display()))?
@@ -124,7 +133,7 @@ pub fn file(results: &Path, docs: &Path) -> Result<Vec<String>> {
             continue;
         }
         let p = p.canonicalize()?;
-        tad(docs, &["sql", &statement(&run, &p)]).with_context(|| format!("filing {run}"))?;
+        tad(docs, &["sql", &statement(&run, &p, gaps)]).with_context(|| format!("filing {run}"))?;
         done.push(run);
     }
     if !done.is_empty() {
@@ -165,7 +174,7 @@ pub fn gather(
         Ok(p) => format!("brought from the phone: {}", fetch(&p, &results)?.len()),
         Err(e) => format!("the phone is not reachable ({e:#}): filing what the lab has"),
     };
-    let filed = file(&results, &docs_dir)?;
+    let filed = file(&results, &docs_dir, &device.health.gaps)?;
     said += &format!(
         "; filed through tad: {} runs {}",
         filed.len(),
@@ -302,7 +311,15 @@ mod tests {
 
     #[test]
     fn a_run_is_filed_as_the_report_says_it_and_counted_from_its_rows() {
-        let s = statement("20261117-010000", Path::new("/r/it's.jsonl"));
+        let s = statement(
+            "20261117-010000",
+            Path::new("/r/it's.jsonl"),
+            &["camera-rear".to_string(), "o'gap".to_string()],
+        );
+        assert!(
+            s.contains("count_if(outcome = 'fail' AND list_contains(['camera-rear', 'o''gap']::VARCHAR[], component_id))"),
+            "a failure in a known gap is counted apart"
+        );
         assert!(s.contains("'20261117-010000-' || component || '-' || test"));
         assert!(
             s.contains("read_json_auto('/r/it''s.jsonl'"),
