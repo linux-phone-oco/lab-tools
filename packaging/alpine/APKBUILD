@@ -1,31 +1,32 @@
-# The phone's own health suite, as postmarketOS takes it: devlab-health (the runner), the generic checks
+# The phone's own health suite, as postmarketOS takes it: lpoco-health (the runner), the generic checks
 # and their words, and the timer that runs them 120 s after every boot. A phone's own checks and what its
-# manifest expects of it (/etc/devlab/health.env) are the lab's, put by devlab. Published by the package
+# manifest expects of it (/etc/lpoco-health/health.env) are the lab's, put by devlab. Published by the package
 # conveyor (packaging/conveyor.toml): pkgver and the checksums are filled in for each release tag.
-pkgname=devlab-health
+pkgname=lpoco-health
 pkgver=0.1.0
 pkgrel=0
-pkgdesc="The phone's health, measured on the phone after every boot (linux-phone-oco devlab)"
+pkgdesc="The phone's health: scheduled tests, their results, and switches with reasons (linux-phone-oco)"
+replaces="devlab-health"
 url="https://github.com/linux-phone-oco/lab-tools"
 arch="aarch64 x86_64"
 license="MIT OR Apache-2.0"
 makedepends="cargo"
 options="net !check"
-source="$pkgname-$pkgver.tar.gz::https://github.com/linux-phone-oco/lab-tools/archive/refs/tags/devlab-health-v$pkgver.tar.gz"
-builddir="$srcdir/lab-tools-devlab-health-v$pkgver"
+source="$pkgname-$pkgver.tar.gz::https://github.com/linux-phone-oco/lab-tools/archive/refs/tags/lpoco-health-v$pkgver.tar.gz"
+builddir="$srcdir/lab-tools-lpoco-health-v$pkgver"
 
 build() {
-	cargo build --release --locked -p devlab-health
+	cargo build --release --locked -p lpoco-health
 }
 
 package() {
-	install -Dm755 target/release/devlab-health "$pkgdir"/usr/bin/devlab-health
-	install -Dm644 health/suite/lib.sh "$pkgdir"/usr/lib/devlab/health/lib.sh
-	for f in health/suite/checks/*/*.sh; do
-		install -Dm644 "$f" "$pkgdir/usr/lib/devlab/health/${f#health/suite/}"
+	install -Dm755 target/release/lpoco-health "$pkgdir"/usr/bin/lpoco-health
+	install -Dm644 health/suite/lib.sh "$pkgdir"/usr/lib/lpoco-health/lib.sh
+	for f in health/suite/checks/*/*.sh health/suite/conditions/*.sh; do
+		install -Dm644 "$f" "$pkgdir/usr/lib/lpoco-health/${f#health/suite/}"
 	done
-	install -Dm644 health/suite/devlab-health.service "$pkgdir"/usr/lib/systemd/system/devlab-health.service
-	install -Dm644 health/suite/devlab-health.timer "$pkgdir"/usr/lib/systemd/system/devlab-health.timer
+	install -Dm644 health/suite/lpoco-health.service "$pkgdir"/usr/lib/systemd/system/lpoco-health.service
+	install -Dm644 health/suite/lpoco-health.timer "$pkgdir"/usr/lib/systemd/system/lpoco-health.timer
 }
 
 sha512sums=""

@@ -1,6 +1,6 @@
 # the other parts, as far as the kernel exposes them: NFC, USB role switch, headset jack, fingerprint
 # reader, camera sensors (motion, light and proximity: 87-sensors.sh) - each absent part named in the manifest is skipped
-. /usr/lib/devlab/health/lib.sh
+. /usr/lib/lpoco-health/lib.sh
 part() { # part NAME TEST COMPONENT CONDITION DETAIL
 	if absent "$1"; then say "$2" "$3" skip "the manifest says this phone has no $1"; else check "$2" "$3" "$4" "$5"; fi
 }

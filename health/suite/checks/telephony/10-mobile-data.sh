@@ -1,15 +1,16 @@
 # mobile data carries traffic, on any phone with a modem: over the modem's own interface - the one
 # ModemManager's connected bearer names, so Wi-Fi cannot pass for it - five pings to 1.1.1.1 and an
 # HTTPS download of 100 kB, or 5 MB once a week to measure throughput. What the run moved is read off
-# the interface's own counters and kept in the month's ledger (devlab-health data); once the month has
+# the interface's own counters and kept in the month's ledger (lpoco-health data); once the month has
 # spent the manifest's budget (DATA_BUDGET_MB, 250 by default) the check skips, as it does without a SIM
 # or a registration: what nobody measured is unknown, not broken. About 150 kB a boot.
-. /usr/lib/devlab/health/lib.sh
+. /usr/lib/lpoco-health/lib.sh
+switched_off mobile-data modem-data && exit 0
 absent modem && { say mobile-data modem-data skip "the manifest says this phone has no modem"; exit 0; }
 command -v mmcli >/dev/null || { say mobile-data modem-data skip "no ModemManager"; exit 0; }
 m=$(mmcli -L 2>/dev/null | grep -o '/Modem/[0-9]*' | head -n1)
 [ -n "$m" ] || { say mobile-data modem-data skip "no modem seen by ModemManager"; exit 0; }
-no_sim && { say mobile-data modem-data skip "no SIM card"; exit 0; }
+skip_on no-sim mobile-data modem-data && exit 0
 # KEY's value in mmcli's key-value output on standard input
 kv() { sed -n "s/^$1 *: *//p" | head -n1; }
 info=$(mmcli -m "${m##*/}" -K 2>/dev/null)
@@ -20,7 +21,7 @@ case $state in
 	*) say mobile-data modem-data skip "modem state ${state:-unknown}: no registration to carry data"; exit 0 ;;
 esac
 budget=${DATA_BUDGET_MB:-250}
-plan=$(devlab-health data plan --budget-mb "$budget")
+plan=$(lpoco-health data plan --budget-mb "$budget")
 mb() { echo "$(( ${1:-0} / 1000000 )).$(( ${1:-0} % 1000000 / 100000 ))"; }
 if [ "$(json_field over "$plan")" = true ]; then
 	say mobile-data modem-data skip "the month's budget is spent: $(mb "$(json_field used_bytes "$plan")") of $budget MB in $(json_field month "$plan")"
@@ -63,6 +64,6 @@ after=$(moved)
 used=$(( after - before )); [ "$used" -ge 0 ] || used=0
 set -- $dl
 # the week's run is marked made only when its download came whole: one cut short is tried again next boot
-ledger=$(devlab-health data spent "$used" --budget-mb "$budget" $([ "$weekly" = true ] && [ "${1:-0}" -ge "${size:-0}" ] && echo --weekly))
+ledger=$(lpoco-health data spent "$used" --budget-mb "$budget" $([ "$weekly" = true ] && [ "${1:-0}" -ge "${size:-0}" ] && echo --weekly))
 check mobile-data modem-data "$([ "${got:-0}" -ge 3 ] && [ "${1:-0}" -ge "${size:-100000}" ] && echo true)" \
 	"over $iface ($state, ${tech:-?}): ${got:-0} of 5 pings answered${rtt:+ in $rtt ms}, ${1:-0} bytes downloaded at ${2:-0} B/s (DNS ${3:-?} s)$([ "$weekly" = true ] && echo ', the week'"'"'s throughput run'); the run moved $used bytes, the month $(mb "$(json_field used_bytes "$ledger")") of $budget MB"

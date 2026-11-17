@@ -1,8 +1,8 @@
-//! `devlab-health tone make|find`: the lab's tone crate on the phone, so a check that plays a tone
+//! `lpoco-health tone make|find`: the lab's tone crate on the phone, so a check that plays a tone
 //! and listens for it hands the numbers to tested Rust instead of an awk Goertzel.
 //!
-//!   devlab-health tone make [--freq 1000] [--secs 1] [--level -40] [--rate 48000] [--channels 1] [--raw] OUT
-//!   devlab-health tone find [--freq 1000] [--min-snr 20] [--rate 48000] [--from S] [--to S] IN
+//!   lpoco-health tone make [--freq 1000] [--secs 1] [--level -40] [--rate 48000] [--channels 1] [--raw] OUT
+//!   lpoco-health tone find [--freq 1000] [--min-snr 20] [--rate 48000] [--from S] [--to S] IN
 //!
 //! make writes a sine tone: a 16-bit WAV, or raw s16le with --raw (as pacat --raw plays it).
 //! find reads a WAV (its own rate) or raw s16le mono (at --rate, as parecord --raw records it),
@@ -93,9 +93,9 @@ fn finding(samples: &[f64], rate: u32, a: &Asked) -> (serde_json::Value, bool) {
     )
 }
 
-/// `devlab-health tone ...`: the exit code.
+/// `lpoco-health tone ...`: the exit code.
 pub fn main(args: &[String]) -> i32 {
-    let usage = "usage: devlab-health tone make|find [--freq HZ] ... FILE";
+    let usage = "usage: lpoco-health tone make|find [--freq HZ] ... FILE";
     let Some((verb, rest)) = args.split_first() else {
         eprintln!("{usage}");
         return 2;
@@ -103,7 +103,7 @@ pub fn main(args: &[String]) -> i32 {
     let a = match parse(rest) {
         Ok(a) => a,
         Err(e) => {
-            eprintln!("devlab-health tone: {e}");
+            eprintln!("lpoco-health tone: {e}");
             return 2;
         }
     };
@@ -129,7 +129,7 @@ pub fn main(args: &[String]) -> i32 {
             match written {
                 Ok(()) => 0,
                 Err(e) => {
-                    eprintln!("devlab-health tone make: {}: {e}", path.display());
+                    eprintln!("lpoco-health tone make: {}: {e}", path.display());
                     2
                 }
             }
@@ -145,7 +145,7 @@ pub fn main(args: &[String]) -> i32 {
                 }
             }
             Err(e) => {
-                eprintln!("devlab-health tone find: {}: {e}", path.display());
+                eprintln!("lpoco-health tone find: {}: {e}", path.display());
                 2
             }
         },

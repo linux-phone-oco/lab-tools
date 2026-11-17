@@ -1,22 +1,22 @@
-//! `devlab-health data plan|spent`: what mobile data a check may spend, and what it spent - a ledger
+//! `lpoco-health data plan|spent`: what mobile data a check may spend, and what it spent - a ledger
 //! of the month, so a phone that boots fifty times a day never eats its SIM's allowance.
 //!
-//!   devlab-health data plan  [--budget-mb 250] [--ledger FILE]
-//!   devlab-health data spent BYTES [--weekly] [--budget-mb 250] [--ledger FILE]
+//!   lpoco-health data plan  [--budget-mb 250] [--ledger FILE]
+//!   lpoco-health data spent BYTES [--weekly] [--budget-mb 250] [--ledger FILE]
 //!
 //! plan says, as one JSON line, the month (UTC), the bytes spent in it, the budget, whether the budget
 //! is spent (`over`: the check skips), whether this run is the week's throughput run (`weekly`: none in
 //! the last 7 days) and so how much to download (`download_bytes`: 100 kB, or 5 MB weekly).
 //! spent adds a run's bytes to the month (a new month starts from nothing) and, with --weekly, marks
 //! the week's run as made; it prints the same line, as it stands after. The ledger is a small JSON file,
-//! /var/lib/devlab/health-data/ledger.json by default - beside the reports, not among them, so pruning
+//! /var/lib/lpoco-health/data/ledger.json by default - beside the reports, not among them, so pruning
 //! old runs never forgets what the month spent.
 
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const LEDGER: &str = "/var/lib/devlab/health-data/ledger.json";
+const LEDGER: &str = "/var/lib/lpoco-health/data/ledger.json";
 const BUDGET_MB: u64 = 250;
 const DAILY_BYTES: u64 = 100_000;
 const WEEKLY_BYTES: u64 = 5_000_000;
@@ -76,7 +76,7 @@ impl Ledger {
     }
 }
 
-/// `devlab-health data ...` at `now`: what to print, or what was asked wrongly.
+/// `lpoco-health data ...` at `now`: what to print, or what was asked wrongly.
 fn run(args: &[String], now: u64) -> Result<Value, String> {
     let (verb, rest) = args.split_first().ok_or("plan or spent")?;
     let (mut budget_mb, mut ledger, mut weekly, mut bytes) =
@@ -123,7 +123,7 @@ fn run(args: &[String], now: u64) -> Result<Value, String> {
     }
 }
 
-/// `devlab-health data ...`: the exit code.
+/// `lpoco-health data ...`: the exit code.
 pub fn main(args: &[String]) -> i32 {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -135,7 +135,7 @@ pub fn main(args: &[String]) -> i32 {
             0
         }
         Err(e) => {
-            eprintln!("devlab-health data: {e} (usage: data plan|spent BYTES [--weekly] [--budget-mb N] [--ledger FILE])");
+            eprintln!("lpoco-health data: {e} (usage: data plan|spent BYTES [--weekly] [--budget-mb N] [--ledger FILE])");
             2
         }
     }

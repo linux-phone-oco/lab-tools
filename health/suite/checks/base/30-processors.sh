@@ -1,5 +1,5 @@
 # the signal processors are up: each one the manifest expects, running (REMOTEPROCS: name:component)
-. /usr/lib/devlab/health/lib.sh
+. /usr/lib/lpoco-health/lib.sh
 [ -n "${REMOTEPROCS:-}" ] || { say remoteprocs kernel skip "the manifest names no signal processors"; exit 0; }
 for pair in $REMOTEPROCS; do
 	n=${pair%%:*}; c=${pair#*:}; st=""

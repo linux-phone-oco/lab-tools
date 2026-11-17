@@ -1,5 +1,5 @@
 # display and input: a panel connected and lit, a touchscreen, a vibration motor
-. /usr/lib/devlab/health/lib.sh
+. /usr/lib/lpoco-health/lib.sh
 if absent display; then say panel-connected display-panel skip "the manifest says this phone has no panel"; else
 	conn=$(cat /sys/class/drm/card*-DSI*/status /sys/class/drm/card*-eDP*/status 2>/dev/null | head -n1)
 	check panel-connected display-panel "$([ "$conn" = connected ] && echo true)" "panel: ${conn:-none}"

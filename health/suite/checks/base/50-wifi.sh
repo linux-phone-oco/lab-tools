@@ -1,5 +1,5 @@
 # Wi-Fi: an interface, joined with an address, and the gateway answers
-. /usr/lib/devlab/health/lib.sh
+. /usr/lib/lpoco-health/lib.sh
 absent wifi && { say wifi-interface wifi skip "the manifest says this phone has no Wi-Fi"; exit 0; }
 w=$(ls /sys/class/net | grep -E '^wl' | head -n1)
 check wifi-interface wifi "$([ -n "$w" ] && echo true)" "interface ${w:-none}"

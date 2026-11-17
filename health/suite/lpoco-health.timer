@@ -1,5 +1,5 @@
 [Unit]
-Description=The phone's health after every boot, once it has settled (devlab)
+Description=The phone's health after every boot, once it has settled 
 
 [Timer]
 # services start and the signal processors load for about a minute and a half: read earlier, a check

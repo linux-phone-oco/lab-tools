@@ -4,4 +4,4 @@ After=multi-user.target network-online.target ModemManager.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/devlab-health
+ExecStart=/usr/bin/lpoco-health

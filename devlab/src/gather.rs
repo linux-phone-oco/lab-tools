@@ -10,7 +10,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-const ON_PHONE: &str = "/var/lib/devlab/health";
+const ON_PHONE: &str = "/var/lib/lpoco-health";
 
 /// A report's name as the phone writes it: RUN.jsonl, RUN being YYYYMMDD-HHMMSS.
 pub fn is_report(name: &str) -> bool {

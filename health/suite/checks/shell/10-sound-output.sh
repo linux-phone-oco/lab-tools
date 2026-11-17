@@ -1,6 +1,6 @@
 # the shell's sound: a sound server runs, and its default output is a real card - not a loopback or
 # dummy (once, a loopback card became the default at boot and nothing was heard)
-. /usr/lib/devlab/health/lib.sh
+. /usr/lib/lpoco-health/lib.sh
 [ -n "$(session_user)" ] || { say default-output audio-speaker skip "no graphical session: the base alone"; exit 0; }
 sink=$(as_user pactl get-default-sink)
 case $sink in

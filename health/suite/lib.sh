@@ -1,12 +1,12 @@
 # The health suite's words, sourced by every check (POSIX sh - BusyBox's or not). A check prints one
-# line per test:  pass|fail|skip TEST COMPONENT detail...  - devlab-health makes the report of them.
+# line per test:  pass|fail|skip TEST COMPONENT detail...  - lpoco-health makes the report of them.
 # COMPONENT is a linux-phone-oco/docs component id. A skip says what could not be measured and why:
 # what nobody measured is unknown, never broken. What a phone is expected to have comes from
-# /etc/devlab/health.env, written from the device's manifest (device.toml, [health]).
+# /etc/lpoco-health/health.env, written from the device's manifest (device.toml, [health]).
 # A check that plays sound plays it quietly: at TEST_TONE_DBFS (the file's level) and TEST_VOLUME (the
 # output volume, restored afterwards), both from the manifest's [hear] - quiet by default (-40 dBFS, 25%).
 # A phone in a home must never shout.
-. /etc/devlab/health.env 2>/dev/null
+. /etc/lpoco-health/health.env 2>/dev/null
 
 # the kernel log of this boot, whole: dmesg is a ring that verbose drivers overwrite within minutes
 klog() { journalctl -k -b 0 --no-pager -o short-monotonic 2>/dev/null || dmesg; }
@@ -31,21 +31,30 @@ absent() { in_list "$1" "${ABSENT:-}"; }
 # succeeds the first time on a day and marks the day (before the costly part, so a check that fails
 # half way does not spend again the same day); later that day it fails. Its place: the telephony layer.
 once_a_day() {
-	_stamp="/var/lib/devlab/health-once/$1"
+	_stamp="/var/lib/lpoco-health/once/$1"
 	_today=$(date +%Y-%m-%d)
 	[ "$(cat "$_stamp" 2>/dev/null)" != "$_today" ] || return 1
 	mkdir -p "${_stamp%/*}" && echo "$_today" > "$_stamp"
 }
 
 # json_field KEY LINE - KEY's value in one JSON line (a number, true/false or a plain string), as
-# devlab-health's own subcommands print it: devlab-health tone find ... | json_field level_dbfs
+# lpoco-health's own subcommands print it: lpoco-health tone find ... | json_field level_dbfs
 json_field() { printf '%s' "$2" | sed -n "s/.*\"$1\": *\"\{0,1\}\([^,\"}]*\).*/\1/p"; }
 
-# no_sim - succeeds when the modem has no SIM card (ModemManager: state failed, reason sim-missing, or no
-# SIM object): what needs the SIM cannot be measured, so it says "skip: no SIM card" - unknown, not broken.
-no_sim() {
-	_i=$(mmcli -m any -K 2>/dev/null) || return 1
-	[ -n "$_i" ] || return 1
-	printf '%s\n' "$_i" | grep -q 'state-failed-reason *: *sim-missing' && return 0
-	printf '%s\n' "$_i" | grep -q '^modem\.generic\.sim *: *\(--\)\{0,1\}$'
+# condition NAME - succeeds when the phone found out, at the start of this run, that NAME holds (no-sim,
+# no-modem, no-network: conditions/*.sh print "NAME detail" lines, the runner passes them in LPOCO_CONDITIONS).
+# What needs it says "skip: detail" - unknown, not broken - and nothing is written down: the next run finds out again.
+condition() { printf '%s\n' "${LPOCO_CONDITIONS:-}" | grep -q "^$1 "; }
+# skip_on NAME TEST COMPONENT - when NAME holds, says the test skipped for it and succeeds:  skip_on no-sim t c && exit 0
+skip_on() {
+	_d=$(printf '%s\n' "${LPOCO_CONDITIONS:-}" | sed -n "s/^$1 //p" | head -n1)
+	[ -n "$_d" ] || return 1
+	say "$2" "$3" skip "$_d"
+}
+# switched_off TEST COMPONENT - a test somebody switched off (lpoco-health off TEST --reason ...) says so and
+# succeeds: a check that costs something or makes noise asks it first.  switched_off mobile-data modem-data && exit 0
+switched_off() {
+	_l=$(awk -F'\t' -v t="$1" '$1 !~ /^#/ && $1 == t { print; exit }' /etc/lpoco-health/switches 2>/dev/null)
+	[ -n "$_l" ] || return 1
+	say "$1" "$2" skip "switched off: $(printf '%s' "$_l" | cut -f2) (by $(printf '%s' "$_l" | cut -f3), $(printf '%s' "$_l" | cut -f4))"
 }
