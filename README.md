@@ -64,3 +64,21 @@ neighbouring frequencies, off the tone and its harmonics: found means it stands 
 
 Development: `nix-shell` (nixpkgs pinned, as in lab-agent), `cargo test`. The command line uses clap
 for now; moving it onto argenv, as lab-agent uses, is a contained change.
+
+## The ways, held for agents
+
+`devlab guard` is what Claude Code's hooks on the lab call, so that a way an agent must keep is
+held when it is tried, not remembered. It needs no manifest.
+
+    devlab guard tool     PreToolUse: refuses (exit 2, saying why) a Bash command that pushes to main,
+                          runs python or pip, or reaches a phone by ssh, scp, sftp, rsync or sshpass
+    devlab guard start    SessionStart: lab-agent guide and lab-agent inbox, for the session to read
+
+A phone's addresses are the ones devlab has met: every manifest it loads leaves its addresses in
+`~/.local/state/devlab/CODENAME/addresses`, beside the Wi-Fi address it learned. In the lab's
+`~/.claude/settings.json`:
+
+    "hooks": {
+      "PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "~/.local/bin/devlab guard tool", "timeout": 10}]}],
+      "SessionStart": [{"hooks": [{"type": "command", "command": "~/.local/bin/devlab guard start", "timeout": 30}]}]
+    }
