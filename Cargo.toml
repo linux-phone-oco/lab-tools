@@ -1,5 +1,5 @@
 [workspace]
-members = ["tone", "devlab", "health"]
+members = ["tone", "devlab", "health", "lpoco"]
 resolver = "2"
 
 # the health runner ships to phones: small
