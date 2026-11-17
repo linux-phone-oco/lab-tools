@@ -144,6 +144,10 @@ fn program() -> Program<'static> {
                 summary: "Shell completions for lpoco",
             },
             generate::Command {
+                name: "mcp",
+                summary: "The one MCP server for the family (lab, health and bringup tools)",
+            },
+            generate::Command {
                 name: "man",
                 summary: "The manual page, in roff",
             },
@@ -196,9 +200,12 @@ fn main() {
                 }
             }
         }
+        Some(cli::Command::Mcp) => run("lab", &["mcp".to_string()]),
         Some(cli::Command::Man) => emit(generate::man_page(&program(), &records)),
         None => {
-            eprintln!("usage: lpoco NAME [args...] | list | completions SHELL | man | --version");
+            eprintln!(
+                "usage: lpoco NAME [args...] | list | completions SHELL | mcp | man | --version"
+            );
             2
         }
     };

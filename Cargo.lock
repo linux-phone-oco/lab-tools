@@ -631,6 +631,7 @@ version = "0.1.7"
 dependencies = [
  "argenv-resolve",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

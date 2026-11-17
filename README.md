@@ -79,7 +79,12 @@ counting, a stalled boot saves its log and falls back to stock), proven on surya
 back by itself, then the health of the boot it came to), `kernel_status`, and `reboot` (and wait, and
 the new boot's health). Each calls what the command line calls.
 
+`lpoco mcp` is the family's one door: the same server, every program's tools under its name - `lab_run`, `lab_put`,
+`lab_get`, `lab_kernel_*`, `lab_reboot` (the bare names above still answer), `health_*`, and `bringup_image_info` and
+`bringup_image_check` (boot images read and counted against the manifest).
+
     claude mcp add --scope user phone -- devlab --device /path/to/LAB/device.toml mcp
+    claude mcp add --scope user lpoco -- lpoco mcp
 
 ## tone
 
