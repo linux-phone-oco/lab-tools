@@ -40,3 +40,12 @@ once_a_day() {
 # json_field KEY LINE - KEY's value in one JSON line (a number, true/false or a plain string), as
 # devlab-health's own subcommands print it: devlab-health tone find ... | json_field level_dbfs
 json_field() { printf '%s' "$2" | sed -n "s/.*\"$1\": *\"\{0,1\}\([^,\"}]*\).*/\1/p"; }
+
+# no_sim - succeeds when the modem has no SIM card (ModemManager: state failed, reason sim-missing, or no
+# SIM object): what needs the SIM cannot be measured, so it says "skip: no SIM card" - unknown, not broken.
+no_sim() {
+	_i=$(mmcli -m any -K 2>/dev/null) || return 1
+	[ -n "$_i" ] || return 1
+	printf '%s\n' "$_i" | grep -q 'state-failed-reason *: *sim-missing' && return 0
+	printf '%s\n' "$_i" | grep -q '^modem\.generic\.sim *: *\(--\)\{0,1\}$'
+}

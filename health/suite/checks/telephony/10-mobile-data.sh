@@ -9,6 +9,7 @@ absent modem && { say mobile-data modem-data skip "the manifest says this phone 
 command -v mmcli >/dev/null || { say mobile-data modem-data skip "no ModemManager"; exit 0; }
 m=$(mmcli -L 2>/dev/null | grep -o '/Modem/[0-9]*' | head -n1)
 [ -n "$m" ] || { say mobile-data modem-data skip "no modem seen by ModemManager"; exit 0; }
+no_sim && { say mobile-data modem-data skip "no SIM card"; exit 0; }
 # KEY's value in mmcli's key-value output on standard input
 kv() { sed -n "s/^$1 *: *//p" | head -n1; }
 info=$(mmcli -m "${m##*/}" -K 2>/dev/null)
