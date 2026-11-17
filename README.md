@@ -82,3 +82,14 @@ A phone's addresses are the ones devlab has met: every manifest it loads leaves 
       "PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "~/.local/bin/devlab guard tool", "timeout": 10}]}],
       "SessionStart": [{"hooks": [{"type": "command", "command": "~/.local/bin/devlab guard start", "timeout": 30}]}]
     }
+
+## What must never be touched
+
+A phone's manifest names what harms it to touch, each with what it did:
+
+    [[hazard]]
+    path = "/sys/kernel/debug/gpio"
+    why = "read while LPASS is idle it stalls the bus and the phone hangs until a person holds power"
+
+devlab refuses any command it carries to the phone - `devlab phone sh|root`, the MCP door - that names
+one, saying why; the phone is never reached for it.
