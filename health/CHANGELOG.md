@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3](https://github.com/linux-phone-oco/lab-tools/compare/devlab-health-v0.1.2...devlab-health-v0.1.3) - 2026-11-17
+
+### Added
+
+- mobile-data in the generic suite, its bytes counted against a monthly budget ([#60](https://github.com/linux-phone-oco/lab-tools/pull/60))
+
 ## [0.1.2](https://github.com/linux-phone-oco/lab-tools/compare/devlab-health-v0.1.1...devlab-health-v0.1.2) - 2026-11-17
 
 ### Added
