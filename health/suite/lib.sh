@@ -36,3 +36,7 @@ once_a_day() {
 	[ "$(cat "$_stamp" 2>/dev/null)" != "$_today" ] || return 1
 	mkdir -p "${_stamp%/*}" && echo "$_today" > "$_stamp"
 }
+
+# json_field KEY LINE - KEY's value in one JSON line (a number, true/false or a plain string), as
+# devlab-health's own subcommands print it: devlab-health tone find ... | json_field level_dbfs
+json_field() { printf '%s' "$2" | sed -n "s/.*\"$1\": *\"\{0,1\}\([^,\"}]*\).*/\1/p"; }

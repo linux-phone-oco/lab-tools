@@ -258,6 +258,7 @@ name = "devlab-health"
 version = "0.1.1"
 dependencies = [
  "serde_json",
+ "tone",
 ]
 
 [[package]]
