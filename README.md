@@ -23,7 +23,7 @@ Secrets and what is learned at run time stay outside repositories: `~/.config/de
 
 ## The phone checks itself
 
-`devlab suite put now` puts the health suite on the phone: the Alpine package `devlab-health` - the
+`devlab suite put now` puts the health suite on the phone - the lab's checks and manifest as its main has them (devlab's own clone; `--here` takes this clone's, to try a check before it lands): the Alpine package `devlab-health` - the
 runner (a small static Rust program) and the generic checks in `health/suite/checks/` - from
 lab-tools' signed repository (its key and repository added to the phone once), then the phone's own
 checks from its lab repository and what the manifest's `[health]` expects of this phone. With

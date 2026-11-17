@@ -166,6 +166,10 @@ enum SuiteCmd {
         /// (target/aarch64-unknown-linux-musl/release/devlab-health); without it, the Alpine package
         #[arg(long)]
         runner: Option<PathBuf>,
+        /// The lab's checks and manifest as this clone holds them, not as its main has them - to try
+        /// a check before it lands
+        #[arg(long)]
+        here: bool,
     },
     /// Run it on the phone now, and say what it found; exit 1 when unhealthy
     Run,
@@ -288,11 +292,26 @@ fn main() -> Result<()> {
         Cmd::Suite { action } => {
             let p = phone::Phone::find(&dev)?;
             match action {
-                SuiteCmd::Put { now, runner } => {
+                SuiteCmd::Put {
+                    now,
+                    runner,
+                    here: as_is,
+                } => {
                     if now != "now" {
-                        bail!("usage: devlab suite put now [--runner FILE] - it changes the phone");
+                        bail!("usage: devlab suite put now [--runner FILE] [--here] - it changes the phone");
                     }
-                    suite::put(&dev, &here, &p, runner.as_deref())?;
+                    if as_is {
+                        suite::put(&dev, &here, &p, runner.as_deref())?;
+                    } else {
+                        // what the lab's main holds - never a clone that has fallen behind (2026-11-17:
+                        // a clone 40 commits behind put back checks and a gap main had left)
+                        let lab =
+                            gather::Place::at_main(&here, &dev.state_dir().join("places-put"))?;
+                        let (main_dev, _) =
+                            device::Device::load(Some(&lab.dir.join(device::MANIFEST)), &lab.dir)?;
+                        eprintln!("the lab as its main has it: {}", lab.dir.display());
+                        suite::put(&main_dev, &lab.dir, &p, runner.as_deref())?;
+                    }
                 }
                 SuiteCmd::Run => {
                     let ran = suite::run(&p)?;
