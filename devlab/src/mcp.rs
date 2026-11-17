@@ -12,12 +12,10 @@ use crate::{kernel, outcome, phone, suite};
 use rmcp::handler::server::{router::tool::ToolRouter, wrapper::Parameters};
 use rmcp::{schemars, tool, tool_handler, tool_router, ServerHandler, ServiceExt};
 use serde::Deserialize;
-use std::path::PathBuf;
 
 #[derive(Clone)]
 pub struct Door {
     device: Device,
-    here: PathBuf,
     tool_router: ToolRouter<Self>,
 }
 
@@ -79,10 +77,9 @@ impl Door {
 
 #[tool_router]
 impl Door {
-    pub fn new(device: Device, here: PathBuf) -> Self {
+    pub fn new(device: Device) -> Self {
         Door {
             device,
-            here,
             tool_router: Self::tool_router(),
         }
     }
@@ -192,7 +189,7 @@ impl Door {
             &self.phone()?,
             &k.name,
         ))?;
-        let (_, health) = said(suite::after_change(&self.phone()?, &self.here, true))?;
+        let (_, health) = said(suite::after_change(&self.phone()?, true))?;
         Ok(format!("{came}\n{health}"))
     }
 
@@ -211,7 +208,7 @@ impl Door {
     async fn reboot(&self) -> Result<String, String> {
         let _held = said(crate::hold::hold(&self.device))?;
         let back = said(phone::reboot(&self.device, &self.phone()?))?;
-        let (_, health) = said(suite::after_change(&back, &self.here, true))?;
+        let (_, health) = said(suite::after_change(&back, true))?;
         Ok(format!("back at {}\n{health}", back.target))
     }
 }
@@ -224,14 +221,12 @@ impl Door {
 impl ServerHandler for Door {}
 
 /// Serves the door on standard input and output until the agent goes.
-pub fn serve(device: Device, here: PathBuf) -> anyhow::Result<()> {
+pub fn serve(device: Device) -> anyhow::Result<()> {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
     rt.block_on(async {
-        let service = Door::new(device, here)
-            .serve(rmcp::transport::stdio())
-            .await?;
+        let service = Door::new(device).serve(rmcp::transport::stdio()).await?;
         service.waiting().await?;
         Ok(())
     })
