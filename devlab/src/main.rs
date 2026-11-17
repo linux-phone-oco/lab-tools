@@ -9,7 +9,7 @@
 //!   devlab test                    the device's checks, now
 //!   devlab hear                    a tone on each speaker, heard through the lab's microphone
 //!   devlab health                  against everything that worked before; exit 1 on a regression
-//!   devlab suite put now [--runner F] | run | latest   the health suite on the phone itself
+//!   devlab suite put now [--runner [F]] | run | latest   the health suite on the phone itself
 //!   devlab gather now [--docs DIR]  the phone's reports into this lab and the picture's tables
 //!   devlab mcp                    the phone for any agent: an MCP server (stdio)
 //!   devlab keeper take|renew|release NAME | status   the phone's keeper, one at a time
@@ -179,10 +179,11 @@ enum SuiteCmd {
     /// Put the suite on the phone (say `now`): the runner, the checks, the manifest's [health], the timer
     Put {
         now: String,
-        /// A runner built here, copied with the generic checks - to try what is not released yet
-        /// (target/aarch64-unknown-linux-musl/release/devlab-health); without it, the Alpine package
-        #[arg(long)]
-        runner: Option<PathBuf>,
+        /// A runner built here, copied with the generic checks - to try what is not released yet: alone,
+        /// the runner built (health/build.sh) from the lab-tools this devlab was built from, whose generic
+        /// checks it carries; or a FILE built elsewhere. Without it, the Alpine package
+        #[arg(long, value_name = "FILE", num_args = 0..=1)]
+        runner: Option<Option<PathBuf>>,
         /// The lab's checks and manifest as this clone holds them, not as its main has them - to try
         /// a check before it lands
         #[arg(long)]
@@ -314,8 +315,13 @@ fn main() -> Result<()> {
                     here: as_is,
                 } => {
                     if now != "now" {
-                        bail!("usage: devlab suite put now [--runner FILE] [--here] - it changes the phone");
+                        bail!("usage: devlab suite put now [--runner [FILE]] [--here] - it changes the phone");
                     }
+                    let runner = match runner {
+                        Some(None) => Some(suite::built_runner()?),
+                        Some(Some(file)) => Some(file),
+                        None => None,
+                    };
                     if as_is {
                         suite::put(&dev, &here, &p, runner.as_deref())?;
                     } else {
