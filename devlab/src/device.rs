@@ -68,6 +68,10 @@ pub struct Fastboot {
     /// Whether devlab may write partitions over fastboot (devlab flash); false unless said
     #[serde(default)]
     pub writes: bool,
+    /// Whether devlab may change the active slot (devlab fastboot set-active: the bootloader's metadata, no
+    /// partition written); false unless a recorded decision says so
+    #[serde(default)]
+    pub slot_switch: bool,
 }
 
 /// How an image goes onto the phone, and what is baked into it.

@@ -148,12 +148,16 @@ hold two:
     [fastboot]
     serial = "FA81N1A00790"   # as fastboot devices lists it
     writes = false            # the default: devlab flash refuses this phone; say true only by a decision
+    slot_switch = false       # the default: devlab fastboot set-active refuses; true only by a decision
 
 `devlab fastboot state` says whether it is in fastboot and what its bootloader says of itself (product,
 unlocked, slot-count, current-slot, versions); `getvar NAME` reads one. `boot now BOOT.IMG` boots an
-Android boot image from memory - nothing written, both slots as they were, a power cycle comes back to
-them - and says whether the phone left fastboot. `reboot now` goes to the active slot, `--bootloader`
-back to fastboot. None of them writes, erases or switches a slot. The lease and the hold are the
+Android boot image from memory - devlab writes nothing - reading the slots' flags before, then saying where
+the phone went (back to fastboot, Android's adb, Linux on its USB network) and what the flags became: the
+bootloader keeps A/B flags of its own and may change them on a failed boot (google-walleye, 2026-11-17: a RAM
+boot ended on slot b with slot a unbootable). `set-active now SLOT` changes the active slot (metadata only)
+where the manifest says `slot_switch = true`, by a recorded decision only. `reboot now` goes to the active slot, `--bootloader`
+back to fastboot. None of them writes a partition or erases. The lease and the hold are the
 phone's own (by codename), so one phone's keeper never blocks another's.
 
 ## The phone's keeper

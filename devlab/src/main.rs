@@ -12,7 +12,7 @@
 //!   devlab suite put now [--runner [F]] | run | latest   the health suite on the phone itself
 //!   devlab gather now [--docs DIR]  the phone's reports into this lab and the picture's tables
 //!   devlab mcp                    the phone for any agent: an MCP server (stdio)
-//!   devlab fastboot state | getvar NAME | boot now IMAGE | reboot now   by serial; nothing written
+//!   devlab fastboot state | getvar NAME | boot now IMAGE | reboot now | set-active now SLOT   by serial
 //!   devlab keeper take|renew|release NAME | status   the phone's keeper, one at a time
 //!   devlab guard tool              the phone's way, held for agents: no ssh/scp to a phone outside devlab (a hook)
 //!   devlab watch                   after every boot: health, silent when well, a board task when not
@@ -112,7 +112,7 @@ enum Cmd {
     /// Watch the phone: health after every boot, silent when well, a board task when not
     Watch,
     /// The phone over fastboot, by its manifest.s serial: read it, boot an image from memory, reboot -
-    /// nothing written, the slots as they were
+    /// nothing written by devlab, the slots' flags said before and after
     Fastboot {
         #[command(subcommand)]
         action: FastbootCmd,
@@ -188,7 +188,8 @@ enum FastbootCmd {
     State,
     /// One bootloader variable (read only)
     Getvar { name: String },
-    /// Boot an Android boot image from memory (say `now`): nothing written, both slots as they were
+    /// Boot an Android boot image from memory (say `now`): devlab writes nothing; it says where the phone
+    /// went and what the bootloader did to the slots' flags
     Boot { now: String, image: PathBuf },
     /// Leave fastboot to the active slot (say `now`), or with --bootloader come back into fastboot
     Reboot {
@@ -196,6 +197,9 @@ enum FastbootCmd {
         #[arg(long)]
         bootloader: bool,
     },
+    /// Make SLOT (a or b) the active one (say `now`): metadata only, and only where the manifest says
+    /// [fastboot] slot_switch = true
+    SetActive { now: String, slot: String },
 }
 
 #[derive(Subcommand)]
@@ -406,6 +410,12 @@ fn main() -> Result<()> {
                         bail!("usage: devlab fastboot reboot now [--bootloader] - it reboots the phone");
                     }
                     println!("{}", fastboot::reboot(&dev, bootloader)?);
+                }
+                FastbootCmd::SetActive { now, slot } => {
+                    if now != "now" {
+                        bail!("usage: devlab fastboot set-active now SLOT - it changes the phone's active slot");
+                    }
+                    println!("{}", fastboot::set_active(&dev, &slot)?);
                 }
             }
         }

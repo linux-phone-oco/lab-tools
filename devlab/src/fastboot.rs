@@ -1,12 +1,16 @@
 //! A phone reached over fastboot - before Linux runs on it, or while it sits in its bootloader - by its
 //! manifest's `[fastboot] serial`, never "whichever phone is in fastboot" (a lab may hold two).
-//!   devlab fastboot state             is it in fastboot now, and what its bootloader says of itself
+//!   devlab fastboot state             is it in fastboot now, what its bootloader says, and its slots' flags
 //!   devlab fastboot getvar NAME       one variable, read only
-//!   devlab fastboot boot now IMAGE    an Android boot image booted from memory: nothing written, both
-//!                                     slots as they were; the next power cycle comes back to them
+//!   devlab fastboot boot now IMAGE    an Android boot image booted from memory: devlab writes nothing, and
+//!                                     says where the phone went and what the slots' flags became
 //!   devlab fastboot reboot now [--bootloader]   leave fastboot to the active slot, or back to fastboot
-//! No word here writes, erases or changes the active slot: writing is devlab flash's, and only where
-//! the manifest says `writes = true` (decision 2026-11-17-walleye-fastboot-first).
+//!   devlab fastboot set-active now SLOT          the active slot (metadata only), only where the manifest
+//!                                     says [fastboot] slot_switch = true
+//! devlab writes no partition here and erases nothing: writing is devlab flash's, only where the manifest
+//! says `writes = true` (decision 2026-11-17-walleye-fastboot-first). But a phone's bootloader keeps A/B
+//! flags of its own and may change them on a boot that fails (google-walleye, 2026-11-17: a RAM boot ended
+//! with current-slot b and slot a unbootable) - so every boot and switch says the flags before and after.
 use crate::device::Device;
 use anyhow::{bail, Context, Result};
 use std::path::Path;
@@ -19,10 +23,23 @@ const STATE: &[&str] = &[
     "serialno",
     "unlocked",
     "slot-count",
-    "current-slot",
     "version-bootloader",
     "version-baseband",
 ];
+
+/// The A/B flags the bootloader keeps, read before and after a boot or a switch.
+const SLOTS: &[&str] = &[
+    "current-slot",
+    "slot-unbootable:a",
+    "slot-successful:a",
+    "slot-retry-count:a",
+    "slot-unbootable:b",
+    "slot-successful:b",
+    "slot-retry-count:b",
+];
+
+/// Google's vendor and the product its Android adb gadget answers with.
+const ANDROID_ADB: &str = "18d1:4ee7";
 
 /// The phone's serial, as its manifest says it: there is no reaching it by fastboot without one.
 pub fn serial(device: &Device) -> Result<&str> {
@@ -102,13 +119,51 @@ pub fn getvar(device: &Device, name: &str) -> Result<String> {
     }
 }
 
-/// Whether it is in fastboot, and what its bootloader says of itself.
+/// The slots' flags as the bootloader says them now, in SLOTS' order ("not said" where it says none).
+fn slots(serial: &str) -> Result<Vec<(&'static str, String)>> {
+    SLOTS
+        .iter()
+        .map(|name| {
+            let (_, said) = fastboot(serial, &["getvar", name])?;
+            Ok((
+                *name,
+                answer(&said, name).unwrap_or_else(|| "not said".into()),
+            ))
+        })
+        .collect()
+}
+
+/// What changed between two readings of the slots' flags, in words: "slot-unbootable:a no -> yes, ...".
+pub fn changed(before: &[(&str, String)], after: &[(&str, String)]) -> String {
+    let moved: Vec<String> = before
+        .iter()
+        .zip(after)
+        .filter(|((_, b), (_, a))| b != a)
+        .map(|((name, b), (_, a))| format!("{name} {b} -> {a}"))
+        .collect();
+    if moved.is_empty() {
+        "the slots' flags did not change".into()
+    } else {
+        format!("the slots' flags changed: {}", moved.join(", "))
+    }
+}
+
+fn said_slots(flags: &[(&str, String)]) -> String {
+    flags
+        .iter()
+        .map(|(n, v)| format!("{n}={v}"))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Whether it is in fastboot, what its bootloader says of itself, and its slots' flags.
 pub fn state(device: &Device) -> Result<String> {
     let s = serial(device)?;
     if !present(s)? {
         return Ok(format!(
-            "{}: {s} is not in fastboot now (running a system, off, or not plugged in)",
-            device.device.codename
+            "{}: {s} is not in fastboot now ({})",
+            device.device.codename,
+            elsewhere(device, s).unwrap_or("running a system, off, or not plugged in")
         ));
     }
     let mut out = format!("{}: {s} is in fastboot\n", device.device.codename);
@@ -117,7 +172,33 @@ pub fn state(device: &Device) -> Result<String> {
         let v = answer(&said, name).unwrap_or_else(|| "not said".into());
         out.push_str(&format!("  {name}: {v}\n"));
     }
+    for (name, v) in slots(s)? {
+        out.push_str(&format!("  {name}: {v}\n"));
+    }
     Ok(out)
+}
+
+/// Where the phone answers, when not in fastboot: Android's adb, or Linux on its USB network.
+fn elsewhere(device: &Device, serial: &str) -> Option<&'static str> {
+    let adb = Command::new("adb").arg("devices").output().ok();
+    if adb.is_some_and(|o| {
+        String::from_utf8_lossy(&o.stdout)
+            .lines()
+            .any(|l| l.split_whitespace().next() == Some(serial))
+    }) {
+        return Some("Android, its adb answering");
+    }
+    let usb = Command::new("lsusb").output().ok();
+    if usb.is_some_and(|o| String::from_utf8_lossy(&o.stdout).contains(ANDROID_ADB)) {
+        return Some("Android's adb gadget on USB (18d1:4ee7)");
+    }
+    let linux = device.connection.addresses.iter().any(|a| {
+        Command::new("ping")
+            .args(["-c", "1", "-W", "1", a])
+            .output()
+            .is_ok_and(|o| o.status.success())
+    });
+    linux.then_some("Linux, its USB network answering")
 }
 
 /// Whether the file is an Android boot image (its magic), the only thing `fastboot boot` takes here.
@@ -125,8 +206,10 @@ pub fn is_boot_image(head: &[u8]) -> bool {
     head.starts_with(b"ANDROID!")
 }
 
-/// Boots an image from memory: nothing is written, the slots stay as they were. Says whether the phone
-/// left fastboot (the image was taken and started), within a minute.
+/// Boots an image from memory: devlab writes nothing. Reads the slots' flags first, then watches where
+/// the phone goes for up to three minutes - back to fastboot, Android, or Linux on its USB network - and,
+/// once it is in fastboot again, says what the flags became. fastboot's own exit is not the verdict: a
+/// phone that leaves USB at "Booting" can make it fail (walleye's try b was called refused, and ran).
 pub fn boot(device: &Device, image: &Path) -> Result<String> {
     let s = serial(device)?;
     let mut head = [0u8; 8];
@@ -145,30 +228,69 @@ pub fn boot(device: &Device, image: &Path) -> Result<String> {
     }
     let _held = crate::hold::hold(device)?;
     need(s)?;
+    let before = slots(s)?;
+    let mut out = format!("before: {}\n", said_slots(&before));
     let path = image.to_str().context("the image's path")?;
     let (ok, said) = fastboot(s, &["boot", path])?;
-    if !ok {
-        bail!(
-            "fastboot boot refused it - nothing written: {}",
-            said.trim()
+    let start = Instant::now();
+    let mut left = None;
+    while start.elapsed() < Duration::from_secs(180) {
+        let here = present(s)?;
+        match left {
+            None if !here => {
+                left = Some(start.elapsed().as_secs());
+                out.push_str(&format!(
+                    "left fastboot after {} s\n",
+                    start.elapsed().as_secs()
+                ));
+            }
+            None if start.elapsed() > Duration::from_secs(60) => {
+                out.push_str(&format!(
+                    "still in fastboot after a minute: it did not start (fastboot said: {})\n",
+                    said.trim()
+                ));
+                break;
+            }
+            Some(_) if here => {
+                out.push_str(&format!(
+                    "back in fastboot after {} s\n",
+                    start.elapsed().as_secs()
+                ));
+                break;
+            }
+            Some(_) => {
+                if let Some(where_) = elsewhere(device, s) {
+                    out.push_str(&format!(
+                        "came back as {where_} after {} s\n",
+                        start.elapsed().as_secs()
+                    ));
+                    break;
+                }
+            }
+            None => {}
+        }
+        std::thread::sleep(Duration::from_secs(3));
+    }
+    if left.is_some() && !ok {
+        out.push_str(&format!(
+            "(fastboot itself said it failed - the phone left anyway: {})\n",
+            said.lines().last().unwrap_or("").trim()
+        ));
+    }
+    if present(s)? {
+        let after = slots(s)?;
+        out.push_str(&format!(
+            "after: {}\n{}",
+            said_slots(&after),
+            changed(&before, &after)
+        ));
+    } else {
+        out.push_str(
+            "the slots' flags are not known yet: the phone is not in fastboot to say them \
+             (devlab fastboot state once it is back)",
         );
     }
-    let start = Instant::now();
-    while start.elapsed() < Duration::from_secs(60) {
-        if !present(s)? {
-            return Ok(format!(
-                "booted {} from memory - nothing written, slots as they were; {s} left fastboot after {} s. \
-                 A power cycle (or devlab fastboot reboot once it is back in fastboot) returns to the active slot.",
-                image.display(),
-                start.elapsed().as_secs()
-            ));
-        }
-        std::thread::sleep(Duration::from_secs(2));
-    }
-    Ok(format!(
-        "fastboot took {} but {s} is still in fastboot after a minute - nothing written; it did not start",
-        image.display()
-    ))
+    Ok(out)
 }
 
 /// Leaves fastboot to the active slot, or reboots back into fastboot.
@@ -192,6 +314,35 @@ pub fn reboot(device: &Device, bootloader: bool) -> Result<String> {
     })
 }
 
+/// Makes SLOT the active one - the bootloader's metadata only, no partition written - where the manifest
+/// says `slot_switch = true` (said only by a recorded decision), and says the flags before and after.
+pub fn set_active(device: &Device, slot: &str) -> Result<String> {
+    if !device.fastboot.slot_switch {
+        bail!(
+            "{}'s device.toml does not say [fastboot] slot_switch = true - the active slot is not changed",
+            device.device.codename
+        );
+    }
+    if !matches!(slot, "a" | "b") {
+        bail!("{slot:?}: a slot is a or b");
+    }
+    let s = serial(device)?;
+    let _held = crate::hold::hold(device)?;
+    need(s)?;
+    let before = slots(s)?;
+    let (ok, said) = fastboot(s, &["set_active", slot])?;
+    if !ok {
+        bail!("fastboot set_active {slot} said: {}", said.trim());
+    }
+    let after = slots(s)?;
+    Ok(format!(
+        "before: {}\nafter: {}\n{}",
+        said_slots(&before),
+        said_slots(&after),
+        changed(&before, &after)
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -211,6 +362,26 @@ mod tests {
         let said = "current-slot: b\nFinished. Total time: 0.002s\n";
         assert_eq!(answer(said, "current-slot").as_deref(), Some("b"));
         assert_eq!(answer(said, "unlocked"), None);
+        let said = "slot-unbootable:a: yes\n";
+        assert_eq!(answer(said, "slot-unbootable:a").as_deref(), Some("yes"));
+    }
+
+    #[test]
+    fn what_the_bootloader_changed_is_said() {
+        // walleye, 2026-11-17, try b
+        let before = vec![
+            ("current-slot", "a".to_string()),
+            ("slot-unbootable:a", "no".to_string()),
+        ];
+        let after = vec![
+            ("current-slot", "b".to_string()),
+            ("slot-unbootable:a", "yes".to_string()),
+        ];
+        assert_eq!(
+            changed(&before, &after),
+            "the slots' flags changed: current-slot a -> b, slot-unbootable:a no -> yes"
+        );
+        assert_eq!(changed(&before, &before), "the slots' flags did not change");
     }
 
     #[test]
@@ -221,19 +392,23 @@ mod tests {
     }
 
     #[test]
-    fn no_serial_no_fastboot() {
+    fn no_serial_no_fastboot_and_no_switch_unless_said() {
         let d = Device::parse(
             "[device]\ncodename = \"x\"\n[connection]\nuser = \"u\"\naddresses = [\"a\"]\n",
         )
         .unwrap();
         assert!(serial(&d).is_err());
         assert!(!d.fastboot.writes, "writing is never assumed");
+        assert!(!d.fastboot.slot_switch, "switching is never assumed");
+        assert!(set_active(&d, "a").is_err());
         let d = Device::parse(
             "[device]\ncodename = \"google-walleye\"\n[connection]\nuser = \"u\"\naddresses = [\"a\"]\n\
              [fastboot]\nserial = \"FA81N1A00790\"\n",
         )
         .unwrap();
         assert_eq!(serial(&d).unwrap(), "FA81N1A00790");
+        let e = set_active(&d, "a").unwrap_err().to_string();
+        assert!(e.contains("slot_switch = true"), "{e}");
         assert!(Device::parse(
             "[device]\ncodename = \"x\"\n[connection]\nuser = \"u\"\naddresses = [\"a\"]\n\
              [fastboot]\nserial = \"s\"\nslot = \"a\"\n"
