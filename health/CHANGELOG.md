@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1](https://github.com/linux-phone-oco/lab-tools/compare/devlab-health-v0.1.0...devlab-health-v0.1.1) - 2026-11-17
+
+### Added
+
+- the telephony layer: checks that cost something, at most once a day ([#56](https://github.com/linux-phone-oco/lab-tools/pull/56))
+
+### Other
+
+- *(devlab-health)* release v0.1.0 ([#49](https://github.com/linux-phone-oco/lab-tools/pull/49))
+
 ## [0.1.0](https://github.com/linux-phone-oco/lab-tools/releases/tag/devlab-health-v0.1.0) - 2026-11-17
 
 ### Added
