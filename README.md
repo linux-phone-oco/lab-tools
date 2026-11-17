@@ -21,15 +21,15 @@ Secrets and what is learned at run time stay outside repositories: `~/.config/de
     devlab provision now           a freshly flashed phone: packages, files, Wi-Fi
     devlab test | health | watch   its checks; regressions against what worked; after every boot
 
-## The phone checks itself
+## The phone checks itself: lpoco-health
 
-`devlab suite put now` puts the health suite on the phone - the lab's checks and manifest as its main has them (devlab's own clone; `--here` takes this clone's, to try a check before it lands): the Alpine package `devlab-health` - the
+`devlab suite put now` puts the health suite on the phone - the lab's checks and manifest as its main has them (devlab's own clone; `--here` takes this clone's, to try a check before it lands): `lpoco-health` - the
 runner (a small static Rust program) and the generic checks in `health/suite/checks/` - from
 lab-tools' signed repository (its key and repository added to the phone once), then the phone's own
 checks from its lab repository and what the manifest's `[health]` expects of this phone. With
 `--runner` devlab builds the runner (`health/build.sh aarch64-unknown-linux-musl`) in the lab-tools it
 was itself built from and copies it with that tree's checks instead, to try what is not released yet;
-`--runner FILE` copies a runner built elsewhere. A timer runs the suite 120 s after
+`--runner FILE` copies a runner built elsewhere; `--package` takes the Alpine package once it is published. A timer runs the suite 120 s after
 every boot; `devlab suite run` runs it now and passes on what the phone says; `devlab suite latest`
 reads its latest report.
 
@@ -38,14 +38,28 @@ COMPONENT detail`, base layer first (the hardware and the system, no shell in th
 shell layer, then the telephony layer: what costs something to run. A call or an SMS runs at most once a
 day (`once_a_day NAME` in lib.sh, skipping with "ran today" after); mobile data (`mobile-data`) runs every
 boot over the modem's own interface, about 150 kB, 5 MB once a week for throughput, each run's bytes kept
-in the month's ledger (`devlab-health data`) and skipped once the month has spent the manifest's
-`data_budget_mb` (250 by default). Each run is one report on the phone, `/var/lib/devlab/health/RUN.jsonl`, a line per test
+in the month's ledger (`lpoco-health data`) and skipped once the month has spent the manifest's
+`data_budget_mb` (250 by default). Each run is one report on the phone, `/var/lib/lpoco-health/RUN.jsonl`, a line per test
 in the shape of linux-phone-oco/docs' `test_results`; an unhealthy run keeps its evidence beside it
 (kernel log, errors, failed units) and says what is wrong, in plain words, in the journal. A part the
 phone never had working is a `gap` in the manifest: still measured, not ill health; a gap that starts
 to pass is said.
 
-The package is released by release-plz (a `devlab-health-vX.Y.Z` tag) and published by the package
+### Detected conditions and chosen switches
+
+What the phone finds out by itself is a **condition**, worked out at the start of every run by
+`conditions/*.sh` (no SIM card, no modem, no network): a check says `skip_on no-sim TEST COMPONENT && exit 0`
+and reports "not measured: no SIM card". Nothing is written down - put the SIM back and the next run measures
+again. What somebody *chooses* is a **switch**: `lpoco-health off TEST --reason WORDS [--by WHO]`, `lpoco-health
+on TEST`, `lpoco-health list` (tests, switches with who and when, conditions found now), kept in
+`/etc/lpoco-health/switches` on the phone and reported as `skip: switched off: REASON (by WHO, WHEN)`. A test
+is never off without a reason. From the lab: `devlab suite off|on|list`, and the MCP door's
+`health_switch_off`, `health_switch_on`, `health_switches`. The phone's state never goes into docs; docs keep
+the hardware's facts and the results. The command line is declared once with argenv (`health/src/cli.rs`).
+`devlab suite put now` moves a phone from the old `devlab-health` (reports, month's data ledger, once-a-day
+marks) to `lpoco-health` and leaves `devlab-health` as another name of the program.
+
+The package is released by release-plz (a `lpoco-health-vX.Y.Z` tag) and published by the package
 conveyor (`packaging/`, `.github/workflows/packages.yml`) at https://linux-phone-oco.github.io/lab-tools/,
 for postmarketOS v26.06 (Alpine 3.24): any postmarketOS phone can take it with the lines on that page.
 
@@ -73,11 +87,11 @@ Make a test tone, and find it in a recording - a device's speaker tests its micr
 neighbouring frequencies, off the tone and its harmonics: found means it stands `--min-snr` dB
 (20 by default) above them.
 
-On the phone the same crate answers as `devlab-health tone make|find` (no clap: the runner stays small;
+On the phone the same crate answers as `lpoco-health tone make|find` (no clap: the runner stays small;
 `--raw` makes or reads s16le mono as `pacat`/`parecord --raw` do, `--from`/`--to` keep the seconds where
 the tone sounds): a check that plays a tone and listens hands the numbers to this tested code instead of
 awk, and reads its JSON line with `json_field` from the suite's `lib.sh`. Analysis that counts, times or
-keeps a state joins devlab-health as a subcommand the same way (decision 2026-11-17-health-checks-shell-and-rust).
+keeps a state joins lpoco-health as a subcommand the same way (decision 2026-11-17-health-checks-shell-and-rust).
 
 Development: `nix-shell` (nixpkgs pinned, as in lab-agent), `cargo test`. The command line uses clap
 for now; moving it onto argenv, as lab-agent uses, is a contained change.

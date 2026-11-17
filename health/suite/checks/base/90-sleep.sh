@@ -3,7 +3,7 @@
 # sleep (aosd). A phone that never suspended this boot (a wake lock held - on USB the lab keeps one) has
 # not been measured: unknown, not broken. Suspended and the SoC still up is broken; the detail says which
 # processors never slept and which wake locks were held, the usual reasons it stays up.
-. /usr/lib/devlab/health/lib.sh
+. /usr/lib/lpoco-health/lib.sh
 if absent deep-sleep; then say soc-sleeps deep-sleep skip "the manifest says this phone has no deep sleep"; exit 0; fi
 st=/sys/kernel/debug/qcom_stats
 count() { awk '/^Count:/ { print $2; exit }' "$st/$1" 2>/dev/null; }

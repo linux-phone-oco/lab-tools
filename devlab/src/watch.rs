@@ -1,5 +1,5 @@
 //! Watching the phone from the lab machine. After every new boot the phone measures its own health
-//! (devlab-health.timer); the watch waits for that report, says the phone's own verdict on the board -
+//! (lpoco-health.timer); the watch waits for that report, says the phone's own verdict on the board -
 //! silent while all is well, one task naming what is unhealthy when not, closed again once well - and
 //! gathers, once the phone has gone QUIET without a new boot: the reports brought to the lab and filed
 //! into the picture's database through tad, both

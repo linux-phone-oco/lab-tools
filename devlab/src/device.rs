@@ -161,7 +161,7 @@ fn default_mode() -> String {
     "644".into()
 }
 
-/// What the phone's own health suite expects of this phone (devlab-health, on the phone). Every
+/// What the phone's own health suite expects of this phone (lpoco-health, on the phone). Every
 /// field is a fact about the hardware; what it says becomes /etc/devlab/health.env there.
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -190,7 +190,7 @@ pub struct Health {
     #[serde(default)]
     pub checks: Option<String>,
     /// Mobile data the health checks may spend in a month, in MB (250 when unsaid): the telephony
-    /// layer's mobile-data check skips once the month has spent it (devlab-health data)
+    /// layer's mobile-data check skips once the month has spent it (lpoco-health data)
     #[serde(default)]
     pub data_budget_mb: Option<u64>,
 }

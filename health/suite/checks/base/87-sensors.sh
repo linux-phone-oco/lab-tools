@@ -4,7 +4,7 @@
 # iio-sensor-proxy's own answer (net.hadess.SensorProxy) where it runs. The proximity sensor is the one a
 # call needs: it turns the screen off at the ear. A reading proves it present and live; near and far
 # when covered is a witnessed test.
-. /usr/lib/devlab/health/lib.sh
+. /usr/lib/lpoco-health/lib.sh
 if absent sensors; then say motion-and-light sensors skip "the manifest says this phone has no sensors"; exit 0; fi
 sn=0; for d in /sys/bus/iio/devices/iio:device*; do [ -e "$d/name" ] || continue; case "$(cat "$d/name")" in *adc*) ;; *) sn=$((sn + 1)) ;; esac; done
 has() { busctl --system get-property net.hadess.SensorProxy /net/hadess/SensorProxy net.hadess.SensorProxy "Has$1" 2>/dev/null | grep -q true && echo "$1"; }

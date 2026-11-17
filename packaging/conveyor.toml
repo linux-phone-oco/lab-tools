@@ -2,8 +2,8 @@
 # (https://github.com/linux-package-distribution-oco/conveyor). The APKBUILD and the public key stay
 # here; building, signing, checking and publishing live in the conveyor, once.
 [package]
-name = "devlab-health"
-tag-prefix = "devlab-health-v"
+name = "lpoco-health"
+tag-prefix = "lpoco-health-v"
 
 [alpine]
 apkbuild = "packaging/alpine/APKBUILD"

@@ -60,6 +60,22 @@ pub struct KernelInstall {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
+pub struct SwitchOff {
+    /// The test to switch off (health_switches says them)
+    pub test: String,
+    /// Why it is off: never switched off without one
+    pub reason: String,
+    /// Who asks (the agent or person; "devlab" if unsaid)
+    pub by: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct SwitchOn {
+    /// The test to switch on again
+    pub test: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
 pub struct KernelName {
     /// The test kernel entry's name, as installed
     pub name: String,
@@ -140,13 +156,44 @@ impl Door {
         }
         let (_, verdict) = said(
             self.phone()?
-                .root("journalctl -t devlab-health -o cat -n 1 --no-pager\n"),
+                .root("journalctl -t lpoco-health -o cat -n 1 --no-pager\n"),
         )?;
         Ok(format!(
             "{}the phone says: {}",
             suite::said(&rows),
             verdict.trim()
         ))
+    }
+
+    /// The phone's tests with their switches (off, with reason, who and when) and the conditions it finds
+    /// out about itself right now (no SIM card, no network, no modem).
+    #[tool]
+    async fn health_switches(&self) -> Result<String, String> {
+        said(suite::list(&self.phone()?))
+    }
+
+    /// Switch a test off on the phone, with a reason: the phone's own suite keeps the switch, and reports the
+    /// test as not measured until it is switched on. Not for what the phone finds out by itself (no SIM).
+    #[tool]
+    async fn health_switch_off(
+        &self,
+        Parameters(a): Parameters<SwitchOff>,
+    ) -> Result<String, String> {
+        said(suite::off(
+            &self.phone()?,
+            &a.test,
+            &a.reason,
+            a.by.as_deref().unwrap_or("devlab"),
+        ))
+    }
+
+    /// Switch a test on again on the phone.
+    #[tool]
+    async fn health_switch_on(
+        &self,
+        Parameters(a): Parameters<SwitchOn>,
+    ) -> Result<String, String> {
+        said(suite::on(&self.phone()?, &a.test))
     }
 
     /// Measure the phone's health now (its own suite, on the phone): every test, and the phone's verdict.

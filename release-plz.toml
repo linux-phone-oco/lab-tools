@@ -7,9 +7,9 @@ git_tag_enable = true
 git_release_enable = false
 
 [[package]]
-name = "devlab-health"
+name = "lpoco-health"
 # the conveyor reads this prefix (packaging/conveyor.toml)
-git_tag_name = "devlab-health-v{{ version }}"
+git_tag_name = "lpoco-health-v{{ version }}"
 git_release_enable = true
 
 # devlab and tone run on the lab machine, built from main; not released yet

@@ -12,83 +12,93 @@ use std::process::Command;
 /// The suite's own files, built in: (path under /, contents, mode).
 const FILES: &[(&str, &str, &str)] = &[
     (
-        "usr/lib/devlab/health/lib.sh",
+        "usr/lib/lpoco-health/lib.sh",
         include_str!("../../health/suite/lib.sh"),
         "644",
     ),
     (
-        "usr/lib/devlab/health/checks/base/10-storage.sh",
+        "usr/lib/lpoco-health/checks/base/10-storage.sh",
         include_str!("../../health/suite/checks/base/10-storage.sh"),
         "644",
     ),
     (
-        "usr/lib/devlab/health/checks/base/20-kernel.sh",
+        "usr/lib/lpoco-health/checks/base/20-kernel.sh",
         include_str!("../../health/suite/checks/base/20-kernel.sh"),
         "644",
     ),
     (
-        "usr/lib/devlab/health/checks/base/30-processors.sh",
+        "usr/lib/lpoco-health/checks/base/30-processors.sh",
         include_str!("../../health/suite/checks/base/30-processors.sh"),
         "644",
     ),
     (
-        "usr/lib/devlab/health/checks/base/40-sound.sh",
+        "usr/lib/lpoco-health/checks/base/40-sound.sh",
         include_str!("../../health/suite/checks/base/40-sound.sh"),
         "644",
     ),
     (
-        "usr/lib/devlab/health/checks/base/50-wifi.sh",
+        "usr/lib/lpoco-health/checks/base/50-wifi.sh",
         include_str!("../../health/suite/checks/base/50-wifi.sh"),
         "644",
     ),
     (
-        "usr/lib/devlab/health/checks/base/60-modem.sh",
+        "usr/lib/lpoco-health/checks/base/60-modem.sh",
         include_str!("../../health/suite/checks/base/60-modem.sh"),
         "644",
     ),
     (
-        "usr/lib/devlab/health/checks/base/70-bluetooth.sh",
+        "usr/lib/lpoco-health/checks/base/70-bluetooth.sh",
         include_str!("../../health/suite/checks/base/70-bluetooth.sh"),
         "644",
     ),
     (
-        "usr/lib/devlab/health/checks/base/80-display-input.sh",
+        "usr/lib/lpoco-health/checks/base/80-display-input.sh",
         include_str!("../../health/suite/checks/base/80-display-input.sh"),
         "644",
     ),
     (
-        "usr/lib/devlab/health/checks/base/85-parts.sh",
+        "usr/lib/lpoco-health/checks/base/85-parts.sh",
         include_str!("../../health/suite/checks/base/85-parts.sh"),
         "644",
     ),
     (
-        "usr/lib/devlab/health/checks/base/87-sensors.sh",
+        "usr/lib/lpoco-health/checks/base/87-sensors.sh",
         include_str!("../../health/suite/checks/base/87-sensors.sh"),
         "644",
     ),
     (
-        "usr/lib/devlab/health/checks/base/90-sleep.sh",
+        "usr/lib/lpoco-health/checks/base/90-sleep.sh",
         include_str!("../../health/suite/checks/base/90-sleep.sh"),
         "644",
     ),
     (
-        "usr/lib/devlab/health/checks/shell/10-sound-output.sh",
+        "usr/lib/lpoco-health/checks/shell/10-sound-output.sh",
         include_str!("../../health/suite/checks/shell/10-sound-output.sh"),
         "644",
     ),
     (
-        "usr/lib/devlab/health/checks/telephony/10-mobile-data.sh",
+        "usr/lib/lpoco-health/checks/telephony/10-mobile-data.sh",
         include_str!("../../health/suite/checks/telephony/10-mobile-data.sh"),
         "644",
     ),
     (
-        "etc/systemd/system/devlab-health.service",
-        include_str!("../../health/suite/devlab-health.service"),
+        "usr/lib/lpoco-health/conditions/10-modem.sh",
+        include_str!("../../health/suite/conditions/10-modem.sh"),
         "644",
     ),
     (
-        "etc/systemd/system/devlab-health.timer",
-        include_str!("../../health/suite/devlab-health.timer"),
+        "usr/lib/lpoco-health/conditions/20-network.sh",
+        include_str!("../../health/suite/conditions/20-network.sh"),
+        "644",
+    ),
+    (
+        "etc/systemd/system/lpoco-health.service",
+        include_str!("../../health/suite/lpoco-health.service"),
+        "644",
+    ),
+    (
+        "etc/systemd/system/lpoco-health.timer",
+        include_str!("../../health/suite/lpoco-health.timer"),
         "644",
     ),
 ];
@@ -140,7 +150,7 @@ fn device_checks(device: &Device, manifest_dir: &Path) -> Result<Vec<(String, Pa
                     .context("a check's name")?
                     .to_string_lossy()
                     .into_owned();
-                v.push((format!("usr/lib/devlab/health/device/{layer}/{name}"), p));
+                v.push((format!("usr/lib/lpoco-health/device/{layer}/{name}"), p));
             }
         }
     }
@@ -162,12 +172,65 @@ pub fn from_the_package() -> String {
     format!(
         "[ -f /etc/apk/keys/{KEY_NAME} ] || cat > /etc/apk/keys/{KEY_NAME} <<'KEY'\n{}KEY\n\
          grep -qxF '{REPOSITORY}' /etc/apk/repositories || echo '{REPOSITORY}' >> /etc/apk/repositories\n\
-         apk add -q --update-cache --upgrade devlab-health\n\
-         rm -f /etc/systemd/system/devlab-health.service /etc/systemd/system/devlab-health.timer \
-         /etc/systemd/system/timers.target.wants/devlab-health.timer\n\
-         echo put: $(apk list --installed devlab-health | cut -d' ' -f1) from {REPOSITORY}\n",
+         apk add -q --update-cache --upgrade lpoco-health\n\
+         rm -f /etc/systemd/system/lpoco-health.service /etc/systemd/system/lpoco-health.timer \
+         /etc/systemd/system/timers.target.wants/lpoco-health.timer\n\
+         echo put: $(apk list --installed lpoco-health | cut -d' ' -f1) from {REPOSITORY}\n",
         KEY.trim_end().to_string() + "\n"
     )
+}
+
+/// What a root shell on the phone does once, when the suite that was called devlab-health becomes
+/// lpoco-health: the old timer, unit files, program and package go; what the phone had kept - every report,
+/// the month's mobile-data ledger, the once-a-day marks - moves to its new place, nothing overwritten and
+/// nothing lost. `devlab-health` stays as another name of the program for what still calls it.
+const MIGRATION: &str = "\
+systemctl disable --now devlab-health.timer >/dev/null 2>&1 || true\n\
+rm -f /etc/systemd/system/devlab-health.service /etc/systemd/system/devlab-health.timer \
+/etc/systemd/system/timers.target.wants/devlab-health.timer\n\
+apk info -e devlab-health >/dev/null 2>&1 && apk del -q devlab-health || true\n\
+move() { [ -d \"$1\" ] || return 0; mkdir -p \"$2\"; cp -an \"$1/.\" \"$2/\" && rm -rf \"$1\"; }\n\
+move /var/lib/devlab/health /var/lib/lpoco-health\n\
+move /var/lib/devlab/health-data /var/lib/lpoco-health/data\n\
+move /var/lib/devlab/health-once /var/lib/lpoco-health/once\n\
+rm -rf /usr/lib/devlab/health /etc/devlab/health.env /usr/bin/devlab-health\n\
+";
+
+/// `devlab-health`, kept as another name of the program until nothing calls it by that name.
+const ALIAS: &str = "ln -sf lpoco-health /usr/bin/devlab-health\n";
+
+/// WORD as one shell word: single-quoted, so that nothing in it is read by the shell.
+pub fn sq(word: &str) -> String {
+    format!("'{}'", word.replace('\'', "'\\''"))
+}
+
+/// Switches a test off on the phone, with a reason and who asked: the phone's own suite keeps it.
+pub fn off(phone: &Phone, test: &str, reason: &str, by: &str) -> Result<String> {
+    let (ok, out) = phone.root(&format!(
+        "lpoco-health off {} --reason {} --by {} 2>&1\n",
+        sq(test),
+        sq(reason),
+        sq(by)
+    ))?;
+    if !ok {
+        bail!("{}", out.trim());
+    }
+    Ok(out)
+}
+
+/// Switches a test on again on the phone.
+pub fn on(phone: &Phone, test: &str) -> Result<String> {
+    let (ok, out) = phone.root(&format!("lpoco-health on {} 2>&1\n", sq(test)))?;
+    if !ok {
+        bail!("{}", out.trim());
+    }
+    Ok(out)
+}
+
+/// The tests with their switches, and the conditions the phone finds out about itself right now.
+pub fn list(phone: &Phone) -> Result<String> {
+    let (_, out) = phone.root("lpoco-health list 2>&1\n")?;
+    Ok(out)
 }
 
 /// The phone's architecture, as Rust names its static target.
@@ -189,7 +252,7 @@ pub fn built_runner() -> Result<PathBuf> {
     if !Command::new(&build).arg(TARGET).status()?.success() {
         bail!("building the runner failed ({} {TARGET})", build.display());
     }
-    Ok(tree.join(format!("target/{TARGET}/release/devlab-health")))
+    Ok(tree.join(format!("target/{TARGET}/release/lpoco-health")))
 }
 
 /// Puts the suite on the phone, so the phone checks itself after every boot from now on: the runner and
@@ -207,7 +270,7 @@ pub fn put(
             let head =
                 std::fs::read(runner).with_context(|| format!("reading {}", runner.display()))?;
             if head.get(..4) != Some(b"\x7fELF") || head.get(18) != Some(&0xb7) {
-                bail!("{} is not an aarch64 program (build it: cargo build -p devlab-health --release --target aarch64-unknown-linux-musl)", runner.display());
+                bail!("{} is not an aarch64 program (build it: cargo build -p lpoco-health --release --target aarch64-unknown-linux-musl)", runner.display());
             }
             Some(head)
         }
@@ -223,7 +286,7 @@ pub fn put(
         Ok(())
     };
     if let Some(head) = &head {
-        write("usr/bin/devlab-health", head, "755")?;
+        write("usr/bin/lpoco-health", head, "755")?;
         for (rel, text, mode) in FILES {
             write(rel, text.as_bytes(), mode)?;
         }
@@ -232,7 +295,7 @@ pub fn put(
         write(&rel, &std::fs::read(&local)?, "644")?;
     }
     write(
-        "etc/devlab/health.env",
+        "etc/lpoco-health/health.env",
         format!(
             "{}{}",
             device.health.env(&device.device.codename),
@@ -253,7 +316,7 @@ pub fn put(
     if !ok {
         bail!("packing the suite failed");
     }
-    phone.put(&tarball.to_string_lossy(), "/tmp/devlab-health.tar")?;
+    phone.put(&tarball.to_string_lossy(), "/tmp/lpoco-health.tar")?;
     let _ = std::fs::remove_dir_all(&stage);
     let _ = std::fs::remove_file(&tarball);
     // the phone's own checks are replaced whole: one taken out of the repository leaves the phone too
@@ -263,13 +326,14 @@ pub fn put(
         from_the_package()
     };
     let (ok, out) = phone.root(&format!(
-        "set -e\n{take}\
-         rm -rf /usr/lib/devlab/health/device\n\
-         tar -xf /tmp/devlab-health.tar -C / --no-same-owner\n\
-         rm -f /tmp/devlab-health.tar\n\
+        "set -e\n{MIGRATION}{take}\
+         rm -rf /usr/lib/lpoco-health/device\n\
+         tar -xf /tmp/lpoco-health.tar -C / --no-same-owner\n\
+         rm -f /tmp/lpoco-health.tar\n\
+         {ALIAS}\
          systemctl daemon-reload\n\
-         systemctl enable devlab-health.timer\n\
-         echo put: $(ls /usr/lib/devlab/health/checks/*/*.sh /usr/lib/devlab/health/device/*/*.sh 2>/dev/null | wc -l) checks\n",
+         systemctl enable lpoco-health.timer\n\
+         echo put: $(ls /usr/lib/lpoco-health/checks/*/*.sh /usr/lib/lpoco-health/device/*/*.sh 2>/dev/null | wc -l) checks\n",
     ))?;
     if !ok {
         bail!("installing the suite on the phone failed: {out}");
@@ -289,8 +353,8 @@ pub struct Ran {
 /// passed on as said, never judged again here.
 pub fn run(phone: &Phone) -> Result<Ran> {
     let (well, out) = phone.root(
-        "devlab-health 2>/run/devlab-health.said >/dev/null; rc=$?\n\
-         devlab-health latest; echo \"# $(tail -n1 /run/devlab-health.said)\"; exit $rc\n",
+        "lpoco-health 2>/run/lpoco-health.said >/dev/null; rc=$?\n\
+         lpoco-health latest; echo \"# $(tail -n1 /run/lpoco-health.said)\"; exit $rc\n",
     )?;
     let verdict = out
         .lines()
@@ -319,7 +383,7 @@ pub fn of_boot(report: &str, boot: &str) -> bool {
 /// The report of the boot the phone is in: the one its timer writes after every boot. Waits for it
 /// (the timer runs 120 s after boot; six minutes at most); None where the suite is not on the phone.
 pub fn of_this_boot(phone: &Phone) -> Result<Option<Ran>> {
-    let (has, _) = phone.sh("command -v devlab-health >/dev/null\n")?;
+    let (has, _) = phone.sh("command -v lpoco-health >/dev/null\n")?;
     if !has {
         return Ok(None);
     }
@@ -327,7 +391,7 @@ pub fn of_this_boot(phone: &Phone) -> Result<Option<Ran>> {
     let start = std::time::Instant::now();
     loop {
         let (_, report) = phone.root(
-            "devlab-health latest; echo \"# $(journalctl -b 0 -t devlab-health -o cat --no-pager | tail -n1)\"\n",
+            "lpoco-health latest; echo \"# $(journalctl -b 0 -t lpoco-health -o cat --no-pager | tail -n1)\"\n",
         )?;
         if of_boot(&report, &boot) {
             let verdict = report
@@ -344,7 +408,7 @@ pub fn of_this_boot(phone: &Phone) -> Result<Option<Ran>> {
             }));
         }
         if start.elapsed() > std::time::Duration::from_secs(360) {
-            bail!("this boot wrote no health report within six minutes - is devlab-health.timer enabled?");
+            bail!("this boot wrote no health report within six minutes - is lpoco-health.timer enabled?");
         }
         std::thread::sleep(std::time::Duration::from_secs(15));
     }
@@ -358,7 +422,7 @@ pub fn after_change(phone: &Phone, rebooted: bool) -> Result<(bool, String)> {
     let ran = if rebooted {
         of_this_boot(phone)?
     } else {
-        let (has, _) = phone.sh("command -v devlab-health >/dev/null\n")?;
+        let (has, _) = phone.sh("command -v lpoco-health >/dev/null\n")?;
         if has {
             Some(run(phone)?)
         } else {
@@ -382,7 +446,7 @@ pub fn after_change(phone: &Phone, rebooted: bool) -> Result<(bool, String)> {
 
 /// The latest report the phone keeps (after its last boot, or the last run asked for).
 pub fn latest(phone: &Phone) -> Result<String> {
-    let (_, out) = phone.root("devlab-health latest\n")?;
+    let (_, out) = phone.root("lpoco-health latest\n")?;
     Ok(out)
 }
 
@@ -441,7 +505,7 @@ mod tests {
 
     #[test]
     fn a_report_is_known_by_the_boot_it_was_made_in() {
-        let r = "{\"boot\":\"b1\",\"test\":\"t\"}\n# devlab-health r: healthy\n";
+        let r = "{\"boot\":\"b1\",\"test\":\"t\"}\n# lpoco-health r: healthy\n";
         assert!(of_boot(r, "b1"));
         assert!(
             !of_boot(r, "b2"),
@@ -476,7 +540,7 @@ mod tests {
         )));
         let add = s.find("apk add").unwrap();
         let rm = s
-            .find("rm -f /etc/systemd/system/devlab-health.service")
+            .find("rm -f /etc/systemd/system/lpoco-health.service")
             .unwrap();
         assert!(
             add < rm,

@@ -1,34 +1,37 @@
-//! devlab-health: the phone's health, measured on the phone - after every boot (devlab-health.timer)
+//! lpoco-health: the phone's health, measured on the phone - after every boot (lpoco-health.timer)
 //! and whenever the lab asks. Written onto the phone by devlab from the device's manifest; nothing
-//! here is about one phone: what a phone is expected to have is in /etc/devlab/health.env, and a
+//! here is about one phone: what a phone is expected to have is in /etc/lpoco-health/health.env, and a
 //! phone's own checks sit beside the generic ones.
 //!
 //! The checks are small shell files in postmarketOS's test shape: each reads what the kernel and the
 //! system expose and prints a line per test - `pass|fail|skip TEST COMPONENT detail...`. Everything
 //! that is strings and structure - the report, its JSON, the evidence, the verdict - is here.
 //!
-//! One report per run: /var/lib/devlab/health/RUN.jsonl, a line per test carrying the run's facts
+//! One report per run: /var/lib/lpoco-health/RUN.jsonl, a line per test carrying the run's facts
 //! (device, boot, time, kernel, shell) - the shape of linux-phone-oco/docs' test_results. A run with a
 //! failure keeps its evidence beside it (RUN.evidence/) and says plainly what is unhealthy.
 //!
-//!   devlab-health           run every check now; exit 1 when unhealthy
-//!   devlab-health latest    print the latest report
-//!   devlab-health tone make|find ...   a test tone made, and found in a recording (src/tone.rs) -
+//!   lpoco-health           run every check now; exit 1 when unhealthy
+//!   lpoco-health latest    print the latest report
+//!   lpoco-health tone make|find ...   a test tone made, and found in a recording (src/tone.rs) -
 //!                           what a check computes, it asks of this one binary, not of awk
-//!   devlab-health data plan|spent ...   the month's mobile data: what a check may spend, what it spent (src/data.rs)
+//!   lpoco-health data plan|spent ...   the month's mobile data: what a check may spend, what it spent (src/data.rs)
 
+mod cli;
 mod data;
+mod switches;
 mod tone;
 
+use argenv_resolve::{InputResolveExt, OnProblems};
 use serde_json::{json, Value};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-const LIB: &str = "/usr/lib/devlab/health";
-const OUT: &str = "/var/lib/devlab/health";
-const ENV: &str = "/etc/devlab/health.env";
+const LIB: &str = "/usr/lib/lpoco-health";
+const OUT: &str = "/var/lib/lpoco-health";
+const ENV: &str = "/etc/lpoco-health/health.env";
 /// base: the hardware and the system; shell: through the running shell; telephony: what costs something
 /// to run (a call, an SMS, mobile data) - each such check runs at most once a day (lib.sh once_a_day)
 const LAYERS: [&str; 3] = ["base", "shell", "telephony"];
@@ -170,10 +173,11 @@ fn shell_running() -> String {
 }
 
 /// Runs one check with a time limit; (output, timed out, exit code).
-fn run_check(path: &Path, layer: &str) -> (String, bool, Option<i32>) {
+fn run_check(path: &Path, layer: &str, conditions: &str) -> (String, bool, Option<i32>) {
     let mut child = match Command::new("sh")
         .arg(path)
         .env("LAYER", layer)
+        .env("LPOCO_CONDITIONS", conditions)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -308,6 +312,113 @@ fn prune(out: &Path) {
     }
 }
 
+/// The conditions this phone finds out about itself right now: every conditions/*.sh prints
+/// `NAME detail` lines for what holds (no-sim, no-modem, no-network). Never kept: each run finds out again.
+fn conditions() -> String {
+    let mut found = String::new();
+    for script in checks_in(&Path::new(LIB).join("conditions")) {
+        let (text, _, _) = run_check(&script, "conditions", "");
+        for line in text.lines() {
+            let mut w = line.splitn(2, ' ');
+            if let (Some(name), Some(detail)) = (w.next(), w.next()) {
+                if name.starts_with("no-") && !detail.trim().is_empty() {
+                    found.push_str(&format!("{name} {}\n", detail.trim()));
+                }
+            }
+        }
+    }
+    found
+}
+
+/// A check file's test name: its file name without the order number - 10-mobile-data.sh is mobile-data.
+fn check_name(path: &Path) -> String {
+    let stem = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    match stem.split_once('-') {
+        Some((n, rest)) if !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()) => rest.into(),
+        _ => stem,
+    }
+}
+
+/// Every test the phone knows: the ones its latest report names, and the check files themselves.
+fn known_tests(out: &Path) -> Vec<String> {
+    let mut v: Vec<String> = std::fs::read_to_string(out.join("latest.jsonl"))
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+        .filter_map(|r| r.get("test").and_then(Value::as_str).map(str::to_string))
+        .collect();
+    for layer in LAYERS {
+        for dir in ["checks", "device"] {
+            v.extend(
+                checks_in(&Path::new(LIB).join(dir).join(layer))
+                    .iter()
+                    .map(|p| check_name(p)),
+            );
+        }
+    }
+    v.sort();
+    v.dedup();
+    v
+}
+
+/// A finding of a test somebody switched off becomes a skip that says so - not measured, never broken.
+fn apply_switches(findings: Vec<Finding>, switches: &[switches::Switch]) -> Vec<Finding> {
+    findings
+        .into_iter()
+        .map(|mut f| {
+            if let Some(w) = switches::find(switches, &f.test) {
+                f.outcome = "skip".into();
+                f.detail = switches::said(w);
+            }
+            f
+        })
+        .collect()
+}
+
+fn who() -> String {
+    std::env::var("SUDO_USER")
+        .or_else(|_| std::env::var("USER"))
+        .unwrap_or_else(|_| "root".into())
+}
+
+fn now_utc() -> String {
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    stamps(secs).1
+}
+
+/// `lpoco-health list`: the tests with their state, the switches, the conditions.
+fn list(out: &Path) {
+    let sw = switches::load(Path::new(switches::FILE));
+    println!("tests:");
+    for t in known_tests(out) {
+        match switches::find(&sw, &t) {
+            Some(w) => println!("  {t}  OFF - {}", switches::said(w)),
+            None => println!("  {t}  on"),
+        }
+    }
+    for w in sw.iter().filter(|w| !known_tests(out).contains(&w.test)) {
+        println!(
+            "  {}  OFF - {} (no run has named this test)",
+            w.test,
+            switches::said(w)
+        );
+    }
+    println!("conditions found now:");
+    let c = conditions();
+    if c.is_empty() {
+        println!("  none");
+    }
+    for l in c.lines() {
+        println!("  {l}");
+    }
+}
+
 fn main() {
     let out = Path::new(OUT);
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -317,12 +428,58 @@ fn main() {
     if args.first().map(String::as_str) == Some("data") {
         std::process::exit(data::main(&args[1..]));
     }
-    if std::env::args().nth(1).as_deref() == Some("latest") {
-        print!(
-            "{}",
-            std::fs::read_to_string(out.join("latest.jsonl")).unwrap_or_default()
-        );
-        return;
+    let r = cli::Contract::parse_and_lint(OnProblems::FailOnError);
+    match cli::Contract::COMMAND.get_from(&r) {
+        Some(cli::Command::Latest) => {
+            print!(
+                "{}",
+                std::fs::read_to_string(out.join("latest.jsonl")).unwrap_or_default()
+            );
+            return;
+        }
+        Some(cli::Command::List) => return list(out),
+        Some(cli::Command::Conditions) => return print!("{}", conditions()),
+        Some(cmd @ (cli::Command::Off | cli::Command::On)) => {
+            let Some(test) = cli::Contract::TEST.get_from(&r) else {
+                eprintln!("lpoco-health: which test? (lpoco-health list says them)");
+                std::process::exit(2);
+            };
+            let path = Path::new(switches::FILE);
+            let mut sw = switches::load(path);
+            let done = if cmd == cli::Command::Off {
+                if !cli::Contract::FORCE.get_from(&r).unwrap_or(false)
+                    && !known_tests(out).contains(&test)
+                {
+                    eprintln!("lpoco-health: no test is named {test} (lpoco-health list says them; --force switches it off anyway)");
+                    std::process::exit(2);
+                }
+                switches::off(
+                    &mut sw,
+                    &test,
+                    &cli::Contract::REASON.get_from(&r).unwrap_or_default(),
+                    &cli::Contract::BY.get_from(&r).unwrap_or_else(who),
+                    &now_utc(),
+                )
+                .map(|_| format!("{test}: off"))
+            } else if switches::on(&mut sw, &test) {
+                Ok(format!("{test}: on"))
+            } else {
+                Err(format!("{test} was not switched off"))
+            };
+            match done.and_then(|m| {
+                switches::save(path, &sw)
+                    .map(|_| m)
+                    .map_err(|e| format!("cannot keep the switches in {}: {e}", switches::FILE))
+            }) {
+                Ok(m) => println!("{m}"),
+                Err(e) => {
+                    eprintln!("lpoco-health: {e}");
+                    std::process::exit(2);
+                }
+            }
+            return;
+        }
+        Some(cli::Command::Run) | None => {}
     }
     let env = read_env(&std::fs::read_to_string(ENV).unwrap_or_default());
     let device = env
@@ -343,6 +500,7 @@ fn main() {
         "shell": shell_running(),
     });
 
+    let found = conditions();
     let mut findings = Vec::new();
     for layer in LAYERS {
         for dir in ["checks", "device"] {
@@ -351,23 +509,24 @@ fn main() {
                     .file_stem()
                     .map(|s| s.to_string_lossy().into_owned())
                     .unwrap_or_default();
-                let (text, timed_out, code) = run_check(&check, layer);
+                let (text, timed_out, code) = run_check(&check, layer, &found);
                 findings.extend(findings_of(layer, &name, &text, timed_out, code));
             }
         }
     }
 
     if let Err(e) = std::fs::create_dir_all(out) {
-        eprintln!("devlab-health: cannot keep reports in {OUT}: {e}");
+        eprintln!("lpoco-health: cannot keep reports in {OUT}: {e}");
         std::process::exit(2);
     }
+    let findings = apply_switches(findings, &switches::load(Path::new(switches::FILE)));
     let report: String = findings
         .iter()
         .map(|f| format!("{}\n", row(f, &facts)))
         .collect();
     let file = out.join(format!("{run}.jsonl"));
     if let Err(e) = std::fs::write(&file, report) {
-        eprintln!("devlab-health: cannot write {}: {e}", file.display());
+        eprintln!("lpoco-health: cannot write {}: {e}", file.display());
         std::process::exit(2);
     }
     let latest = out.join("latest.jsonl");
@@ -384,9 +543,21 @@ fn main() {
     if !well {
         keep_evidence(&evidence);
     }
-    eprintln!("devlab-health {run}: {said}");
+    let said = if found.is_empty() {
+        said
+    } else {
+        format!(
+            "{said} [conditions: {}]",
+            found
+                .lines()
+                .map(|l| l.split(' ').next().unwrap_or(""))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    };
+    eprintln!("lpoco-health {run}: {said}");
     let _ = Command::new("logger")
-        .args(["-t", "devlab-health", &format!("{run}: {said}")])
+        .args(["-t", "lpoco-health", &format!("{run}: {said}")])
         .status();
     prune(out);
     std::process::exit(if well { 0 } else { 1 });
