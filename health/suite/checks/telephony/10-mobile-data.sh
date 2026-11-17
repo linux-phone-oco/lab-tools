@@ -25,14 +25,20 @@ if [ "$(json_field over "$plan")" = true ]; then
 	say mobile-data modem-data skip "the month's budget is spent: $(mb "$(json_field used_bytes "$plan")") of $budget MB in $(json_field month "$plan")"
 	exit 0
 fi
-# the interface of the bearer that is connected
+# the interface of the bearer that carries data: connected, not the IMS bearer a modem may hold beside it
+# for VoLTE and SMS (APN "ims", no route of its own), the one with a default route when there are several
 bearer_iface() {
+	first=""
 	for b in $(mmcli -m "${m##*/}" -K 2>/dev/null | sed -n 's/^modem\.generic\.bearers\.value\[[0-9]*\] *: *//p'); do
 		bi=$(mmcli -b "${b##*/}" -K 2>/dev/null)
 		[ "$(printf '%s\n' "$bi" | kv 'bearer\.status\.connected')" = yes ] || continue
-		printf '%s\n' "$bi" | kv 'bearer\.status\.interface'
-		return
+		case "$(printf '%s\n' "$bi" | kv 'bearer\.properties\.apn')" in [Ii][Mm][Ss]) continue ;; esac
+		i=$(printf '%s\n' "$bi" | kv 'bearer\.status\.interface')
+		[ -n "$i" ] || continue
+		if { ip route; ip -6 route; } 2>/dev/null | grep -q "^default .*dev $i "; then echo "$i"; return; fi
+		[ -n "$first" ] || first=$i
 	done
+	[ -z "$first" ] || echo "$first"
 }
 iface=$(bearer_iface)
 if [ -z "$iface" ]; then
@@ -55,6 +61,7 @@ dl=$(curl -s -o /dev/null --max-time 60 --interface "$iface" -w "%{size_download
 after=$(moved)
 used=$(( after - before )); [ "$used" -ge 0 ] || used=0
 set -- $dl
-ledger=$(devlab-health data spent "$used" --budget-mb "$budget" $([ "$weekly" = true ] && echo --weekly))
+# the week's run is marked made only when its download came whole: one cut short is tried again next boot
+ledger=$(devlab-health data spent "$used" --budget-mb "$budget" $([ "$weekly" = true ] && [ "${1:-0}" -ge "${size:-0}" ] && echo --weekly))
 check mobile-data modem-data "$([ "${got:-0}" -ge 3 ] && [ "${1:-0}" -ge "${size:-100000}" ] && echo true)" \
 	"over $iface ($state, ${tech:-?}): ${got:-0} of 5 pings answered${rtt:+ in $rtt ms}, ${1:-0} bytes downloaded at ${2:-0} B/s (DNS ${3:-?} s)$([ "$weekly" = true ] && echo ', the week'"'"'s throughput run'); the run moved $used bytes, the month $(mb "$(json_field used_bytes "$ledger")") of $budget MB"
