@@ -1,0 +1,17 @@
+[package]
+name = "lpoco-host"
+# the family is released together: one version with lpoco and every lpoco-* program (release-plz.toml, version_group)
+version = "0.2.0"
+edition = "2021"
+description = "lpoco host: the lab host prepared from the lab's and each device's declarations - udev access for gadget serials, modules, the host's tools at their pins"
+license = "MIT OR Apache-2.0"
+
+[lib]
+name = "lpoco_host"
+
+[dependencies]
+toml = "0.8"
+serde = { version = "1", features = ["derive"] }
+# the command line is declared once (argenv), not parsed by hand
+argenv-resolve = "0.4"
+glob = "0.3"
