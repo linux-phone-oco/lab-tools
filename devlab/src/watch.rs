@@ -1,18 +1,20 @@
-//! Watching the phone from the lab machine: after every new boot (and every 6 hours) a health
-//! check; silent while all is well, one board task naming what regressed when not, closed again
-//! once all is well. The board is lab-agent's, reached through its command line.
+//! Watching the phone from the lab machine. After every new boot the phone measures its own health
+//! (devlab-health.timer); the watch waits for that report, says the phone's own verdict on the board -
+//! silent while all is well, one task naming what is unhealthy when not, closed again once well - and
+//! gathers: the report brought to the lab and filed into the picture's database through tad, both
+//! landed, so the face is drawn again. Nobody asks for any of it.
 
 use crate::device::Device;
-use crate::health;
 use crate::phone::Phone;
+use crate::{gather, suite};
 use anyhow::Result;
 use std::path::Path;
 use std::process::Command;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-/// What the board task says: the regressions, in order, or nothing when all is well.
-pub fn alert_text(codename: &str, regressions: &[String]) -> Option<String> {
-    (!regressions.is_empty()).then(|| format!("{codename} regressed: {}", regressions.join("; ")))
+/// What the board task says: the phone's verdict when it is unhealthy, or nothing when all is well.
+pub fn alert_text(codename: &str, well: bool, verdict: &str) -> Option<String> {
+    (!well).then(|| format!("{codename}: {verdict}"))
 }
 
 fn board(args: &[&str]) {
@@ -21,25 +23,20 @@ fn board(args: &[&str]) {
 }
 
 pub fn watch(device: &Device, manifest_dir: &Path) -> Result<()> {
-    let task = format!("health-{}", device.device.codename);
+    let codename = &device.device.codename;
+    let task = format!("health-{codename}");
     let mut last_boot: Option<String> = None;
-    let mut last_check = Instant::now() - Duration::from_secs(24 * 3600);
     let mut alerting: Option<String> = None;
     println!(
-        "devlab watch: {} - a health check after every boot and every 6 h",
-        device.device.codename
+        "devlab watch: {codename} - after every boot, its own health report, gathered and landed"
     );
     loop {
         if let Ok(phone) = Phone::find(device) {
             let boot = phone.boot_id();
-            let new_boot = boot.is_some() && boot != last_boot;
-            if new_boot || last_check.elapsed() >= Duration::from_secs(6 * 3600) {
-                if new_boot && phone.uptime().unwrap_or(0) < 90 {
-                    std::thread::sleep(Duration::from_secs(90)); // let the boot settle
-                }
-                match health::health(device, manifest_dir, &phone, false) {
-                    Ok(r) => {
-                        let text = alert_text(&device.device.codename, &r);
+            if boot.is_some() && boot != last_boot {
+                match suite::of_this_boot(&phone) {
+                    Ok(Some(ran)) => {
+                        let text = alert_text(codename, ran.well, &ran.verdict);
                         match (&text, &alerting) {
                             (Some(t), a) if a.as_ref() != Some(t) => {
                                 println!("devlab watch: {t}");
@@ -52,11 +49,23 @@ pub fn watch(device: &Device, manifest_dir: &Path) -> Result<()> {
                             _ => {}
                         }
                         alerting = text;
+                        match gather::gather(device, manifest_dir, None, true) {
+                            Ok(said) => println!("devlab watch: {said}"),
+                            Err(e) => {
+                                eprintln!("devlab watch: gathering did not go through: {e:#}")
+                            }
+                        }
+                        last_boot = boot;
                     }
-                    Err(e) => eprintln!("devlab watch: the health check could not run: {e:#}"),
+                    Ok(None) => {
+                        println!(
+                            "devlab watch: the suite is not on the phone - devlab suite put now"
+                        );
+                        last_boot = boot;
+                    }
+                    // no report yet: asked again at the next turn
+                    Err(e) => eprintln!("devlab watch: {e:#}"),
                 }
-                last_boot = boot;
-                last_check = Instant::now();
             }
         }
         std::thread::sleep(Duration::from_secs(60));
@@ -68,11 +77,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn silence_when_all_is_well_and_a_named_alert_when_not() {
-        assert_eq!(alert_text("xiaomi-surya", &[]), None);
+    fn silence_when_well_and_the_phones_own_words_when_not() {
         assert_eq!(
-            alert_text("xiaomi-surya", &["a/x (fail: d)".into()]).as_deref(),
-            Some("xiaomi-surya regressed: a/x (fail: d)")
+            alert_text("xiaomi-surya", true, "r: healthy: 29 pass"),
+            None
+        );
+        assert_eq!(
+            alert_text(
+                "xiaomi-surya",
+                false,
+                "r: UNHEALTHY: 1 failing of 34 - wifi/x (d)"
+            )
+            .as_deref(),
+            Some("xiaomi-surya: r: UNHEALTHY: 1 failing of 34 - wifi/x (d)")
         );
     }
 }
