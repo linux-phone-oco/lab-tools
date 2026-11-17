@@ -10,6 +10,8 @@ use std::process::{Command, Stdio};
 pub struct Phone {
     pub target: String,
     password: String,
+    /// the manifest, for what must never be touched on this phone
+    device: Device,
 }
 
 const SSH_OPTS: [&str; 8] = [
@@ -42,6 +44,7 @@ impl Phone {
         let p = Phone {
             target: format!("{}@{addr}", device.connection.user),
             password: password(device)?,
+            device: device.clone(),
         };
         if !p.answers() {
             bail!("{} does not answer at {addr}", device.device.codename);
@@ -57,6 +60,7 @@ impl Phone {
             let p = Phone {
                 target: format!("{}@{addr}", device.connection.user),
                 password: password.clone(),
+                device: device.clone(),
             };
             if p.answers() {
                 return Ok(p);
@@ -70,6 +74,9 @@ impl Phone {
 
     /// Runs `script` on the phone; returns (succeeded, stdout).
     pub fn run(&self, script: &str, how: &str, prefix: &str) -> Result<(bool, String)> {
+        if let Some(no) = self.device.hazard_in(script) {
+            bail!(no);
+        }
         let mut child = Command::new("sshpass")
             .arg("-e")
             .arg("ssh")
@@ -115,6 +122,9 @@ impl Phone {
 
     /// A root command's output as bytes (a file off the phone); fails if the command fails.
     pub fn root_bytes(&self, script: &str) -> Result<Vec<u8>> {
+        if let Some(no) = self.device.hazard_in(script) {
+            bail!(no);
+        }
         let mut child = Command::new("sshpass")
             .arg("-e")
             .arg("ssh")

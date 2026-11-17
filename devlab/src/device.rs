@@ -23,6 +23,33 @@ pub struct Device {
     /// what the phone's own health suite expects of it
     #[serde(default)]
     pub health: Health,
+    /// What must never be touched on this phone, whoever asks: a command devlab carries to the phone
+    /// (phone sh|root, the MCP door) that names one is refused, saying why
+    #[serde(default)]
+    pub hazard: Vec<Hazard>,
+}
+
+/// A path on the phone that harms it to touch - each with what it did, so the refusal says why.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Hazard {
+    pub path: String,
+    pub why: String,
+}
+
+impl Device {
+    /// The first hazard a script names, if any: a refusal, in words.
+    pub fn hazard_in(&self, script: &str) -> Option<String> {
+        self.hazard
+            .iter()
+            .find(|h| script.contains(&h.path))
+            .map(|h| {
+                format!(
+                    "refused: the commands touch {} on {} - {}",
+                    h.path, self.device.codename, h.why
+                )
+            })
+    }
 }
 
 /// How an image goes onto the phone, and what is baked into it.
@@ -293,6 +320,32 @@ pub fn candidates(manifest: &[String], remembered: Option<&str>) -> Vec<String> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_command_that_touches_a_hazard_is_refused_saying_why() {
+        let d = Device::parse(
+            "[device]\ncodename = \"p\"\n[connection]\nuser = \"u\"\naddresses = [\"a\"]\n\
+             [[hazard]]\npath = \"/sys/kernel/debug/gpio\"\nwhy = \"stalls the bus; the phone hangs\"\n",
+        )
+        .unwrap();
+        let no = d
+            .hazard_in("uname -r\ncat /sys/kernel/debug/gpio | head")
+            .unwrap();
+        assert!(
+            no.contains("/sys/kernel/debug/gpio on p - stalls the bus"),
+            "{no}"
+        );
+        assert_eq!(d.hazard_in("cat /sys/kernel/debug/clk/clk_summary"), None);
+        let none = Device::parse(
+            "[device]\ncodename = \"p\"\n[connection]\nuser = \"u\"\naddresses = [\"a\"]",
+        )
+        .unwrap();
+        assert_eq!(
+            none.hazard_in("cat /sys/kernel/debug/gpio"),
+            None,
+            "no hazard named, none refused"
+        );
+    }
 
     #[test]
     fn health_expectations_become_the_suites_env_file() {
