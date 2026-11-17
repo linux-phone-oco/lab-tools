@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.6](https://github.com/linux-phone-oco/lab-tools/compare/devlab-health-v0.1.5...devlab-health-v0.1.6) - 2026-11-17
+
+### Added
+
+- *(health)* no_sim helper; mobile data and modem-registered skip 'no SIM card' ([#73](https://github.com/linux-phone-oco/lab-tools/pull/73))
+
 ## [0.1.5](https://github.com/linux-phone-oco/lab-tools/compare/devlab-health-v0.1.4...devlab-health-v0.1.5) - 2026-11-17
 
 ### Added

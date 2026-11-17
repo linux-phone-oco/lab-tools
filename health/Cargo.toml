@@ -1,6 +1,6 @@
 [package]
 name = "devlab-health"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2021"
 description = "The phone's health, measured on the phone after every boot: one report per run, evidence kept when unhealthy"
 license = "MIT OR Apache-2.0"
