@@ -429,6 +429,10 @@ fn main() {
         std::process::exit(data::main(&args[1..]));
     }
     let r = cli::Contract::parse_and_lint(OnProblems::FailOnError);
+    if cli::Contract::HELP.get_from(&r).unwrap_or(false) {
+        print!("{}", cli::usage("lpoco-health", "The phone's health, measured on the phone. Commands: (none) run every check, latest, tone make|find, data plan|spent."));
+        return;
+    }
     if cli::Contract::VERSION.get_from(&r).unwrap_or(false) {
         println!("lpoco-health {}", env!("CARGO_PKG_VERSION"));
         return;
