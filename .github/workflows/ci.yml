@@ -16,4 +16,8 @@ jobs:
           components: clippy, rustfmt
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
+      # bringup's rust-script example test (tests/rust_script_step.rs) runs the script
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: rust-script
       - run: cargo test --workspace
