@@ -34,8 +34,11 @@ reads its latest report.
 
 Each check is a small shell file in postmarketOS's test shape that prints `pass|fail|skip TEST
 COMPONENT detail`, base layer first (the hardware and the system, no shell in the way), then the
-shell layer, then the telephony layer: what costs something to run (a call, an SMS, mobile data), each
-check there at most once a day (`once_a_day NAME` in lib.sh, skipping with "ran today" after). Each run is one report on the phone, `/var/lib/devlab/health/RUN.jsonl`, a line per test
+shell layer, then the telephony layer: what costs something to run. A call or an SMS runs at most once a
+day (`once_a_day NAME` in lib.sh, skipping with "ran today" after); mobile data (`mobile-data`) runs every
+boot over the modem's own interface, about 150 kB, 5 MB once a week for throughput, each run's bytes kept
+in the month's ledger (`devlab-health data`) and skipped once the month has spent the manifest's
+`data_budget_mb` (250 by default). Each run is one report on the phone, `/var/lib/devlab/health/RUN.jsonl`, a line per test
 in the shape of linux-phone-oco/docs' `test_results`; an unhealthy run keeps its evidence beside it
 (kernel log, errors, failed units) and says what is wrong, in plain words, in the journal. A part the
 phone never had working is a `gap` in the manifest: still measured, not ill health; a gap that starts
