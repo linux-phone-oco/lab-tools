@@ -12,6 +12,7 @@
 //!   devlab suite put now [--runner F] | run | latest   the health suite on the phone itself
 //!   devlab gather now [--docs DIR]  the phone's reports into this lab and the picture's tables
 //!   devlab mcp                    the phone for any agent: an MCP server (stdio)
+//!   devlab keeper take|renew|release NAME | status   the phone's keeper, one at a time
 //!   devlab guard tool              the phone's way, held for agents: no ssh/scp to a phone outside devlab (a hook)
 //!   devlab watch                   after every boot: health, silent when well, a board task when not
 //!                                  a test kernel beside stock, tried once, never stranding the phone
@@ -23,6 +24,7 @@ mod guard;
 mod health;
 mod hear;
 mod hold;
+mod keeper;
 mod kernel;
 mod mcp;
 mod outcome;
@@ -107,6 +109,11 @@ enum Cmd {
     Mcp,
     /// Watch the phone: health after every boot, silent when well, a board task when not
     Watch,
+    /// The phone's keeper: the one session that owns its flow - a lease, so two keepers never run
+    Keeper {
+        #[command(subcommand)]
+        action: KeeperCmd,
+    },
     /// The ways, held for agents: what Claude Code's hooks on the lab call (needs no manifest)
     Guard {
         #[command(subcommand)]
@@ -117,6 +124,18 @@ enum Cmd {
         #[command(subcommand)]
         action: KernelCmd,
     },
+}
+
+#[derive(Subcommand)]
+enum KeeperCmd {
+    /// Take the lease (exit 1, saying who holds it, while another keeper is live)
+    Take { name: String },
+    /// Renew it as the keeper works: a lease unrenewed for 90 minutes has lapsed
+    Renew { name: String },
+    /// Give it back, as the keeper ends
+    Release { name: String },
+    /// Who keeps the phone now; or free
+    Status,
 }
 
 #[derive(Subcommand)]
@@ -323,6 +342,12 @@ fn main() -> Result<()> {
         }
         Cmd::Mcp => mcp::serve(dev)?,
         Cmd::Watch => watch::watch(&dev, &here)?,
+        Cmd::Keeper { action } => match action {
+            KeeperCmd::Take { name } => println!("{}", keeper::take(&dev, &name)?),
+            KeeperCmd::Renew { name } => println!("{}", keeper::renew(&dev, &name)?),
+            KeeperCmd::Release { name } => println!("{}", keeper::release(&dev, &name)?),
+            KeeperCmd::Status => println!("{}", keeper::status(&dev)),
+        },
         Cmd::Guard { .. } => unreachable!("answered before the manifest is read"),
         Cmd::Kernel { action } => {
             let p = phone::Phone::find(&dev)?;
