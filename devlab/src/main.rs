@@ -12,12 +12,14 @@
 //!   devlab suite put now --runner F | run | latest   the health suite on the phone itself
 //!   devlab gather now [--docs DIR]  the phone's reports into this lab and the picture's tables
 //!   devlab mcp                    the phone for any agent: an MCP server (stdio)
+//!   devlab guard tool | start      the ways, held for agents: what Claude Code's hooks on the lab call
 //!   devlab watch                   after every boot: health, silent when well, a board task when not
 //!                                  a test kernel beside stock, tried once, never stranding the phone
 
 mod device;
 mod flash;
 mod gather;
+mod guard;
 mod health;
 mod hear;
 mod hold;
@@ -105,11 +107,24 @@ enum Cmd {
     Mcp,
     /// Watch the phone: health after every boot, silent when well, a board task when not
     Watch,
+    /// The ways, held for agents: what Claude Code's hooks on the lab call (needs no manifest)
+    Guard {
+        #[command(subcommand)]
+        event: GuardCmd,
+    },
     /// A test kernel beside the stock one: tried once, falls back to stock by itself
     Kernel {
         #[command(subcommand)]
         action: KernelCmd,
     },
+}
+
+#[derive(Subcommand)]
+enum GuardCmd {
+    /// PreToolUse: the hook's JSON on standard input; a refused command exits 2, saying why
+    Tool,
+    /// SessionStart: the live practices and the unread messages
+    Start,
 }
 
 #[derive(Subcommand)]
@@ -163,7 +178,14 @@ enum PhoneCmd {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    if let Cmd::Guard { event } = &cli.cmd {
+        return match event {
+            GuardCmd::Tool => guard::tool(),
+            GuardCmd::Start => guard::start(),
+        };
+    }
     let (dev, file) = device::Device::load(cli.device.as_deref(), &std::env::current_dir()?)?;
+    dev.remember_addresses();
     // one change to the phone at a time, whoever asks: held until this command ends
     let _held = match &cli.cmd {
         Cmd::Flash { .. } | Cmd::Provision { .. } => Some(hold::hold(&dev)?),
@@ -269,6 +291,7 @@ fn main() -> Result<()> {
         }
         Cmd::Mcp => mcp::serve(dev, here)?,
         Cmd::Watch => watch::watch(&dev, &here)?,
+        Cmd::Guard { .. } => unreachable!("answered before the manifest is read"),
         Cmd::Kernel { action } => {
             let p = phone::Phone::find(&dev)?;
             match action {

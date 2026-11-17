@@ -244,6 +244,22 @@ impl Device {
         Ok((Device::parse(&text)?, file))
     }
 
+    /// Leave the manifest's addresses in the state, so that the lab's guard knows this phone when an agent
+    /// reaches for it outside devlab (devlab guard). Best effort: a guard that knows less refuses less.
+    pub fn remember_addresses(&self) {
+        let file = self.state_dir().join("addresses");
+        let text: String = self
+            .connection
+            .addresses
+            .iter()
+            .map(|a| format!("{a}\n"))
+            .collect();
+        if std::fs::read_to_string(&file).ok().as_deref() != Some(text.as_str()) {
+            let _ = std::fs::create_dir_all(self.state_dir());
+            let _ = std::fs::write(file, text);
+        }
+    }
+
     /// Private per-device configuration (the password): ~/.config/devlab/CODENAME/
     pub fn config_dir(&self) -> PathBuf {
         home().join(".config/devlab").join(&self.device.codename)
