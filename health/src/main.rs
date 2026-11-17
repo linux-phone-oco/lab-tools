@@ -15,7 +15,9 @@
 //!   devlab-health latest    print the latest report
 //!   devlab-health tone make|find ...   a test tone made, and found in a recording (src/tone.rs) -
 //!                           what a check computes, it asks of this one binary, not of awk
+//!   devlab-health data plan|spent ...   the month's mobile data: what a check may spend, what it spent (src/data.rs)
 
+mod data;
 mod tone;
 
 use serde_json::{json, Value};
@@ -311,6 +313,9 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.first().map(String::as_str) == Some("tone") {
         std::process::exit(tone::main(&args[1..]));
+    }
+    if args.first().map(String::as_str) == Some("data") {
+        std::process::exit(data::main(&args[1..]));
     }
     if std::env::args().nth(1).as_deref() == Some("latest") {
         print!(

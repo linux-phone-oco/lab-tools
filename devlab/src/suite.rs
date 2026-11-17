@@ -72,6 +72,11 @@ const FILES: &[(&str, &str, &str)] = &[
         "644",
     ),
     (
+        "usr/lib/devlab/health/checks/telephony/10-mobile-data.sh",
+        include_str!("../../health/suite/checks/telephony/10-mobile-data.sh"),
+        "644",
+    ),
+    (
         "etc/systemd/system/devlab-health.service",
         include_str!("../../health/suite/devlab-health.service"),
         "644",
@@ -458,18 +463,11 @@ mod tests {
 
     #[test]
     fn every_suite_file_is_built_in() {
-        let on_disk = std::fs::read_dir(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../health/suite/checks/base"
-        ))
-        .unwrap()
-        .count()
-            + std::fs::read_dir(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../health/suite/checks/shell"
-            ))
-            .unwrap()
-            .count();
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../health/suite/checks");
+        let on_disk: usize = ["base", "shell", "telephony"]
+            .iter()
+            .map(|l| std::fs::read_dir(format!("{dir}/{l}")).map_or(0, |d| d.count()))
+            .sum();
         let built_in = FILES
             .iter()
             .filter(|(p, _, _)| p.contains("/checks/"))

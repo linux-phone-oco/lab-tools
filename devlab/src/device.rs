@@ -189,6 +189,10 @@ pub struct Health {
     /// This phone's own checks, relative to the manifest: base/*.sh and shell/*.sh beneath it
     #[serde(default)]
     pub checks: Option<String>,
+    /// Mobile data the health checks may spend in a month, in MB (250 when unsaid): the telephony
+    /// layer's mobile-data check skips once the month has spent it (devlab-health data)
+    #[serde(default)]
+    pub data_budget_mb: Option<u64>,
 }
 
 impl Health {
@@ -203,7 +207,7 @@ impl Health {
         format!(
             "# written by devlab from the device's manifest ([health]) - do not edit here\n\
              DEVICE={}\nSOUND_CARDS={}\nREMOTEPROCS={}\nKNOWN_WARNINGS={}\nKNOWN_FAILED_UNITS={}\n\
-             ABSENT={}\nGAPS={}\n",
+             ABSENT={}\nGAPS={}\nDATA_BUDGET_MB={}\n",
             q(codename),
             q(&self.sound_cards.join(";")),
             q(&procs.join(" ")),
@@ -211,6 +215,7 @@ impl Health {
             q(&self.known_failed_units.join(" ")),
             q(&self.absent.join(" ")),
             q(&self.gaps.join(" ")),
+            q(&self.data_budget_mb.unwrap_or(250).to_string()),
         )
     }
 }
@@ -373,6 +378,12 @@ mod tests {
         assert!(e.contains("SOUND_CARDS='POCO X3'\n"));
         assert!(e.contains("REMOTEPROCS='adsp:audio-speaker modem:modem-data'\n"));
         assert!(e.contains("ABSENT='modem'\n"));
+        assert!(
+            e.contains("DATA_BUDGET_MB='250'\n"),
+            "250 MB a month when unsaid"
+        );
+        let tight: Health = toml::from_str("data_budget_mb = 1").unwrap();
+        assert!(tight.env("p").contains("DATA_BUDGET_MB='1'\n"));
         assert!(
             toml::from_str::<Health>("sound_card = []").is_err(),
             "a misspelt field is refused"
