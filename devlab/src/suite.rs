@@ -138,13 +138,49 @@ fn device_checks(device: &Device, manifest_dir: &Path) -> Result<Vec<(String, Pa
     Ok(v)
 }
 
-/// Puts the suite on the phone: the runner, the checks, the manifest's expectations, the timer
-/// enabled - so the phone checks itself after every boot from now on.
-pub fn put(device: &Device, manifest_dir: &Path, phone: &Phone, runner: &Path) -> Result<()> {
-    let head = std::fs::read(runner).with_context(|| format!("reading {}", runner.display()))?;
-    if head.get(..4) != Some(b"\x7fELF") || head.get(18) != Some(&0xb7) {
-        bail!("{} is not an aarch64 program (build it: cargo build -p devlab-health --release --target aarch64-unknown-linux-musl)", runner.display());
-    }
+/// Where the suite is published as an Alpine package (the package conveyor, from packaging/), for the
+/// Alpine the phones run, and the key it is signed with.
+pub const REPOSITORY: &str = "https://linux-phone-oco.github.io/lab-tools/alpine/v3.24/lab-tools";
+pub const KEY_NAME: &str = "linux-phone-oco-lab-tools-20261117.rsa.pub";
+const KEY: &str = include_str!("../../packaging/alpine/linux-phone-oco-lab-tools-20261117.rsa.pub");
+
+/// What a root shell on the phone does to take the suite from its repository: the key and the
+/// repository added once, the package installed or brought up to date - and then what devlab put by
+/// hand before the package is taken away, so that the package's files are the only ones (a unit in
+/// /etc/systemd/system would hide the package's own).
+pub fn from_the_package() -> String {
+    format!(
+        "[ -f /etc/apk/keys/{KEY_NAME} ] || cat > /etc/apk/keys/{KEY_NAME} <<'KEY'\n{}KEY\n\
+         grep -qxF '{REPOSITORY}' /etc/apk/repositories || echo '{REPOSITORY}' >> /etc/apk/repositories\n\
+         apk add -q --update-cache --upgrade devlab-health\n\
+         rm -f /etc/systemd/system/devlab-health.service /etc/systemd/system/devlab-health.timer \
+         /etc/systemd/system/timers.target.wants/devlab-health.timer\n\
+         echo put: $(apk list --installed devlab-health | cut -d' ' -f1) from {REPOSITORY}\n",
+        KEY.trim_end().to_string() + "\n"
+    )
+}
+
+/// Puts the suite on the phone, so the phone checks itself after every boot from now on: the runner and
+/// the generic checks from their Alpine package - or, given a runner, as built here and copied, to try
+/// what is not released yet - then the phone's own checks and its manifest's expectations, and the timer
+/// enabled.
+pub fn put(
+    device: &Device,
+    manifest_dir: &Path,
+    phone: &Phone,
+    runner: Option<&Path>,
+) -> Result<()> {
+    let head = match runner {
+        Some(runner) => {
+            let head =
+                std::fs::read(runner).with_context(|| format!("reading {}", runner.display()))?;
+            if head.get(..4) != Some(b"\x7fELF") || head.get(18) != Some(&0xb7) {
+                bail!("{} is not an aarch64 program (build it: cargo build -p devlab-health --release --target aarch64-unknown-linux-musl)", runner.display());
+            }
+            Some(head)
+        }
+        None => None,
+    };
     let stage = tempdir()?;
     let write = |rel: &str, bytes: &[u8], mode: &str| -> Result<()> {
         let p = stage.join(rel);
@@ -154,9 +190,11 @@ pub fn put(device: &Device, manifest_dir: &Path, phone: &Phone, runner: &Path) -
         std::fs::set_permissions(&p, std::os::unix::fs::PermissionsExt::from_mode(m))?;
         Ok(())
     };
-    write("usr/bin/devlab-health", &head, "755")?;
-    for (rel, text, mode) in FILES {
-        write(rel, text.as_bytes(), mode)?;
+    if let Some(head) = &head {
+        write("usr/bin/devlab-health", head, "755")?;
+        for (rel, text, mode) in FILES {
+            write(rel, text.as_bytes(), mode)?;
+        }
     }
     for (rel, local) in device_checks(device, manifest_dir)? {
         write(&rel, &std::fs::read(&local)?, "644")?;
@@ -187,15 +225,20 @@ pub fn put(device: &Device, manifest_dir: &Path, phone: &Phone, runner: &Path) -
     let _ = std::fs::remove_dir_all(&stage);
     let _ = std::fs::remove_file(&tarball);
     // the phone's own checks are replaced whole: one taken out of the repository leaves the phone too
-    let (ok, out) = phone.root(
-        "set -e\n\
+    let take = if head.is_some() {
+        String::new()
+    } else {
+        from_the_package()
+    };
+    let (ok, out) = phone.root(&format!(
+        "set -e\n{take}\
          rm -rf /usr/lib/devlab/health/device\n\
          tar -xf /tmp/devlab-health.tar -C / --no-same-owner\n\
          rm -f /tmp/devlab-health.tar\n\
          systemctl daemon-reload\n\
          systemctl enable devlab-health.timer\n\
          echo put: $(ls /usr/lib/devlab/health/checks/*/*.sh /usr/lib/devlab/health/device/*/*.sh 2>/dev/null | wc -l) checks\n",
-    )?;
+    ))?;
     if !ok {
         bail!("installing the suite on the phone failed: {out}");
     }
@@ -224,7 +267,7 @@ pub fn run(phone: &Phone) -> Result<Ran> {
         .unwrap_or_default()
         .to_string();
     if rows(&out).is_empty() {
-        bail!("the phone gave no report - is the suite on it? (devlab suite put now --runner ...)");
+        bail!("the phone gave no report - is the suite on it? (devlab suite put now)");
     }
     Ok(Ran {
         report: out,
@@ -293,7 +336,7 @@ pub fn after_change(phone: &Phone, manifest_dir: &Path, rebooted: bool) -> Resul
     let Some(ran) = ran else {
         return Ok((
             true,
-            "health: the suite is not on the phone - devlab suite put now --runner ...".into(),
+            "health: the suite is not on the phone - devlab suite put now".into(),
         ));
     };
     let brought = crate::gather::fetch(phone, &manifest_dir.join("tests/results"))?;
@@ -390,6 +433,27 @@ mod tests {
         let s = said(&[row("pass"), row("skip"), row("fail")]);
         assert!(s.starts_with("fail"));
         assert!(s.ends_with("1 pass, 1 fail, 1 not measured\n"));
+    }
+
+    #[test]
+    fn the_suite_comes_from_its_signed_repository() {
+        let s = from_the_package();
+        assert!(s.starts_with(&format!("[ -f /etc/apk/keys/{KEY_NAME} ] || cat > /etc/apk/keys/{KEY_NAME} <<'KEY'\n-----BEGIN PUBLIC KEY-----\n")));
+        assert!(
+            s.contains("-----END PUBLIC KEY-----\nKEY\n"),
+            "the key whole, then its end"
+        );
+        assert!(s.contains(&format!(
+            "grep -qxF '{REPOSITORY}' /etc/apk/repositories || echo"
+        )));
+        let add = s.find("apk add").unwrap();
+        let rm = s
+            .find("rm -f /etc/systemd/system/devlab-health.service")
+            .unwrap();
+        assert!(
+            add < rm,
+            "what was put by hand goes only once the package is in"
+        );
     }
 
     #[test]

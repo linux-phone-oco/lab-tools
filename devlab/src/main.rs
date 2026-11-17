@@ -9,7 +9,7 @@
 //!   devlab test                    the device's checks, now
 //!   devlab hear                    a tone on each speaker, heard through the lab's microphone
 //!   devlab health                  against everything that worked before; exit 1 on a regression
-//!   devlab suite put now --runner F | run | latest   the health suite on the phone itself
+//!   devlab suite put now [--runner F] | run | latest   the health suite on the phone itself
 //!   devlab gather now [--docs DIR]  the phone's reports into this lab and the picture's tables
 //!   devlab mcp                    the phone for any agent: an MCP server (stdio)
 //!   devlab guard tool | start      the ways, held for agents: what Claude Code's hooks on the lab call
@@ -152,9 +152,10 @@ enum SuiteCmd {
     /// Put the suite on the phone (say `now`): the runner, the checks, the manifest's [health], the timer
     Put {
         now: String,
-        /// The runner built for the phone (target/aarch64-unknown-linux-musl/release/devlab-health)
+        /// A runner built here, copied with the generic checks - to try what is not released yet
+        /// (target/aarch64-unknown-linux-musl/release/devlab-health); without it, the Alpine package
         #[arg(long)]
-        runner: PathBuf,
+        runner: Option<PathBuf>,
     },
     /// Run it on the phone now, and say what it found; exit 1 when unhealthy
     Run,
@@ -274,9 +275,9 @@ fn main() -> Result<()> {
             match action {
                 SuiteCmd::Put { now, runner } => {
                     if now != "now" {
-                        bail!("usage: devlab suite put now --runner FILE - it changes the phone");
+                        bail!("usage: devlab suite put now [--runner FILE] - it changes the phone");
                     }
-                    suite::put(&dev, &here, &p, &runner)?;
+                    suite::put(&dev, &here, &p, runner.as_deref())?;
                 }
                 SuiteCmd::Run => {
                     let ran = suite::run(&p)?;

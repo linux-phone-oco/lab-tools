@@ -23,11 +23,14 @@ Secrets and what is learned at run time stay outside repositories: `~/.config/de
 
 ## The phone checks itself
 
-`devlab suite put now --runner FILE` puts the health suite on the phone: `devlab-health` (a small
-static Rust program, built by `health/build.sh aarch64-unknown-linux-musl`), the generic checks in
-`health/suite/checks/`, the phone's own checks from its lab repository, and what the manifest's
-`[health]` expects of this phone. A timer runs it 120 s after every boot; `devlab suite run` runs it
-now and passes on what the phone says; `devlab suite latest` reads its latest report.
+`devlab suite put now` puts the health suite on the phone: the Alpine package `devlab-health` - the
+runner (a small static Rust program) and the generic checks in `health/suite/checks/` - from
+lab-tools' signed repository (its key and repository added to the phone once), then the phone's own
+checks from its lab repository and what the manifest's `[health]` expects of this phone. With
+`--runner FILE` (built by `health/build.sh aarch64-unknown-linux-musl`) devlab copies the runner and
+the checks of this tree instead, to try what is not released yet. A timer runs the suite 120 s after
+every boot; `devlab suite run` runs it now and passes on what the phone says; `devlab suite latest`
+reads its latest report.
 
 Each check is a small shell file in postmarketOS's test shape that prints `pass|fail|skip TEST
 COMPONENT detail`, base layer first (the hardware and the system, no shell in the way), then the
@@ -35,8 +38,11 @@ shell layer. Each run is one report on the phone, `/var/lib/devlab/health/RUN.js
 in the shape of linux-phone-oco/docs' `test_results`; an unhealthy run keeps its evidence beside it
 (kernel log, errors, failed units) and says what is wrong, in plain words, in the journal. A part the
 phone never had working is a `gap` in the manifest: still measured, not ill health; a gap that starts
-to pass is said. Until the package conveyor publishes Alpine packages, devlab puts these files on the
-phone; then it is a package.
+to pass is said.
+
+The package is released by release-plz (a `devlab-health-vX.Y.Z` tag) and published by the package
+conveyor (`packaging/`, `.github/workflows/packages.yml`) at https://linux-phone-oco.github.io/lab-tools/,
+for postmarketOS v26.06 (Alpine 3.24): any postmarketOS phone can take it with the lines on that page.
 
 `devlab kernel install NAME VMLINUZ DTB MODULES.tgz | try NAME | log | remove NAME` - the safe test-kernel boot (one try by boot
 counting, a stalled boot saves its log and falls back to stock), proven on surya.
