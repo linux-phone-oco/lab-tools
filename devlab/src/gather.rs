@@ -44,28 +44,22 @@ pub fn fetch(phone: &Phone, results: &Path) -> Result<Vec<String>> {
     Ok(brought)
 }
 
-/// The statement that files one run into the picture's tables, through tad: every line of the report a
-/// test_results row, and the run's test_runs row counted from them - a failure in one of the phone's
-/// known gaps (its manifest's [health] gaps: parts it never had working) counted apart from the
-/// failures, as the phone's own verdict counts it. tad keeps it only if every rule of the tables holds.
-pub fn statement(run: &str, report: &Path, gaps: &[String]) -> String {
-    let q = |t: &str| t.replace('\'', "''");
-    let path = q(&report.to_string_lossy());
-    let gaps: Vec<String> = gaps.iter().map(|g| format!("'{}'", q(g))).collect();
-    let in_gap = format!(
-        "list_contains([{}]::VARCHAR[], component_id)",
-        gaps.join(", ")
-    );
-    format!(
-        "INSERT INTO test_results SELECT '{run}-' || component || '-' || test, '{run}', device, component, test, \
-         outcome, detail, CAST(\"at\" AS TIMESTAMP), kernel, shell \
-         FROM read_json_auto('{path}', format = 'newline_delimited'); \
-         INSERT INTO test_runs (id, device_id, run_at, kernel, shell, passed, failed, gaps, skipped) \
-         SELECT run, any_value(device_id), min(run_at), any_value(kernel), any_value(shell), \
-         count_if(outcome = 'pass'), count_if(outcome = 'fail' AND NOT {in_gap}), \
-         count_if(outcome = 'fail' AND {in_gap}), count_if(outcome = 'skip') \
-         FROM test_results WHERE run = '{run}' GROUP BY run"
-    )
+/// What files one run into the picture's tables: the picture's own named record, test-run (docs'
+/// records/test-run.sql: every line of the report a test_results row, the run's test_runs row counted
+/// from them, a failure in one of the phone's known gaps counted apart). devlab says only the run, the
+/// report and the gaps (its manifest's [health] gaps); tad writes each as a literal of its type and
+/// keeps the rows only if every rule of the tables holds. How a run is filed is the picture's to say.
+pub fn filing(run: &str, report: &Path, gaps: &[String]) -> Vec<String> {
+    vec![
+        "record".into(),
+        "test-run".into(),
+        "--run".into(),
+        run.into(),
+        "--report".into(),
+        report.to_string_lossy().into_owned(),
+        "--gaps".into(),
+        gaps.join(","),
+    ]
 }
 
 fn filed(docs: &Path) -> BTreeSet<String> {
@@ -94,13 +88,19 @@ fn tad(docs: &Path, args: &[&str]) -> Result<()> {
     Ok(())
 }
 
-/// The statements the picture derives from its tables, in order: derive/*.sql. devlab knows none of them -
-/// what a part's status is, is the picture's to say.
-pub fn derivations(docs: &Path) -> Vec<PathBuf> {
-    let mut v: Vec<PathBuf> = std::fs::read_dir(docs.join("derive"))
+/// The records the picture derives its tables by, in order: its named records derive-* (records/
+/// derive-*.sql), run by name through tad. devlab knows none of them - what a part's status is, is the
+/// picture's to say.
+pub fn derivations(docs: &Path) -> Vec<String> {
+    let mut v: Vec<String> = std::fs::read_dir(docs.join("records"))
         .map(|d| {
-            d.filter_map(|e| e.ok().map(|e| e.path()))
-                .filter(|p| p.extension().is_some_and(|x| x == "sql"))
+            d.filter_map(|e| e.ok())
+                .filter_map(|e| {
+                    let name = e.file_name().to_string_lossy().into_owned();
+                    name.strip_suffix(".sql")
+                        .filter(|n| n.starts_with("derive-"))
+                        .map(str::to_string)
+                })
                 .collect()
         })
         .unwrap_or_default();
@@ -133,14 +133,15 @@ pub fn file(results: &Path, docs: &Path, gaps: &[String]) -> Result<Vec<String>>
             continue;
         }
         let p = p.canonicalize()?;
-        tad(docs, &["sql", &statement(&run, &p, gaps)]).with_context(|| format!("filing {run}"))?;
+        let args = filing(&run, &p, gaps);
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        tad(docs, &args).with_context(|| format!("filing {run}"))?;
         done.push(run);
     }
     if !done.is_empty() {
-        // what the picture derives from its runs - each statement it keeps in derive/ - follows them
+        // what the picture derives from its runs - each record it names derive-* - follows them
         for rule in derivations(docs) {
-            let rule = rule.to_string_lossy().into_owned();
-            tad(docs, &["sql", "--file", &rule]).with_context(|| format!("deriving by {rule}"))?;
+            tad(docs, &["record", &rule]).with_context(|| format!("deriving by {rule}"))?;
         }
         tad(docs, &["canon"])?;
         tad(docs, &["render"])?;
@@ -299,15 +300,16 @@ mod tests {
     #[test]
     fn the_picture_says_what_it_derives() {
         let d = std::env::temp_dir().join(format!("devlab-derive-{}", std::process::id()));
-        std::fs::create_dir_all(d.join("derive")).unwrap();
-        for f in ["b.sql", "a.sql", "notes.md"] {
-            std::fs::write(d.join("derive").join(f), "").unwrap();
+        std::fs::create_dir_all(d.join("records")).unwrap();
+        for f in [
+            "derive-b.sql",
+            "derive-a.sql",
+            "test-run.sql",
+            "derive-notes.md",
+        ] {
+            std::fs::write(d.join("records").join(f), "").unwrap();
         }
-        let names: Vec<String> = derivations(&d)
-            .iter()
-            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
-            .collect();
-        assert_eq!(names, ["a.sql", "b.sql"]);
+        assert_eq!(derivations(&d), ["derive-a", "derive-b"]);
         assert!(
             derivations(&d.join("none")).is_empty(),
             "a picture with nothing to derive"
@@ -316,21 +318,25 @@ mod tests {
     }
 
     #[test]
-    fn a_run_is_filed_as_the_report_says_it_and_counted_from_its_rows() {
-        let s = statement(
+    fn a_run_is_filed_by_the_pictures_own_record() {
+        let a = filing(
             "20261117-010000",
             Path::new("/r/it's.jsonl"),
             &["camera-rear".to_string(), "o'gap".to_string()],
         );
-        assert!(
-            s.contains("count_if(outcome = 'fail' AND list_contains(['camera-rear', 'o''gap']::VARCHAR[], component_id))"),
-            "a failure in a known gap is counted apart"
+        assert_eq!(
+            a,
+            [
+                "record",
+                "test-run",
+                "--run",
+                "20261117-010000",
+                "--report",
+                "/r/it's.jsonl",
+                "--gaps",
+                "camera-rear,o'gap"
+            ],
+            "devlab says the values; tad writes them as literals"
         );
-        assert!(s.contains("'20261117-010000-' || component || '-' || test"));
-        assert!(
-            s.contains("read_json_auto('/r/it''s.jsonl'"),
-            "a quote in a path stays a quote"
-        );
-        assert!(s.contains("WHERE run = '20261117-010000' GROUP BY run"));
     }
 }
