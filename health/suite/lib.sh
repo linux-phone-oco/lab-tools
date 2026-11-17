@@ -25,3 +25,14 @@ as_user() {
 in_list() { case " $2 " in *" $1 "*) return 0 ;; esac; return 1; }
 # a part the manifest says this phone does not have: not measured, not failing
 absent() { in_list "$1" "${ABSENT:-}"; }
+
+# A check that costs something to run - a call, an SMS, mobile data - runs at most once a day:
+#   once_a_day sms-loopback || { say sms-loopback modem-sms skip "ran today"; exit 0; }
+# succeeds the first time on a day and marks the day (before the costly part, so a check that fails
+# half way does not spend again the same day); later that day it fails. Its place: the telephony layer.
+once_a_day() {
+	_stamp="/var/lib/devlab/health-once/$1"
+	_today=$(date +%Y-%m-%d)
+	[ "$(cat "$_stamp" 2>/dev/null)" != "$_today" ] || return 1
+	mkdir -p "${_stamp%/*}" && echo "$_today" > "$_stamp"
+}

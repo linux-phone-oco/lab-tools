@@ -23,7 +23,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 const LIB: &str = "/usr/lib/devlab/health";
 const OUT: &str = "/var/lib/devlab/health";
 const ENV: &str = "/etc/devlab/health.env";
-const LAYERS: [&str; 2] = ["base", "shell"];
+/// base: the hardware and the system; shell: through the running shell; telephony: what costs something
+/// to run (a call, an SMS, mobile data) - each such check runs at most once a day (lib.sh once_a_day)
+const LAYERS: [&str; 3] = ["base", "shell", "telephony"];
 const CHECK_SECS: u64 = 120;
 const KEEP_RUNS: usize = 60;
 
