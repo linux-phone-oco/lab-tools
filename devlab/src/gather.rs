@@ -4,10 +4,11 @@
 //! test_runs, a row per run with its counts. Nothing is retyped: the rows are the report's lines.
 
 use crate::phone::Phone;
-use anyhow::{Context, Result};
-use serde_json::{json, Value};
+use anyhow::{bail, Context, Result};
+
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 const ON_PHONE: &str = "/var/lib/devlab/health";
 
@@ -43,100 +44,210 @@ pub fn fetch(phone: &Phone, results: &Path) -> Result<Vec<String>> {
     Ok(brought)
 }
 
-/// "2026-11-16T23:27:31Z" as the tables keep a moment: "2026-11-16 23:27:31".
-fn moment(at: &str) -> String {
-    at.trim_end_matches('Z').replacen('T', " ", 1)
+/// The statement that files one run into the picture's tables, through tad: every line of the report a
+/// test_results row, and the run's test_runs row counted from them. tad keeps it only if every rule of
+/// the tables still holds.
+pub fn statement(run: &str, report: &Path) -> String {
+    let path = report.to_string_lossy().replace('\'', "''");
+    format!(
+        "INSERT INTO test_results SELECT '{run}-' || component || '-' || test, '{run}', device, component, test, \
+         outcome, detail, CAST(\"at\" AS TIMESTAMP), kernel, shell \
+         FROM read_json_auto('{path}', format = 'newline_delimited'); \
+         INSERT INTO test_runs SELECT run, any_value(device_id), min(run_at), any_value(kernel), any_value(shell), \
+         count_if(outcome = 'pass'), count_if(outcome = 'fail'), count_if(outcome = 'skip') \
+         FROM test_results WHERE run = '{run}' GROUP BY run"
+    )
 }
 
-/// A report's lines as test_results rows, and its test_runs row; None for a report with no tests.
-pub fn rows(run: &str, report: &str) -> Option<(Vec<Value>, Value)> {
-    let lines: Vec<Value> = report
-        .lines()
-        .filter_map(|l| serde_json::from_str::<Value>(l).ok())
-        .filter(|v| v["test"].is_string() && v["component"].is_string())
-        .collect();
-    let first = lines.first()?;
-    let s = |v: &Value, k: &str| v[k].as_str().unwrap_or_default().to_string();
-    let results: Vec<Value> = lines
-        .iter()
-        .map(|v| {
-            json!({
-                "id": format!("{run}-{}-{}", s(v, "component"), s(v, "test")),
-                "run": run,
-                "device_id": s(v, "device"),
-                "component_id": s(v, "component"),
-                "test": s(v, "test"),
-                "outcome": s(v, "outcome"),
-                "detail": s(v, "detail"),
-                "run_at": moment(&s(v, "at")),
-                "kernel": s(v, "kernel"),
-                "shell": s(v, "shell"),
-            })
-        })
-        .collect();
-    let n = |o: &str| lines.iter().filter(|v| v["outcome"] == o).count();
-    let summary = json!({
-        "id": run,
-        "device_id": s(first, "device"),
-        "run_at": moment(&s(first, "at")),
-        "kernel": s(first, "kernel"),
-        "shell": s(first, "shell"),
-        "passed": n("pass"),
-        "failed": n("fail"),
-        "skipped": n("skip"),
-    });
-    Some((results, summary))
-}
-
-fn ids(file: &Path) -> BTreeSet<String> {
-    std::fs::read_to_string(file)
+fn filed(docs: &Path) -> BTreeSet<String> {
+    std::fs::read_to_string(docs.join("data/test_runs.json"))
         .unwrap_or_default()
         .lines()
-        .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+        .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
         .filter_map(|v| v["id"].as_str().map(str::to_string))
         .collect()
 }
 
-fn append(file: &Path, rows: &[Value]) -> Result<()> {
-    use std::io::Write;
-    let mut f = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(file)?;
-    for r in rows {
-        writeln!(f, "{r}")?;
+fn tad(docs: &Path, args: &[&str]) -> Result<()> {
+    let out = Command::new("tad")
+        .args(args)
+        .current_dir(docs)
+        .output()
+        .context("running tad (is it installed? linux-phone-oco/docs: bin/install-tad.sh)")?;
+    if !out.status.success() {
+        bail!(
+            "tad {} refused: {}{}",
+            args.first().unwrap_or(&""),
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
     }
     Ok(())
 }
 
-/// Files every run in `results` that the picture's tables do not hold yet; the runs filed.
+/// Files every run in `results` that the picture's database does not hold yet, through tad; then its
+/// pages are rendered again, as its checks ask. The runs filed.
 pub fn file(results: &Path, docs: &Path) -> Result<Vec<String>> {
-    let runs_file = docs.join("data/test_runs.json");
-    let results_file = docs.join("data/test_results.json");
-    let filed = ids(&runs_file);
-    let mut names: Vec<PathBuf> = std::fs::read_dir(results)
+    let have = filed(docs);
+    let mut reports: Vec<PathBuf> = std::fs::read_dir(results)
         .with_context(|| format!("reading {}", results.display()))?
         .filter_map(|e| e.ok().map(|e| e.path()))
-        .filter(|p| p.extension().is_some_and(|x| x == "jsonl"))
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(is_report)
+        })
         .collect();
-    names.sort();
+    reports.sort();
     let mut done = Vec::new();
-    for p in names {
+    for p in reports {
         let run = p
             .file_stem()
             .unwrap_or_default()
             .to_string_lossy()
             .into_owned();
-        if filed.contains(&run) {
+        if have.contains(&run) {
             continue;
         }
-        if let Some((rs, summary)) = rows(&run, &std::fs::read_to_string(&p)?) {
-            append(&results_file, &rs)?;
-            append(&runs_file, &[summary])?;
-            done.push(run);
-        }
+        let p = p.canonicalize()?;
+        tad(docs, &["sql", &statement(&run, &p)]).with_context(|| format!("filing {run}"))?;
+        done.push(run);
+    }
+    if !done.is_empty() {
+        tad(docs, &["canon"])?;
+        tad(docs, &["render"])?;
     }
     Ok(done)
+}
+
+/// Gathering, whole: the phone's reports brought, every unfiled run filed through tad. With `land`, in
+/// devlab's own clones of the lab and the picture, each landed - and the face is drawn again by itself.
+/// What it did, in words.
+pub fn gather(
+    device: &crate::device::Device,
+    here: &Path,
+    docs: Option<PathBuf>,
+    land: bool,
+) -> Result<String> {
+    let docs = docs.unwrap_or_else(|| here.join("../docs"));
+    let (lab, picture) = if land {
+        let under = device.state_dir().join("places");
+        (
+            Some(Place::at_main(here, &under)?),
+            Some(Place::at_main(&docs, &under)?),
+        )
+    } else {
+        (None, None)
+    };
+    let lab_dir = lab.as_ref().map_or(here.to_path_buf(), |p| p.dir.clone());
+    let docs_dir = picture.as_ref().map_or(docs, |p| p.dir.clone());
+    let results = lab_dir.join("tests/results");
+    let mut said = match Phone::find(device) {
+        Ok(p) => format!("brought from the phone: {}", fetch(&p, &results)?.len()),
+        Err(e) => format!("the phone is not reachable ({e:#}): filing what the lab has"),
+    };
+    let filed = file(&results, &docs_dir)?;
+    said += &format!(
+        "; filed through tad: {} runs {}",
+        filed.len(),
+        filed.join(" ")
+    );
+    if let (Some(lab), Some(picture)) = (lab, picture) {
+        let codename = &device.device.codename;
+        let stamp = filed.last().cloned().unwrap_or_else(|| "reports".into());
+        if lab.land(
+            &format!("gathered/{stamp}"),
+            &format!("{codename}'s own health reports, gathered"),
+        )? {
+            said += "; landed in the lab";
+        }
+        if picture.land(
+            &format!("filed/{codename}-{stamp}"),
+            &format!(
+                "{} runs of {codename} filed by devlab, from the phone's own reports",
+                filed.len()
+            ),
+        )? {
+            said += "; landed in the picture - its face is drawn again by itself";
+        }
+    }
+    Ok(said)
+}
+
+/// A place devlab lands into: its own clone, never one a person or an agent works in - two hands in one
+/// clone once merged each other's changes under one commit.
+pub struct Place {
+    pub dir: PathBuf,
+}
+
+fn git(dir: &Path, args: &[&str]) -> Result<String> {
+    let out = Command::new("git").args(args).current_dir(dir).output()?;
+    if !out.status.success() {
+        bail!(
+            "git {} in {}: {}",
+            args.join(" "),
+            dir.display(),
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+impl Place {
+    /// devlab's own clone of the repository `of` is a clone of, at its main as GitHub has it now.
+    pub fn at_main(of: &Path, under: &Path) -> Result<Place> {
+        let url = git(of, &["remote", "get-url", "origin"])?;
+        let name = url
+            .trim_end_matches(".git")
+            .rsplit('/')
+            .next()
+            .unwrap_or("place")
+            .to_string();
+        let dir = under.join(name);
+        if !dir.join(".git").exists() {
+            std::fs::create_dir_all(under)?;
+            git(under, &["clone", "-q", &url, &dir.to_string_lossy()])?;
+        }
+        git(&dir, &["fetch", "-q", "origin"])?;
+        git(&dir, &["checkout", "-q", "-f", "main"])?;
+        git(&dir, &["reset", "-q", "--hard", "origin/main"])?;
+        git(&dir, &["clean", "-q", "-fd"])?;
+        Ok(Place { dir })
+    }
+
+    /// Lands what changed here: its own branch, the change said as a glimpse, and `land`, which waits
+    /// for every check. Nothing changed, nothing landed.
+    pub fn land(&self, branch: &str, summary: &str) -> Result<bool> {
+        if git(&self.dir, &["status", "--porcelain"])?.is_empty() {
+            return Ok(false);
+        }
+        git(&self.dir, &["checkout", "-q", "-B", branch])?;
+        // the record says who did it: devlab, by itself
+        let ok = |c: &mut Command| {
+            c.env("GIT_AUTHOR_NAME", "devlab")
+                .env("GIT_COMMITTER_NAME", "devlab")
+                .env("GIT_AUTHOR_EMAIL", "agent@creation-guidelines")
+                .env("GIT_COMMITTER_EMAIL", "agent@creation-guidelines")
+                .env("OCOECO_BY", "devlab")
+                .current_dir(&self.dir)
+                .status()
+                .is_ok_and(|s| s.success())
+        };
+        if !ok(Command::new("ocoeco").args(["glimpse", summary, "--kind", "docs"]))
+            || !ok(Command::new("ocoeco").arg("commit"))
+            || !ok(Command::new("land")
+                .arg("--no-manual")
+                .env("LAND_RELEASE", "0"))
+        {
+            let _ = git(&self.dir, &["checkout", "-q", "-f", "main"]);
+            bail!(
+                "landing {} did not go through - see above",
+                self.dir.display()
+            );
+        }
+        let _ = git(&self.dir, &["checkout", "-q", "-f", "main"]);
+        Ok(true)
+    }
 }
 
 #[cfg(test)]
@@ -152,36 +263,13 @@ mod tests {
     }
 
     #[test]
-    fn a_report_becomes_the_tables_rows_without_retyping() {
-        let r = concat!(
-            "{\"run\":\"20261116-232731\",\"device\":\"xiaomi-surya\",\"boot\":\"b\",\"at\":\"2026-11-16T23:27:31Z\",\"kernel\":\"k\",\"shell\":\"sxmo\",\"layer\":\"base\",\"component\":\"wifi\",\"test\":\"wifi-interface\",\"outcome\":\"pass\",\"detail\":\"interface wlan0\"}\n",
-            "{\"run\":\"20261116-232731\",\"device\":\"xiaomi-surya\",\"boot\":\"b\",\"at\":\"2026-11-16T23:27:31Z\",\"kernel\":\"k\",\"shell\":\"sxmo\",\"layer\":\"base\",\"component\":\"nfc\",\"test\":\"nfc-device\",\"outcome\":\"skip\",\"detail\":\"\"}\n",
+    fn a_run_is_filed_as_the_report_says_it_and_counted_from_its_rows() {
+        let s = statement("20261117-010000", Path::new("/r/it's.jsonl"));
+        assert!(s.contains("'20261117-010000-' || component || '-' || test"));
+        assert!(
+            s.contains("read_json_auto('/r/it''s.jsonl'"),
+            "a quote in a path stays a quote"
         );
-        let (rs, run) = rows("20261116-232731", r).unwrap();
-        assert_eq!(rs.len(), 2);
-        assert_eq!(rs[0]["id"], "20261116-232731-wifi-wifi-interface");
-        assert_eq!(rs[0]["run_at"], "2026-11-16 23:27:31");
-        assert_eq!(rs[0]["device_id"], "xiaomi-surya");
-        assert_eq!(
-            (run["passed"].as_u64(), run["skipped"].as_u64()),
-            (Some(1), Some(1))
-        );
-        assert!(rows("x", "noise\n").is_none());
-    }
-
-    #[test]
-    fn a_run_is_filed_once() {
-        let d = std::env::temp_dir().join(format!("devlab-gather-{}", std::process::id()));
-        let (results, docs) = (d.join("results"), d.join("docs"));
-        std::fs::create_dir_all(&results).unwrap();
-        std::fs::create_dir_all(docs.join("data")).unwrap();
-        std::fs::write(
-            results.join("20261116-232731.jsonl"),
-            "{\"device\":\"d\",\"at\":\"2026-11-16T23:27:31Z\",\"component\":\"wifi\",\"test\":\"t\",\"outcome\":\"pass\",\"detail\":\"\"}\n",
-        )
-        .unwrap();
-        assert_eq!(file(&results, &docs).unwrap(), ["20261116-232731"]);
-        assert!(file(&results, &docs).unwrap().is_empty(), "filed already");
-        let _ = std::fs::remove_dir_all(&d);
+        assert!(s.contains("WHERE run = '20261117-010000' GROUP BY run"));
     }
 }

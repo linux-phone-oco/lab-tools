@@ -91,6 +91,9 @@ enum Cmd {
         /// The picture's place (default: docs beside this lab: ../docs)
         #[arg(long)]
         docs: Option<PathBuf>,
+        /// Land it too: in devlab's own clones of the lab and the picture, each through `land`
+        #[arg(long)]
+        land: bool,
     },
     /// The phone's own health suite: put it on the phone, run it, read its latest report
     Suite {
@@ -223,26 +226,11 @@ fn main() -> Result<()> {
                 std::process::exit(1);
             }
         }
-        Cmd::Gather { now, docs } => {
+        Cmd::Gather { now, docs, land } => {
             if now != "now" {
-                bail!("usage: devlab gather now [--docs DIR] - it writes into this lab and the picture");
+                bail!("usage: devlab gather now [--docs DIR] [--land] - it writes into this lab and the picture");
             }
-            let results = here.join("tests/results");
-            let docs = docs.unwrap_or_else(|| here.join("../docs"));
-            match phone::Phone::find(&dev) {
-                Ok(p) => println!(
-                    "brought from the phone: {}",
-                    gather::fetch(&p, &results)?.len()
-                ),
-                Err(e) => println!("the phone is not reachable ({e:#}); filing what the lab has"),
-            }
-            let filed = gather::file(&results, &docs)?;
-            println!(
-                "filed into {}: {} runs {}",
-                docs.display(),
-                filed.len(),
-                filed.join(" ")
-            );
+            println!("{}", gather::gather(&dev, &here, docs, land)?);
         }
         Cmd::Suite { action } => {
             let p = phone::Phone::find(&dev)?;
