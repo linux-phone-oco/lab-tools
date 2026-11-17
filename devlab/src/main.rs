@@ -139,8 +139,13 @@ enum KernelCmd {
         #[arg(long, default_value = "")]
         cmdline: String,
     },
-    /// Reboot into it once; any later boot is stock
-    Try { name: String },
+    /// Reboot into it once; any later boot is stock (or the kept kernel)
+    Try {
+        name: String,
+        /// A device tree to boot NAME's kernel and modules with, once (as the entry NAME-dt)
+        #[arg(long)]
+        dtb: Option<PathBuf>,
+    },
     /// What a timed-out try left on the boot partition
     Log,
     /// Remove it and its modules
@@ -313,7 +318,11 @@ fn main() -> Result<()> {
                     modules,
                     cmdline,
                 } => kernel::install(&p, &name, &vmlinuz, &dtb, &modules, &cmdline)?,
-                KernelCmd::Try { name } => {
+                KernelCmd::Try { name, dtb } => {
+                    let name = match dtb {
+                        Some(dtb) => kernel::with_dtb(&p, &name, &dtb)?,
+                        None => name,
+                    };
                     println!("{}", outcome::try_and_report(&dev, &p, &name)?);
                     // the boot the try came to - the test kernel or stock - is measured like any other
                     let now = phone::Phone::find(&dev)?;

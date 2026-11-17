@@ -105,3 +105,7 @@ ahead of stock with three tries and boot blessing on, so its first good boot is 
 from then on), and three bad boots in a row put stock back by themselves - the initramfs timeout still
 guards each boot. `devlab kernel unkeep NAME now` gives the default back to stock; the kernel stays
 installed. One kernel is kept at a time.
+
+`devlab kernel try NAME --dtb FILE` boots installed kernel NAME - its kernel, initramfs and modules -
+once with another device tree, as the entry NAME-dt: a device-tree change is one boot, even on the kept
+kernel. A try is judged by the entry the bootloader says it booted (LoaderEntrySelected).

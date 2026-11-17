@@ -26,9 +26,15 @@ pub enum Came {
 
 /// Judges a try from what the phone says after the new boot: the running release, the boot entries
 /// listing, and whether the timeout hook's log is there.
-pub fn judge(release: &str, name: &str, entries: &str, timed_out: bool) -> Came {
+/// `selected` is the entry the bootloader says it booted (LoaderEntrySelected): the surest word, as
+/// two entries may share one release; the release's name is read only where the bootloader says none.
+pub fn judge(release: &str, name: &str, entries: &str, timed_out: bool, selected: &str) -> Came {
     let release = release.trim().to_string();
-    if release.ends_with(&format!("-{name}")) {
+    let selected = selected.trim();
+    if selected == format!("pmos-{name}.conf") || selected.starts_with(&format!("pmos-{name}+")) {
+        return Came::Booted { release };
+    }
+    if selected.is_empty() && release.ends_with(&format!("-{name}")) {
         return Came::Booted { release };
     }
     let mine: Vec<&str> = entries
@@ -68,6 +74,10 @@ impl Came {
 
 /// Starts the try and reports what it came to, once a new boot answers (ten minutes at most: a try
 /// that reaches no system falls back to stock after five).
+/// The entry the bootloader booted, as it says it (an EFI variable: four bytes of attributes, then
+/// UTF-16); nothing where it says none.
+pub const SELECTED: &str = "f=$(ls /sys/firmware/efi/efivars/LoaderEntrySelected-* 2>/dev/null | head -n1); [ -z \"$f\" ] || tail -c +5 \"$f\" | tr -d '\\000'; echo\n";
+
 pub fn try_and_report(device: &Device, phone: &Phone, name: &str) -> Result<String> {
     let before = phone.boot_id();
     kernel::try_once(phone, name)?;
@@ -87,7 +97,14 @@ pub fn try_and_report(device: &Device, phone: &Phone, name: &str) -> Result<Stri
     let (_, entries) = p.root(
         "ls /boot/loader/entries/; [ -f /boot/test-boot.log ] && echo TEST-BOOT-LOG; true\n",
     )?;
-    let came = judge(&release, name, &entries, entries.contains("TEST-BOOT-LOG"));
+    let (_, selected) = p.sh(SELECTED)?;
+    let came = judge(
+        &release,
+        name,
+        &entries,
+        entries.contains("TEST-BOOT-LOG"),
+        &selected,
+    );
     Ok(format!(
         "after {} s: {}",
         start.elapsed().as_secs(),
@@ -107,18 +124,19 @@ mod tests {
                 "7.1.0-rc3-sm7150-wcd\n",
                 "wcd",
                 "pmos-wcd+0-1.conf\npmos.conf",
-                false
+                false,
+                ""
             ),
             Came::Booted {
                 release: "7.1.0-rc3-sm7150-wcd".into()
             }
         );
         assert_eq!(
-            judge(r, "wcd", "pmos-wcd+1-0.conf\npmos.conf", false),
+            judge(r, "wcd", "pmos-wcd+1-0.conf\npmos.conf", false, ""),
             Came::NotChosen { release: r.into() }
         );
         assert_eq!(
-            judge(r, "wcd", "pmos-wcd+0-1.conf\npmos.conf", false),
+            judge(r, "wcd", "pmos-wcd+0-1.conf\npmos.conf", false, ""),
             Came::StoppedEarly { release: r.into() }
         );
         assert_eq!(
@@ -126,17 +144,37 @@ mod tests {
                 r,
                 "wcd",
                 "pmos-wcd+0-1.conf\npmos.conf\nTEST-BOOT-LOG",
-                true
+                true,
+                ""
             ),
             Came::TimedOut { release: r.into() }
         );
         assert_eq!(
-            judge(r, "wcd", "pmos.conf", false),
+            judge(r, "wcd", "pmos.conf", false, ""),
             Came::Unclear { release: r.into() }
         );
         assert!(
-            judge(r, "wcd", "pmos-wcdx+0-1.conf", false) == Came::Unclear { release: r.into() },
+            judge(r, "wcd", "pmos-wcdx+0-1.conf", false, "") == Came::Unclear { release: r.into() },
             "another entry's name is not this one's"
+        );
+    }
+
+    #[test]
+    fn the_bootloaders_word_decides_where_entries_share_a_release() {
+        let shared = "7.1.0-sm7150-mic+";
+        let e = "pmos-mic.conf\npmos-mic-dt+0-1.conf\npmos.conf";
+        assert_eq!(
+            judge(shared, "mic-dt", e, false, "pmos-mic-dt+0-1.conf\n"),
+            Came::Booted {
+                release: shared.into()
+            }
+        );
+        assert_eq!(
+            judge(shared, "mic-dt", e, false, "pmos-mic.conf\n"),
+            Came::StoppedEarly {
+                release: shared.into()
+            },
+            "the kept kernel came back: the device-tree try was spent"
         );
     }
 
