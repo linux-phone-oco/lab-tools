@@ -117,7 +117,7 @@ fn device_checks(device: &Device, manifest_dir: &Path) -> Result<Vec<(String, Pa
         return Ok(Vec::new());
     };
     let mut v = Vec::new();
-    for layer in ["base", "shell"] {
+    for layer in ["base", "shell", "telephony"] {
         let d = manifest_dir.join(dir).join(layer);
         let Ok(entries) = std::fs::read_dir(&d) else {
             continue;
