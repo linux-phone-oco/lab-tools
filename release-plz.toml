@@ -28,11 +28,15 @@ version_group = "lpoco"
 git_tag_name = "lpoco-bringup-v{{ version }}"
 git_release_enable = true
 
-# devlab and tone run on the lab machine, built from main; not released yet
+# lpoco-lab (also devlab) and lpoco-tone (also tone) join the family: one version, tags per package
 [[package]]
-name = "devlab"
-release = false
+name = "lpoco-lab"
+version_group = "lpoco"
+git_tag_name = "lpoco-lab-v{{ version }}"
+git_release_enable = true
 
 [[package]]
-name = "tone"
-release = false
+name = "lpoco-tone"
+version_group = "lpoco"
+git_tag_name = "lpoco-tone-v{{ version }}"
+git_release_enable = true

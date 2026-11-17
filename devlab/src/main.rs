@@ -42,6 +42,8 @@ use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(
+    name = "lpoco-lab",
+    bin_name = "lpoco-lab",
     version,
     about = "The device lab for Linux phones, for any device from its manifest"
 )]

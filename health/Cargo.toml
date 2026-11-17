@@ -11,4 +11,4 @@ serde_json = "1"
 argenv-resolve = "0.4"
 serde = { version = "1", features = ["derive"] }
 # the lab's tone crate, its analysis and WAV/raw reading only (no command-line parser of its own)
-tone = { path = "../tone", default-features = false, features = ["wav"] }
+tone = { package = "lpoco-tone", path = "../tone", default-features = false, features = ["wav"] }

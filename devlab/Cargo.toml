@@ -1,6 +1,7 @@
 [package]
-name = "devlab"
-version = "0.1.0"
+name = "lpoco-lab"
+# the family is released together: one version (release-plz.toml, version_group)
+version = "0.1.7"
 edition = "2021"
 description = "The device lab for Linux phones: reach a phone, try a kernel, test - for any device, from its manifest"
 license = "MIT OR Apache-2.0"
@@ -8,7 +9,7 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 ideal-agent = { git = "https://github.com/grenudi/ideal-agent", rev = "5967ea8101f9b502ec2c2dd3bf47b64a5ba90c8d" }
 hound = "3"
-tone = { path = "../tone" }
+tone = { package = "lpoco-tone", path = "../tone" }
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
@@ -16,3 +17,12 @@ serde_json = { version = "1", features = ["preserve_order"] }
 toml = "0.8"
 rmcp = { version = "3.10", features = ["server", "transport-io", "macros"] }
 tokio = { version = "1", features = ["rt", "io-std"] }
+
+# one program, two names: `lpoco lab` runs lpoco-lab; devlab stays as the name it had
+[[bin]]
+name = "lpoco-lab"
+path = "src/main.rs"
+
+[[bin]]
+name = "devlab"
+path = "src/main.rs"
