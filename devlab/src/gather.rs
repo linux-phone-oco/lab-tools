@@ -267,6 +267,12 @@ impl Place {
                 .arg("--no-manual")
                 .env("LAND_RELEASE", "0"))
         {
+            // a landing that did not go through leaves nothing behind: its pull request is closed and
+            // its branch deleted, so that the next try - from main as it then is - starts clean
+            let _ = Command::new("gh")
+                .args(["pr", "close", branch, "--delete-branch"])
+                .current_dir(&self.dir)
+                .output();
             let _ = git(&self.dir, &["checkout", "-q", "-f", "main"]);
             bail!(
                 "landing {} did not go through - see above",
