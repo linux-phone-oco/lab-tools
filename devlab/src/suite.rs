@@ -327,7 +327,7 @@ pub fn of_this_boot(phone: &Phone) -> Result<Option<Ran>> {
 /// `rebooted`: the change booted the phone anew, so the report is the one that boot writes by itself;
 /// otherwise the suite runs now. Returns whether the phone is well (true where it has no suite yet,
 /// said as such), and what to say of it.
-pub fn after_change(phone: &Phone, manifest_dir: &Path, rebooted: bool) -> Result<(bool, String)> {
+pub fn after_change(phone: &Phone, rebooted: bool) -> Result<(bool, String)> {
     let ran = if rebooted {
         of_this_boot(phone)?
     } else {
@@ -344,15 +344,11 @@ pub fn after_change(phone: &Phone, manifest_dir: &Path, rebooted: bool) -> Resul
             "health: the suite is not on the phone - devlab suite put now".into(),
         ));
     };
-    let brought = crate::gather::fetch(phone, &manifest_dir.join("tests/results"))?;
+    // the report stays on the phone until the watch gathers it into devlab's own clone and lands it:
+    // brought into the clone a command runs from, it rode along in that clone's next landing (2026-11-17)
     let said = format!(
-        "health: {} (report brought to the lab: {})",
-        ran.verdict,
-        if brought.is_empty() {
-            "it was there already".to_string()
-        } else {
-            brought.join(" ")
-        }
+        "health: {} (filed by the watch once the phone is quiet)",
+        ran.verdict
     );
     Ok((ran.well, said))
 }

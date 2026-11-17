@@ -242,7 +242,7 @@ fn main() -> Result<()> {
                 bail!("usage: devlab provision now - it shares this machine's connection with the phone for a while");
             }
             provision::provision(&dev, &here)?;
-            let (well, said) = suite::after_change(&phone::Phone::find(&dev)?, &here, false)?;
+            let (well, said) = suite::after_change(&phone::Phone::find(&dev)?, false)?;
             println!("{said}");
             if !well {
                 std::process::exit(1);
@@ -324,7 +324,7 @@ fn main() -> Result<()> {
                 SuiteCmd::Latest => print!("{}", suite::latest(&p)?),
             }
         }
-        Cmd::Mcp => mcp::serve(dev, here)?,
+        Cmd::Mcp => mcp::serve(dev)?,
         Cmd::Watch => watch::watch(&dev, &here)?,
         Cmd::Guard { .. } => unreachable!("answered before the manifest is read"),
         Cmd::Kernel { action } => {
@@ -345,7 +345,7 @@ fn main() -> Result<()> {
                     println!("{}", outcome::try_and_report(&dev, &p, &name)?);
                     // the boot the try came to - the test kernel or stock - is measured like any other
                     let now = phone::Phone::find(&dev)?;
-                    let (well, said) = suite::after_change(&now, &here, true)?;
+                    let (well, said) = suite::after_change(&now, true)?;
                     println!("{said}");
                     if !well {
                         std::process::exit(1);
@@ -385,7 +385,7 @@ fn main() -> Result<()> {
                         bail!("back, but its uptime could not be read");
                     }
                     println!("back: {} (up {up}s)", back.target);
-                    let (well, said) = suite::after_change(&back, &here, true)?;
+                    let (well, said) = suite::after_change(&back, true)?;
                     println!("{said}");
                     if !well {
                         std::process::exit(1);
