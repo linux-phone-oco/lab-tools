@@ -181,6 +181,10 @@ fn main() {
         std::process::exit(run(&args[0], &args[1..]));
     }
     let r = cli::Contract::parse_and_lint(OnProblems::FailOnError);
+    if cli::Contract::HELP.get_from(&r).unwrap_or(false) {
+        print!("{}", cli::usage("lpoco", "One front door for the linux-phone-oco tools. Commands: NAME args (runs lpoco-NAME), list, completions SHELL, mcp, man."));
+        return;
+    }
     if cli::Contract::VERSION.get_from(&r).unwrap_or(false) {
         println!("lpoco {VERSION}");
         return;

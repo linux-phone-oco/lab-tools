@@ -19,6 +19,10 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn main() {
     let r = Contract::parse_and_lint(OnProblems::FailOnError);
+    if Contract::HELP.get_from(&r).unwrap_or(false) {
+        print!("{}", cli::usage("lpoco-host", "The lab host prepared from declarations (run as lpoco host). Commands: plan (the default; changes nothing), prepare now (changes only what differs), check (reads)."));
+        return;
+    }
     if Contract::VERSION.get_from(&r).unwrap_or(false) {
         println!("lpoco-host {VERSION}");
         return;

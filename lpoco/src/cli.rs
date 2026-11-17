@@ -56,6 +56,15 @@ contract! {
         ..Input::EMPTY
     };
 
+    HELP: bool = Input {
+        key: "help",
+        ty: Type::Bool,
+        default: Some(false),
+        arg: Some(Arg { short: Some('h'), ..Arg::long("help") }),
+        summary: "Print this usage and stop.",
+        ..Input::EMPTY
+    };
+
     VERSION: bool = Input {
         key: "version",
         ty: Type::Bool,
@@ -64,6 +73,32 @@ contract! {
         summary: "Print the version (one for the whole family) and stop.",
         ..Input::EMPTY
     };
+}
+
+/// The usage `--help` prints: the program's line, then every declared argument and environment
+/// variable with its summary, all read from the declaration above.
+pub fn usage(name: &str, about: &str) -> String {
+    let mut out = format!("Usage: {name} [OPTIONS] [ARGS]\n\n{about}\n");
+    let records = Contract::records();
+    let mut args = String::new();
+    let mut envs = String::new();
+    for r in &records {
+        let summary = r.summary.clone().unwrap_or_default();
+        let sig = r.usage();
+        if !sig.is_empty() {
+            args.push_str(&format!("  {sig:<22} {summary}\n"));
+        }
+        for e in r.env_names() {
+            envs.push_str(&format!("  {e:<22} {summary}\n"));
+        }
+    }
+    if !args.is_empty() {
+        out.push_str(&format!("\nArguments:\n{args}"));
+    }
+    if !envs.is_empty() {
+        out.push_str(&format!("\nEnvironment:\n{envs}"));
+    }
+    out
 }
 
 #[cfg(test)]

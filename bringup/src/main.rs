@@ -14,6 +14,16 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn main() {
     let r = Contract::parse_and_lint(OnProblems::FailOnError);
+    if Contract::HELP.get_from(&r).unwrap_or(false) {
+        print!(
+            "{}",
+            cli::usage(
+                "lpoco-bringup",
+                "Boot images and bring-up steps. Commands: image info|unpack|pack|check."
+            )
+        );
+        return;
+    }
     if Contract::VERSION.get_from(&r).unwrap_or(false) {
         println!("lpoco-bringup {VERSION}");
         return;
