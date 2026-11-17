@@ -170,6 +170,28 @@ pub fn from_the_package() -> String {
     )
 }
 
+/// The phone's architecture, as Rust names its static target.
+const TARGET: &str = "aarch64-unknown-linux-musl";
+
+/// The runner built from the lab-tools this devlab was built from - the tree its generic checks were
+/// taken from, so the two go together - built now by health/build.sh, so a device lab's session never
+/// has to know lab-tools' build path (asked by the bring-up session, 2026-11-17).
+pub fn built_runner() -> Result<PathBuf> {
+    let tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let build = tree.join("health/build.sh");
+    if !build.is_file() {
+        bail!(
+            "the lab-tools this devlab was built from ({}) is gone: pass --runner FILE",
+            tree.display()
+        );
+    }
+    eprintln!("building the runner: {} {TARGET}", build.display());
+    if !Command::new(&build).arg(TARGET).status()?.success() {
+        bail!("building the runner failed ({} {TARGET})", build.display());
+    }
+    Ok(tree.join(format!("target/{TARGET}/release/devlab-health")))
+}
+
 /// Puts the suite on the phone, so the phone checks itself after every boot from now on: the runner and
 /// the generic checks from their Alpine package - or, given a runner, as built here and copied, to try
 /// what is not released yet - then the phone's own checks and its manifest's expectations, and the timer
