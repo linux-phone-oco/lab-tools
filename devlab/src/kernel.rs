@@ -237,6 +237,68 @@ pub fn try_once(phone: &Phone, name: &str) -> Result<()> {
     Ok(())
 }
 
+/// How many boots a kept kernel has to come up well before it sorts last again and stock boots.
+pub const KEEP_TRIES: u32 = 3;
+
+/// What a root shell does to keep test kernel NAME as the default: its entry rewritten - a kept title
+/// and sort key, systemd-bless-boot no longer masked, KEEP_TRIES tries - so that its first good boot is
+/// blessed (the counter dropped: the default from then on), and three bad ones in a row sort it last
+/// (stock boots by itself). One kernel is kept at a time.
+pub fn keep_script(name: &str) -> String {
+    format!(
+        "set -e\ncd /boot/loader/entries\n\
+         from=$(ls pmos-{name}.conf pmos-{name}+*.conf 2>/dev/null | head -n1)\n\
+         [ -n \"$from\" ] || {{ echo 'pmos-{name} is not installed: devlab kernel install {name} ... first' >&2; exit 1; }}\n\
+         other=$(grep -l '^sort-key 0-kept-' *.conf 2>/dev/null | grep -v \"^pmos-{name}[.+]\" || true)\n\
+         [ -z \"$other\" ] || {{ echo \"another kernel is kept ($other): devlab kernel unkeep it first\" >&2; exit 1; }}\n\
+         sed -e 's/^title .*/title postmarketOS (kept kernel: {name})/' -e 's/^sort-key .*/sort-key 0-kept-{name}/' \
+         -e 's/ systemd.mask=systemd-bless-boot.service//' \"$from\" > /tmp/kept-entry\n\
+         rm -f pmos-{name}.conf pmos-{name}+*.conf\n\
+         install -m 644 /tmp/kept-entry 'pmos-{name}+{KEEP_TRIES}-0.conf' && rm -f /tmp/kept-entry\n\
+         sync\necho 'kept: pmos-{name}+{KEEP_TRIES}-0.conf - the default from the next boot; blessed by its first good boot, stock after {KEEP_TRIES} bad ones'\n"
+    )
+}
+
+/// What a root shell does to give the default back to stock: the kept entry becomes a test entry again,
+/// with no try left (bless masked, sorted last); the kernel stays installed.
+pub fn unkeep_script(name: &str) -> String {
+    format!(
+        "set -e\ncd /boot/loader/entries\n\
+         from=$(ls pmos-{name}.conf pmos-{name}+*.conf 2>/dev/null | head -n1)\n\
+         [ -n \"$from\" ] || {{ echo 'pmos-{name} is not installed' >&2; exit 1; }}\n\
+         grep -q '^sort-key 0-kept-{name}$' \"$from\" || {{ echo 'pmos-{name} is not kept' >&2; exit 1; }}\n\
+         sed -e 's/^title .*/title postmarketOS (test kernel: {name})/' -e 's/^sort-key .*/sort-key 0-test-{name}/' \
+         -e '/^options /s/$/ systemd.mask=systemd-bless-boot.service/' \"$from\" > /tmp/test-entry\n\
+         rm -f pmos-{name}.conf pmos-{name}+*.conf\n\
+         install -m 644 /tmp/test-entry 'pmos-{name}+0-0.conf' && rm -f /tmp/test-entry\n\
+         sync\necho 'unkept: stock is the default from the next boot; pmos-{name} stays installed, with no try left'\n"
+    )
+}
+
+pub fn keep(phone: &Phone, name: &str) -> Result<()> {
+    if !valid_name(name) {
+        bail!("{name:?}: not a test kernel name");
+    }
+    let (ok, out) = phone.root(&keep_script(name))?;
+    eprint!("{out}");
+    if !ok {
+        bail!("keeping pmos-{name} failed");
+    }
+    Ok(())
+}
+
+pub fn unkeep(phone: &Phone, name: &str) -> Result<()> {
+    if !valid_name(name) {
+        bail!("{name:?}: not a test kernel name");
+    }
+    let (ok, out) = phone.root(&unkeep_script(name))?;
+    eprint!("{out}");
+    if !ok {
+        bail!("unkeeping pmos-{name} failed");
+    }
+    Ok(())
+}
+
 pub fn log(phone: &Phone) -> Result<()> {
     let (_, out) = phone.root("for f in /boot/test-boot.log /boot/test-boot.dmesg; do [ -f $f ] && { echo \"== $f\"; tail -60 $f; }; done; true\n")?;
     print!("{out}");
@@ -268,6 +330,28 @@ fn tempdir() -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_kept_kernel_is_blessed_once_and_falls_back_after_three_bad_boots() {
+        let k = keep_script("mic");
+        assert!(k.contains("s/^sort-key .*/sort-key 0-kept-mic/"));
+        assert!(
+            k.contains("s/ systemd.mask=systemd-bless-boot.service//"),
+            "bless no longer masked"
+        );
+        assert!(k.contains("install -m 644 /tmp/kept-entry 'pmos-mic+3-0.conf'"));
+        assert!(k.contains("another kernel is kept"), "one kept at a time");
+        let u = unkeep_script("mic");
+        assert!(
+            u.contains("'pmos-mic+0-0.conf'"),
+            "no try left: sorted last"
+        );
+        assert!(u.contains("/^options /s/$/ systemd.mask=systemd-bless-boot.service/"));
+        assert!(
+            u.contains("grep -q '^sort-key 0-kept-mic$'"),
+            "only a kept kernel is unkept"
+        );
+    }
 
     #[test]
     fn names_are_safe_for_the_esp() {
