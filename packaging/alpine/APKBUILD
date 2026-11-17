@@ -7,6 +7,7 @@ pkgver=0.1.0
 pkgrel=0
 pkgdesc="The phone's health: scheduled tests, their results, and switches with reasons (linux-phone-oco)"
 replaces="devlab-health"
+provides="devlab-health=$pkgver-r$pkgrel"
 url="https://github.com/linux-phone-oco/lab-tools"
 arch="aarch64 x86_64"
 license="MIT OR Apache-2.0"
@@ -27,6 +28,10 @@ package() {
 	done
 	install -Dm644 health/suite/lpoco-health.service "$pkgdir"/usr/lib/systemd/system/lpoco-health.service
 	install -Dm644 health/suite/lpoco-health.timer "$pkgdir"/usr/lib/systemd/system/lpoco-health.timer
+	# the names the phone's own checks used before the rename, until they call the new ones
+	mkdir -p "$pkgdir"/usr/lib/devlab
+	ln -s ../lpoco-health "$pkgdir"/usr/lib/devlab/health
+	ln -s lpoco-health "$pkgdir"/usr/bin/devlab-health
 }
 
 sha512sums=""
