@@ -90,6 +90,11 @@ impl Door {
     /// Run commands on the phone, as its user or as root; what they printed, and whether they succeeded.
     #[tool]
     async fn run(&self, Parameters(r): Parameters<Run>) -> Result<String, String> {
+        let _held = if r.root {
+            Some(said(crate::hold::hold(&self.device))?)
+        } else {
+            None
+        };
         let p = self.phone()?;
         let (ok, out) = said(if r.root {
             p.root(&r.script)
@@ -105,6 +110,7 @@ impl Door {
     /// Copy a file from the lab machine to the phone.
     #[tool]
     async fn put(&self, Parameters(a): Parameters<Put>) -> Result<String, String> {
+        let _held = said(crate::hold::hold(&self.device))?;
         said(self.phone()?.put(&a.local, &a.remote))?;
         Ok(format!("put {} at {}", a.local, a.remote))
     }
@@ -163,6 +169,7 @@ impl Door {
         &self,
         Parameters(k): Parameters<KernelInstall>,
     ) -> Result<String, String> {
+        let _held = said(crate::hold::hold(&self.device))?;
         let p = self.phone()?;
         said(kernel::install(
             &p,
@@ -179,6 +186,7 @@ impl Door {
     /// the health of the boot it came to. Takes minutes.
     #[tool]
     async fn kernel_try(&self, Parameters(k): Parameters<KernelName>) -> Result<String, String> {
+        let _held = said(crate::hold::hold(&self.device))?;
         let came = said(outcome::try_and_report(
             &self.device,
             &self.phone()?,
@@ -201,6 +209,7 @@ impl Door {
     /// Reboot the phone, wait until it answers again, and say the health of the new boot. Takes minutes.
     #[tool]
     async fn reboot(&self) -> Result<String, String> {
+        let _held = said(crate::hold::hold(&self.device))?;
         let back = said(phone::reboot(&self.device, &self.phone()?))?;
         let (_, health) = said(suite::after_change(&back, &self.here, true))?;
         Ok(format!("back at {}\n{health}", back.target))

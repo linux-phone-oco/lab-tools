@@ -20,6 +20,7 @@ mod flash;
 mod gather;
 mod health;
 mod hear;
+mod hold;
 mod kernel;
 mod mcp;
 mod outcome;
@@ -163,6 +164,20 @@ enum PhoneCmd {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     let (dev, file) = device::Device::load(cli.device.as_deref(), &std::env::current_dir()?)?;
+    // one change to the phone at a time, whoever asks: held until this command ends
+    let _held = match &cli.cmd {
+        Cmd::Flash { .. } | Cmd::Provision { .. } => Some(hold::hold(&dev)?),
+        Cmd::Phone {
+            action: PhoneCmd::Reboot | PhoneCmd::Root | PhoneCmd::Put { .. },
+        } => Some(hold::hold(&dev)?),
+        Cmd::Kernel {
+            action: KernelCmd::Install { .. } | KernelCmd::Try { .. } | KernelCmd::Remove { .. },
+        } => Some(hold::hold(&dev)?),
+        Cmd::Suite {
+            action: SuiteCmd::Put { .. },
+        } => Some(hold::hold(&dev)?),
+        _ => None,
+    };
     let here = file
         .parent()
         .map(std::path::Path::to_path_buf)
