@@ -9,6 +9,7 @@
 //! - [`pin::check`]: stop when the manifest pins another family version;
 //! - [`hooks::run`]: call a manifest-named step executable.
 
+pub mod bisect;
 pub mod boot;
 pub mod fdt;
 pub mod hooks;
