@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-lab-v0.6.0...lpoco-lab-v0.6.1) - 2026-11-18
+
+### Added
+
+- *(host)* check names a gadget that enumerated with a serial no device declares ([#131](https://github.com/linux-phone-oco/lab-tools/pull/131))
+
 ## [0.6.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-lab-v0.5.0...lpoco-lab-v0.6.0) - 2026-11-18
 
 ### Added
