@@ -674,7 +674,7 @@ fn nodes_with_serial(class: &str, serial: &str) -> Vec<String> {
 fn share_checks(st: &State) -> (i32, i32) {
     let (mut bad, mut ok) = (0, 0);
     for d in &st.devices {
-        match share::probe(&d.codename, d.usb_address.as_deref()) {
+        match share::probe(&d.codename, d.usb_address.as_deref(), &st.fs_root) {
             share::Measured::Ok(m) => {
                 ok += 1;
                 println!("share {m}");
@@ -686,7 +686,40 @@ fn share_checks(st: &State) -> (i32, i32) {
             }
         }
     }
+    // one device failing means the check failed: it records nothing
+    if bad == 0 && ok > 0 {
+        record_proved_share_files(st);
+    }
     (bad, ok)
+}
+
+/// A share the lab user just started and stopped proves the files it stands on are in place. Their folders can be
+/// root-only (polkit), so plan cannot read them: the staged hash of each one it could not read is recorded, as an
+/// install would, and the next plan asks no root for it. A file with a record of another content stays a root install: the probe shows some rule works, not that it is this one. This is the one place `check` writes. Only called after a passing share check.
+fn record_proved_share_files(st: &State) {
+    let proved = [
+        share::POLKIT_DST,
+        share::SHARE_UNIT_DST,
+        share::SHARE_HELPER_DST,
+    ];
+    let files: Vec<FileChange> = files_for(
+        &st.devices,
+        st.lab.gadget_group.as_deref(),
+        LinkManager::detect(&st.fs_root),
+        st.user.as_deref(),
+        &|p| read_file(st, p),
+    )
+    .into_iter()
+    .filter(|f| {
+        proved.contains(&f.dst.as_str()) && matches!(f.seen, Seen::Unreadable { recorded: None })
+    })
+    .collect();
+    if files.iter().any(|f| f.changed()) {
+        match record_installed(&st.home, &files) {
+            Ok(()) => println!("share: the files it proved are recorded as installed"),
+            Err(e) => println!("share: could not record what it proved: {e}"),
+        }
+    }
 }
 
 /// What `revoke now` needs: the host checked and well, the share measured at least once (not merely "not

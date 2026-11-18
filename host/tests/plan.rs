@@ -1397,3 +1397,113 @@ fn a_root_file_the_lab_user_cannot_read_is_judged_by_the_hash_recorded_at_its_la
     );
     drop(closed);
 }
+
+/// The polkit rule's folder closed to the lab user, as /etc/polkit-1/rules.d is; given back on drop.
+struct ClosedPolkit(PathBuf);
+
+impl ClosedPolkit {
+    fn new(l: &Lab) -> ClosedPolkit {
+        let d = l.dir.join("fs/etc/polkit-1/rules.d");
+        fs::create_dir_all(&d).unwrap();
+        fs::set_permissions(&d, fs::Permissions::from_mode(0o000)).unwrap();
+        ClosedPolkit(d)
+    }
+}
+
+impl Drop for ClosedPolkit {
+    fn drop(&mut self) {
+        let _ = fs::set_permissions(&self.0, fs::Permissions::from_mode(0o755));
+    }
+}
+
+/// A lab whose phone is on USB (`ip` stubs) and whose `systemctl` stub starts and stops the share unit the way
+/// the real one does (state under the fake root's /run), or fails to start it.
+fn lab_with_share(name: &str, start_works: bool) -> Lab {
+    let l = lab(name, "");
+    let dev = l.dir.join("devs/google-walleye-lab/device.toml");
+    let mut t = fs::read_to_string(&dev).unwrap();
+    t.push_str("[connection]\naddresses = [\"172.16.42.1\"]\n");
+    fs::write(&dev, t).unwrap();
+    let bin = l.dir.join("stubs");
+    exe(
+        &bin.join("ip"),
+        r#"case "$*" in
+"-o -4 addr") echo "7: usb0    inet 172.16.42.2/24 brd 172.16.42.255 scope global usb0" ;;
+"route show default") echo "default via 10.0.0.1 dev eth0" ;;
+esac"#,
+    );
+    let run = l.dir.join("fs/run/lpoco-share");
+    let start = if start_works {
+        {
+            fs::create_dir_all(&run).unwrap();
+            format!(": > {}/usb0--eth0.fwd", run.display())
+        }
+    } else {
+        "echo refused >&2; exit 1".to_string()
+    };
+    exe(
+        &bin.join("systemctl"),
+        &format!(
+            "case \"$1\" in\nstart) {start} ;;\nstop) /usr/bin/rm -f {r}/usb0--eth0.fwd ;;\nesac",
+            r = run.display()
+        ),
+    );
+    l
+}
+
+#[test]
+fn a_passing_share_check_records_the_rule_it_proved_and_a_failing_one_records_nothing() {
+    // the check passes: the rule in the closed folder is recorded, so the next plan asks no root for it
+    let l = lab_with_share("record-from-check", true);
+    let closed = ClosedPolkit::new(&l);
+    let before = out(&host_as(&l, "lab", &["plan"]));
+    assert!(
+        before.contains("50-lpoco.rules (unreadable, not known yet"),
+        "{before}"
+    );
+    let c = host_as(&l, "lab", &["check"]);
+    let cs = out(&c);
+    assert!(cs.contains("started and stopped by the lab user"), "{cs}");
+    let after = out(&host_as(&l, "lab", &["plan"]));
+    assert!(
+        after.contains("50-lpoco.rules (as declared, unreadable: recorded at install)"),
+        "{after}"
+    );
+    assert!(before.contains("stage/50-lpoco.rules"), "{before}");
+    assert!(
+        !after.contains("stage/50-lpoco.rules"),
+        "no root command installs it: {after}"
+    );
+    drop(closed);
+
+    // the check fails: nothing is recorded, the rule stays not known
+    let l = lab_with_share("record-not-from-failed-check", false);
+    let _closed = ClosedPolkit::new(&l);
+    let c = out(&host_as(&l, "lab", &["check"]));
+    assert!(c.contains("share: FAIL"), "{c}");
+    let after = out(&host_as(&l, "lab", &["plan"]));
+    assert!(
+        after.contains("50-lpoco.rules (unreadable, not known yet"),
+        "{after}"
+    );
+}
+
+#[test]
+fn a_passing_share_check_does_not_vouch_for_a_rule_recorded_with_other_content() {
+    let l = lab_with_share("record-stale", true);
+    let state = l.dir.join("home/.local/state/lpoco-host");
+    fs::create_dir_all(&state).unwrap();
+    fs::write(
+        state.join("installed"),
+        "0000000000000000000000000000000000000000 /etc/polkit-1/rules.d/50-lpoco.rules\n",
+    )
+    .unwrap();
+    let _closed = ClosedPolkit::new(&l);
+    let c = out(&host_as(&l, "lab", &["check"]));
+    assert!(c.contains("started and stopped by the lab user"), "{c}");
+    let after = out(&host_as(&l, "lab", &["plan"]));
+    assert!(
+        after.contains("stage/50-lpoco.rules"),
+        "still installed: {after}"
+    );
+}

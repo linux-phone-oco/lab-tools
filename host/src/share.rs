@@ -233,7 +233,8 @@ fn sysctl_run(args: &[&str]) -> Result<(), String> {
 /// Exercises the installed share as the lab user: starts the unit for the phone's USB interface, sees it
 /// active and its state written, stops it, and sees nothing left. No password: this is the polkit rule's own test.
 /// The names of the interfaces come from the device's declaration (its address) and the default route, never typed.
-pub fn probe(codename: &str, phone_addr: Option<&str>) -> Measured {
+/// `fs_root` is the test root the state under /run is read from (empty on a real host).
+pub fn probe(codename: &str, phone_addr: Option<&str>, fs_root: &str) -> Measured {
     let Some(addr) = phone_addr else {
         return Measured::NotMeasured(format!("{codename} declares no [connection] address"));
     };
@@ -256,9 +257,9 @@ pub fn probe(codename: &str, phone_addr: Option<&str>) -> Measured {
         return Measured::Failed(format!("the lab user could not start {unit}: {e}"));
     }
     let active = sysctl_run(&["is-active", "--quiet", &unit]).is_ok();
-    let wrote = std::path::Path::new(&format!("/run/lpoco-share/{inst}.fwd")).exists();
+    let wrote = std::path::Path::new(&format!("{fs_root}/run/lpoco-share/{inst}.fwd")).exists();
     let stopped = sysctl_run(&["stop", &unit]);
-    let left = std::path::Path::new(&format!("/run/lpoco-share/{inst}.fwd")).exists();
+    let left = std::path::Path::new(&format!("{fs_root}/run/lpoco-share/{inst}.fwd")).exists();
     match (active, wrote, stopped, left) {
         (true, true, Ok(()), false) => Measured::Ok(format!(
             "{codename}: {unit} started and stopped by the lab user, no password; nothing left behind"
@@ -300,6 +301,6 @@ mod probe_tests {
 
     #[test]
     fn a_device_with_no_address_is_not_measured_not_failed() {
-        assert!(matches!(probe("x", None), Measured::NotMeasured(_)));
+        assert!(matches!(probe("x", None, ""), Measured::NotMeasured(_)));
     }
 }
