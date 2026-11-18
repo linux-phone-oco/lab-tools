@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-v0.13.0...lpoco-v0.14.0) - 2026-11-18
+
+### Added
+
+- lpoco-host check exercises the share, prepare ends with it, revoke now removes the grant ([#160](https://github.com/linux-phone-oco/lab-tools/pull/160))
+
 ## [0.13.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-v0.12.2...lpoco-v0.13.0) - 2026-11-18
 
 ### Added
