@@ -11,7 +11,7 @@ ideal-agent = { git = "https://github.com/grenudi/ideal-agent", rev = "5967ea810
 hound = "3"
 tone = { package = "lpoco-tone", path = "../tone" }
 anyhow = "1"
-clap = { version = "4", features = ["derive"] }
+argenv-resolve = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 toml = "0.8"

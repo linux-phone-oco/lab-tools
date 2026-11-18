@@ -1,4 +1,4 @@
-//! devlab: the device lab for Linux phones - for any device, from its manifest (device.toml).
+//! lpoco-lab (devlab): the device lab for Linux phones - for any device, from its manifest (device.toml).
 //!
 //!   devlab phone find              which address answers
 //!   devlab phone sh   < script     run commands as the user (script on stdin)
@@ -9,7 +9,7 @@
 //!   devlab test                    the device's checks, now
 //!   devlab hear                    a tone on each speaker, heard through the lab's microphone
 //!   devlab health                  against everything that worked before; exit 1 on a regression
-//!   devlab suite put now [--runner [F]] | run | latest   the health suite on the phone itself
+//!   devlab suite put now [--runner FILE | --built-runner] | run | latest   the health suite on the phone itself
 //!   devlab gather now [--land] [--docs DIR]  the phone's reports into this lab, their runs into its base (docs with --docs)
 //!   devlab mcp                    the phone for any agent: an MCP server (stdio)
 //!   devlab fastboot state | getvar NAME | boot now IMAGE | reboot now | set-active now SLOT   by serial
@@ -18,6 +18,7 @@
 //!   devlab watch                   after every boot: health, silent when well, a board task when not
 //!                                  a test kernel beside stock, tried once, never stranding the phone
 
+mod cli; // the command line, declared once with argenv
 mod device;
 mod fastboot;
 mod flash;
@@ -36,225 +37,394 @@ mod suite;
 mod watch;
 
 use anyhow::{bail, Result};
-use clap::{Parser, Subcommand};
 use std::io::Read;
 use std::path::PathBuf;
 
-#[derive(Parser)]
-#[command(
-    name = "lpoco-lab",
-    bin_name = "lpoco-lab",
-    version,
-    about = "The device lab for Linux phones, for any device from its manifest"
-)]
 struct Cli {
-    /// The device manifest (default: device.toml here or in a folder above)
-    #[arg(long, global = true)]
     device: Option<PathBuf>,
-    #[command(subcommand)]
     cmd: Cmd,
 }
 
-#[derive(Subcommand)]
 enum Cmd {
-    /// Reach the phone
     Phone {
-        #[command(subcommand)]
         action: PhoneCmd,
     },
-    /// Flash an image (say `now`): the manifest's fixes baked in, the device tree fingerprinted
     Flash {
         now: String,
         image: PathBuf,
         bootloader: PathBuf,
-        /// A device tree to put in the image's place for it
-        #[arg(long)]
         dtb: Option<PathBuf>,
-        /// Bake in nothing but access - to tell an image's fault from ours
-        #[arg(long)]
         as_is: bool,
     },
-    /// Provision a freshly flashed phone: packages, files, Wi-Fi (say `now`: it changes this machine's networking for a while)
-    Provision { now: String },
-    /// Run the device's checks now
+    Provision {
+        now: String,
+    },
     Test,
-    /// Listen: play a tone on each speaker and hear it through the lab's microphone
     Hear {
-        /// The word that the microphone has been placed by the phone (its keeper told, and agreed)
-        #[arg(long)]
         placed: bool,
     },
-    /// The checks against everything that worked before; exit 1 on a regression
     Health {
-        /// Listen too: play a tone on each speaker and hear it through the lab's microphone
-        #[arg(long)]
         hear: bool,
-        /// With --hear: the word that the microphone has been placed by the phone
-        #[arg(long)]
         placed: bool,
     },
-    /// Gather (say `now`): every report the phone keeps that the lab lacks, into this lab's tests/results,
-    /// and every run not yet filed, into test_runs and test_results of the lab's own base (it has a devicebase.toml), else of docs
     Gather {
         now: String,
-        /// File into docs at this place instead (default: the lab itself when it has a devicebase.toml, else ../docs)
-        #[arg(long)]
         docs: Option<PathBuf>,
-        /// Land it too: in devlab's own clone of the lab (and of docs, with --docs or a lab without a base), through `land`
-        #[arg(long)]
         land: bool,
     },
-    /// The phone's own health suite: put it on the phone, run it, read its latest report
     Suite {
-        #[command(subcommand)]
         action: SuiteCmd,
     },
-    /// devlab's door for agents: an MCP server on standard input and output
     Mcp,
-    /// Watch the phone: health after every boot, silent when well, a board task when not
     Watch,
-    /// The phone over fastboot, by its manifest.s serial: read it, boot an image from memory, reboot -
-    /// nothing written by devlab, the slots' flags said before and after
     Fastboot {
-        #[command(subcommand)]
         action: FastbootCmd,
     },
-    /// The phone's keeper: the one session that owns its flow - a lease, so two keepers never run
     Keeper {
-        #[command(subcommand)]
         action: KeeperCmd,
     },
-    /// The ways, held for agents: what Claude Code's hooks on the lab call (needs no manifest)
     Guard {
-        #[command(subcommand)]
         event: GuardCmd,
     },
-    /// A test kernel beside the stock one: tried once, falls back to stock by itself
     Kernel {
-        #[command(subcommand)]
         action: KernelCmd,
     },
 }
 
-#[derive(Subcommand)]
 enum KeeperCmd {
-    /// Take the lease (exit 1, saying who holds it, while another keeper is live)
     Take { name: String },
-    /// Renew it as the keeper works: a lease unrenewed for 90 minutes has lapsed
     Renew { name: String },
-    /// Give it back, as the keeper ends
     Release { name: String },
-    /// Who keeps the phone now; or free
     Status,
 }
 
-#[derive(Subcommand)]
 enum GuardCmd {
-    /// PreToolUse: the hook's JSON on standard input; ssh/scp to a phone outside devlab exits 2, saying why
     Tool,
 }
 
-#[derive(Subcommand)]
 enum KernelCmd {
-    /// Install it as a second boot entry with one try (MODULES.tgz holds lib/modules/RELEASE)
     Install {
         name: String,
         vmlinuz: PathBuf,
         dtb: PathBuf,
         modules: PathBuf,
-        /// Extra kernel options for this entry only (e.g. dyndbg="file drivers/soundwire/* +p")
-        #[arg(long, default_value = "")]
         cmdline: String,
     },
-    /// Reboot into it once; any later boot is stock (or the kept kernel)
     Try {
         name: String,
-        /// A device tree to boot NAME's kernel and modules with, once (as the entry NAME-dt)
-        #[arg(long)]
         dtb: Option<PathBuf>,
     },
-    /// What a timed-out try left on the boot partition
     Log,
-    /// Remove it and its modules
-    Remove { name: String },
-    /// Keep it (say `now`): the default from the next boot, blessed by its first good boot; after 3 bad
-    /// boots in a row stock boots by itself
-    Keep { name: String, now: String },
-    /// Give the default back to stock (say `now`); the kernel stays installed
-    Unkeep { name: String, now: String },
+    Remove {
+        name: String,
+    },
+    Keep {
+        name: String,
+        now: String,
+    },
+    Unkeep {
+        name: String,
+        now: String,
+    },
 }
 
-#[derive(Subcommand)]
 enum FastbootCmd {
-    /// Whether it is in fastboot now, and what its bootloader says of itself (read only)
     State,
-    /// One bootloader variable (read only)
     Getvar { name: String },
-    /// Boot an Android boot image from memory (say `now`): devlab writes nothing; it says where the phone
-    /// went and what the bootloader did to the slots' flags
     Boot { now: String, image: PathBuf },
-    /// Leave fastboot to the active slot (say `now`), or with --bootloader come back into fastboot
-    Reboot {
-        now: String,
-        #[arg(long)]
-        bootloader: bool,
-    },
-    /// Make SLOT (a or b) the active one (say `now`): metadata only, and only where the manifest says
-    /// [fastboot] slot_switch = true
+    Reboot { now: String, bootloader: bool },
     SetActive { now: String, slot: String },
 }
 
-#[derive(Subcommand)]
 enum SuiteCmd {
-    /// Put the suite on the phone (say `now`): the runner, the checks, the manifest's [health], the timer
     Put {
         now: String,
-        /// A runner built here, copied with the generic checks - to try what is not released yet: alone,
-        /// the runner built (health/build.sh) from the lab-tools this devlab was built from, whose generic
-        /// checks it carries; or a FILE built elsewhere. Without it, the Alpine package (lpoco-health)
-        #[arg(long, value_name = "FILE", num_args = 0..=1)]
         runner: Option<Option<PathBuf>>,
-        /// The lab's checks and manifest as this clone holds them, not as its main has them - to try
-        /// a check before it lands
-        #[arg(long)]
         here: bool,
     },
-    /// Run it on the phone now, and say what it found; exit 1 when unhealthy
     Run,
-    /// The latest report the phone keeps, as it is (JSON lines)
     Latest,
-    /// Switch a test off on the phone, with a reason: the phone's suite keeps it, with who and when
     Off {
         test: String,
-        /// Why: a test is never switched off without one
-        #[arg(long)]
         reason: String,
-        /// Who asks (devlab by default)
-        #[arg(long, default_value = "devlab")]
         by: String,
     },
-    /// Switch a test on again on the phone
-    On { test: String },
-    /// The phone's tests with their switches, and the conditions it finds out about itself now
+    On {
+        test: String,
+    },
     List,
 }
 
-#[derive(Subcommand)]
 enum PhoneCmd {
-    /// Print the address that answers
     Find,
-    /// Run the commands on standard input as the user
     Sh,
-    /// Run the commands on standard input as root
     Root,
-    /// Copy a local file to the phone
     Put { local: String, remote: String },
-    /// Reboot, and wait until the phone answers again
     Reboot,
 }
 
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// A usage mistake: said with the usage of what was meant, exit 2.
+fn usage_error(found: &cli::Found, said: &str) -> ! {
+    eprintln!("lpoco-lab: {said}\n\n{}", cli::usage(found));
+    std::process::exit(2);
+}
+
+/// The command line, read once through its argenv declaration (cli.rs).
+fn parse() -> Cli {
+    use argenv_resolve::InputResolveExt;
+    use cli::Contract as C;
+    let model = C::records();
+    let r = argenv_resolve::parse(&model);
+    if C::VERSION.get_from(&r).unwrap_or(false) {
+        println!("lpoco-lab {VERSION}");
+        std::process::exit(0);
+    }
+    let words = r.positionals().to_vec();
+    let found = cli::find(&words);
+    if C::HELP.get_from(&r).unwrap_or(false) {
+        print!("{}", cli::usage(&found));
+        std::process::exit(0);
+    }
+    // a mistake in the words is a usage mistake: exit 2 with the usage, as clap had it (exit 1 stays for what a command itself says)
+    let policy = argenv_resolve::LintPolicy::default();
+    let errors: Vec<String> = argenv_resolve::lint(&model, &r)
+        .iter()
+        .filter(|f| policy.severity(f) == argenv_resolve::Severity::Error)
+        .map(|f| f.to_string())
+        .collect();
+    if !errors.is_empty() {
+        usage_error(&found, &errors.join("\n"));
+    }
+    let node = match &found {
+        cli::Found::Leaf(n) => *n,
+        cli::Found::Unknown(w) => usage_error(&found, &format!("unrecognized command '{w}'")),
+        cli::Found::Group(_) => usage_error(&found, "an action is needed"),
+        cli::Found::Top => usage_error(&found, "a command is needed"),
+    };
+    // flags are scoped by argenv to the command; the action it was given to is checked here, from the tree
+    for (key, v) in r.values() {
+        let given = v.source == argenv_resolve::Source::Arg;
+        let is_flag = model
+            .iter()
+            .any(|m| m.key == *key && m.arg.as_ref().is_some_and(|a| a.position.is_none()));
+        if given
+            && is_flag
+            && !node.flags.contains(&key.as_str())
+            && !["device", "help", "version"].contains(&key.as_str())
+        {
+            usage_error(
+                &found,
+                &format!(
+                    "--{} does not apply to {}",
+                    key.replace('_', "-"),
+                    node.path.join(" ")
+                ),
+            );
+        }
+    }
+    if words.len() > node.path.len() + node.args.len() {
+        usage_error(
+            &found,
+            &format!(
+                "unexpected argument '{}'",
+                words[node.path.len() + node.args.len()]
+            ),
+        );
+    }
+    // each argument the command takes is required: say which is missing
+    macro_rules! arg {
+        ($i:expr, $name:literal) => {
+            match $i.get_from(&r) {
+                Some(v) => v,
+                None => usage_error(&found, concat!("the argument ", $name, " is needed")),
+            }
+        };
+    }
+    let flag = |b: Option<bool>| b.unwrap_or(false);
+    let cmd = match node.path {
+        ["phone", "find"] => Cmd::Phone {
+            action: PhoneCmd::Find,
+        },
+        ["phone", "sh"] => Cmd::Phone {
+            action: PhoneCmd::Sh,
+        },
+        ["phone", "root"] => Cmd::Phone {
+            action: PhoneCmd::Root,
+        },
+        ["phone", "put"] => Cmd::Phone {
+            action: PhoneCmd::Put {
+                local: arg!(C::LOCAL, "LOCAL"),
+                remote: arg!(C::REMOTE, "REMOTE"),
+            },
+        },
+        ["phone", "reboot"] => Cmd::Phone {
+            action: PhoneCmd::Reboot,
+        },
+        ["flash"] => Cmd::Flash {
+            now: arg!(C::NOW, "NOW"),
+            image: arg!(C::IMAGE, "IMAGE").into(),
+            bootloader: arg!(C::BOOTLOADER_FILE, "BOOTLOADER").into(),
+            dtb: C::DTB.get_from(&r).map(PathBuf::from),
+            as_is: flag(C::AS_IS.get_from(&r)),
+        },
+        ["provision"] => Cmd::Provision {
+            now: arg!(C::NOW, "NOW"),
+        },
+        ["test"] => Cmd::Test,
+        ["hear"] => Cmd::Hear {
+            placed: flag(C::PLACED.get_from(&r)),
+        },
+        ["health"] => Cmd::Health {
+            hear: flag(C::HEAR.get_from(&r)),
+            placed: flag(C::PLACED.get_from(&r)),
+        },
+        ["gather"] => Cmd::Gather {
+            now: arg!(C::NOW, "NOW"),
+            docs: C::DOCS.get_from(&r).map(PathBuf::from),
+            land: flag(C::LAND.get_from(&r)),
+        },
+        ["suite", "put"] => {
+            let (file, built) = (C::RUNNER.get_from(&r), flag(C::BUILT_RUNNER.get_from(&r)));
+            if file.is_some() && built {
+                usage_error(
+                    &found,
+                    "--runner FILE and --built-runner are two ways to say which runner: say one",
+                );
+            }
+            Cmd::Suite {
+                action: SuiteCmd::Put {
+                    now: arg!(C::ACTION_NOW, "NOW"),
+                    runner: match (file, built) {
+                        (Some(f), _) => Some(Some(PathBuf::from(f))),
+                        (None, true) => Some(None),
+                        (None, false) => None,
+                    },
+                    here: flag(C::HERE.get_from(&r)),
+                },
+            }
+        }
+        ["suite", "run"] => Cmd::Suite {
+            action: SuiteCmd::Run,
+        },
+        ["suite", "latest"] => Cmd::Suite {
+            action: SuiteCmd::Latest,
+        },
+        ["suite", "off"] => Cmd::Suite {
+            action: SuiteCmd::Off {
+                test: arg!(C::TEST, "TEST"),
+                reason: match C::REASON.get_from(&r) {
+                    Some(v) => v,
+                    None => usage_error(
+                        &found,
+                        "--reason is needed: a test is never switched off without one",
+                    ),
+                },
+                by: C::BY.get_from(&r).unwrap_or_else(|| "devlab".into()),
+            },
+        },
+        ["suite", "on"] => Cmd::Suite {
+            action: SuiteCmd::On {
+                test: arg!(C::TEST, "TEST"),
+            },
+        },
+        ["suite", "list"] => Cmd::Suite {
+            action: SuiteCmd::List,
+        },
+        ["mcp"] => Cmd::Mcp,
+        ["watch"] => Cmd::Watch,
+        ["fastboot", "state"] => Cmd::Fastboot {
+            action: FastbootCmd::State,
+        },
+        ["fastboot", "getvar"] => Cmd::Fastboot {
+            action: FastbootCmd::Getvar {
+                name: arg!(C::NAME, "NAME"),
+            },
+        },
+        ["fastboot", "boot"] => Cmd::Fastboot {
+            action: FastbootCmd::Boot {
+                now: arg!(C::ACTION_NOW, "NOW"),
+                image: arg!(C::FB_IMAGE, "IMAGE").into(),
+            },
+        },
+        ["fastboot", "reboot"] => Cmd::Fastboot {
+            action: FastbootCmd::Reboot {
+                now: arg!(C::ACTION_NOW, "NOW"),
+                bootloader: flag(C::BOOTLOADER.get_from(&r)),
+            },
+        },
+        ["fastboot", "set-active"] => Cmd::Fastboot {
+            action: FastbootCmd::SetActive {
+                now: arg!(C::ACTION_NOW, "NOW"),
+                slot: arg!(C::SLOT, "SLOT"),
+            },
+        },
+        ["keeper", "take"] => Cmd::Keeper {
+            action: KeeperCmd::Take {
+                name: arg!(C::NAME, "NAME"),
+            },
+        },
+        ["keeper", "renew"] => Cmd::Keeper {
+            action: KeeperCmd::Renew {
+                name: arg!(C::NAME, "NAME"),
+            },
+        },
+        ["keeper", "release"] => Cmd::Keeper {
+            action: KeeperCmd::Release {
+                name: arg!(C::NAME, "NAME"),
+            },
+        },
+        ["keeper", "status"] => Cmd::Keeper {
+            action: KeeperCmd::Status,
+        },
+        ["guard", "tool"] => Cmd::Guard {
+            event: GuardCmd::Tool,
+        },
+        ["kernel", "install"] => Cmd::Kernel {
+            action: KernelCmd::Install {
+                name: arg!(C::NAME, "NAME"),
+                vmlinuz: arg!(C::VMLINUZ, "VMLINUZ").into(),
+                dtb: arg!(C::DTB_FILE, "DTB").into(),
+                modules: arg!(C::MODULES, "MODULES").into(),
+                cmdline: C::CMDLINE.get_from(&r).unwrap_or_default(),
+            },
+        },
+        ["kernel", "try"] => Cmd::Kernel {
+            action: KernelCmd::Try {
+                name: arg!(C::NAME, "NAME"),
+                dtb: C::DTB.get_from(&r).map(PathBuf::from),
+            },
+        },
+        ["kernel", "log"] => Cmd::Kernel {
+            action: KernelCmd::Log,
+        },
+        ["kernel", "remove"] => Cmd::Kernel {
+            action: KernelCmd::Remove {
+                name: arg!(C::NAME, "NAME"),
+            },
+        },
+        ["kernel", "keep"] => Cmd::Kernel {
+            action: KernelCmd::Keep {
+                name: arg!(C::NAME, "NAME"),
+                now: arg!(C::KERNEL_NOW, "NOW"),
+            },
+        },
+        ["kernel", "unkeep"] => Cmd::Kernel {
+            action: KernelCmd::Unkeep {
+                name: arg!(C::NAME, "NAME"),
+                now: arg!(C::KERNEL_NOW, "NOW"),
+            },
+        },
+        other => unreachable!("cli::TREE has {other:?} but parse() does not"),
+    };
+    Cli {
+        device: C::DEVICE.get_from(&r).map(PathBuf::from),
+        cmd,
+    }
+}
 fn main() -> Result<()> {
-    let cli = Cli::parse();
+    let cli = parse();
     if let Cmd::Guard { event } = &cli.cmd {
         return match event {
             GuardCmd::Tool => guard::tool(),
@@ -359,7 +529,7 @@ fn main() -> Result<()> {
                     here: as_is,
                 } => {
                     if now != "now" {
-                        bail!("usage: devlab suite put now [--runner [FILE]] [--here] - it changes the phone");
+                        bail!("usage: devlab suite put now [--runner FILE | --built-runner] [--here] - it changes the phone");
                     }
                     let runner = match runner {
                         Some(None) => Some(suite::built_runner()?),

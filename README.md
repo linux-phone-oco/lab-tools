@@ -32,7 +32,7 @@ Secrets and what is learned at run time stay outside repositories: `~/.config/de
 runner (a small static Rust program) and the generic checks in `health/suite/checks/` - from
 lab-tools' signed repository (its key and repository added to the phone once), then the phone's own
 checks from its lab repository and what the manifest's `[health]` expects of this phone. With
-`--runner` devlab builds the runner (`health/build.sh aarch64-unknown-linux-musl`) in the lab-tools it
+`--built-runner` devlab builds the runner (`health/build.sh aarch64-unknown-linux-musl`) in the lab-tools it
 was itself built from and copies it with that tree's checks instead, to try what is not released yet;
 `--runner FILE` copies a runner built elsewhere. A timer runs the suite 120 s after
 every boot; `devlab suite run` runs it now and passes on what the phone says; `devlab suite latest`
