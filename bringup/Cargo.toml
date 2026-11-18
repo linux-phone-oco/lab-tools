@@ -18,3 +18,5 @@ toml = "0.8"
 serde = { version = "1", features = ["derive"] }
 # the command line is declared once (argenv), not parsed by hand
 argenv-resolve = "0.4"
+flate2 = "1"
+xz2 = "0.1"

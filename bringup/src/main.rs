@@ -4,9 +4,10 @@
 mod cli;
 
 use argenv_resolve::{InputResolveExt, OnProblems};
-use cli::{Contract, Verb};
+use cli::{Command, Contract, Verb};
 use lpoco_bringup::boot::Boot;
 use lpoco_bringup::image::{self, Verdict};
+use lpoco_bringup::initramfs;
 use lpoco_bringup::swap::{self, Parts};
 use std::fs;
 use std::path::Path;
@@ -54,6 +55,17 @@ fn run(r: &argenv_resolve::Resolution) -> Result<i32, String> {
                 .into(),
         );
     };
+    let command = Contract::COMMAND.get_from(r);
+    if (verb == Verb::Build) != (command == Some(Command::Initramfs)) {
+        return Err(match verb {
+            Verb::Build => {
+                "build is for the initramfs: lpoco-bringup initramfs build --spec FILE --out FILE"
+                    .into()
+            }
+            _ => "image verbs go with image: lpoco-bringup image info|unpack|pack|check|swap ..."
+                .into(),
+        });
+    }
     let device = Contract::DEVICE
         .get_from(r)
         .unwrap_or_else(|| "device.toml".into());
@@ -125,6 +137,26 @@ fn run(r: &argenv_resolve::Resolution) -> Result<i32, String> {
             for line in said {
                 println!("{line}");
             }
+            Ok(0)
+        }
+        Verb::Build => {
+            let spec = need(Contract::SPEC.get_from(r), "--spec FILE")?;
+            let out = need(Contract::OUT.get_from(r), "--out FILE")?;
+            let net = match Contract::NET.get_from(r) {
+                None => initramfs::DEFAULT_NET,
+                Some(n) => n
+                    .trim()
+                    .parse::<u8>()
+                    .map_err(|_| format!("--net {n}: a number from 0 to 255"))?,
+            };
+            let codec = initramfs::Codec::parse(
+                &Contract::CODEC.get_from(r).unwrap_or_else(|| "gzip".into()),
+            )?;
+            let root = Contract::ROOT.get_from(r);
+            let img =
+                initramfs::build(Path::new(&spec), root.as_deref().map(Path::new), net, codec)?;
+            fs::write(&out, &img).map_err(|e| format!("cannot write {out}: {e}"))?;
+            println!("{out}: {} bytes ({codec:?}, net {net})", img.len());
             Ok(0)
         }
         Verb::Check => {
