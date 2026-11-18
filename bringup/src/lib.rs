@@ -14,6 +14,7 @@ pub mod boot;
 pub mod fdt;
 pub mod hooks;
 pub mod image;
+pub mod init;
 pub mod initramfs;
 pub mod pin;
 pub mod swap;

@@ -8,7 +8,7 @@ pub mod boot;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-pub use boot::Boot;
+pub use boot::{Boot, BootGadget};
 
 /// The whole manifest. A program asks for the tables it needs; a table nobody declared is an error.
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, JsonSchema)]

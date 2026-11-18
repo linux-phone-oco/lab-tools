@@ -15,6 +15,8 @@
 //!                                                cmdline, lz4, footer), each the control with exactly those parts swapped, counted
 //!   lpoco-bringup initramfs build --spec FILE --out FILE [--root DIR] [--net N] [--codec gzip|xz]
 //!                                                a reproducible newc cpio from a gen_init_cpio spec, compressed (replaces build-initramfs.sh)
+//!   lpoco-bringup initramfs init [--device device.toml] [--out FILE] [--net N]
+//!                                                the bring-up /init made from the device's [boot.gadget] (configfs gadget, DHCP, telnet, ACM shell)
 //!   lpoco-bringup --version                      this program's version (the lpoco family's one version)
 
 use argenv_resolve::*;
@@ -50,11 +52,13 @@ pub enum Verb {
     Swap,
     Bisect,
     Build,
+    Init,
 }
 
 impl Verb {
-    pub const TOKENS: &'static [&'static str] =
-        &["info", "unpack", "pack", "check", "swap", "bisect", "build"];
+    pub const TOKENS: &'static [&'static str] = &[
+        "info", "unpack", "pack", "check", "swap", "bisect", "build", "init",
+    ];
 }
 
 impl FromRaw for Verb {
@@ -67,6 +71,7 @@ impl FromRaw for Verb {
             "swap" => Verb::Swap,
             "bisect" => Verb::Bisect,
             "build" => Verb::Build,
+            "init" => Verb::Init,
             _ => return None,
         })
     }
@@ -88,7 +93,7 @@ contract! {
         allowed: Verb::TOKENS,
         subcommands: &[Command::Image, Command::Initramfs],
         arg: Some(Arg::positional(0)),
-        summary: "What to do: image info, unpack, pack, check, swap or bisect; initramfs build.",
+        summary: "What to do: image info, unpack, pack, check, swap or bisect; initramfs build or init.",
         ..Input::EMPTY
     };
 
@@ -104,10 +109,10 @@ contract! {
     DEVICE: String, Command = Input {
         key: "device",
         ty: Type::String,
-        subcommands: &[Command::Image],
+        subcommands: &[Command::Image, Command::Initramfs],
         arg: Some(Arg { value_name: "FILE", ..Arg::long("device") }),
         env: Some(Env::new("LPOCO_DEVICE")),
-        summary: "The device manifest whose [boot] table says the header facts (device.toml in the current folder when none is given).",
+        summary: "The device manifest whose [boot] table says the header facts (initramfs init: its [boot.gadget]) (device.toml in the current folder when none is given).",
         ..Input::EMPTY
     };
 
@@ -152,7 +157,7 @@ contract! {
         ty: Type::String,
         subcommands: &[Command::Image, Command::Initramfs],
         arg: Some(Arg { value_name: "PATH", ..Arg::long("out") }),
-        summary: "pack, swap: the image to write; bisect: the folder the images are written to; unpack: the folder to write the parts to; initramfs build: the archive to write.",
+        summary: "pack, swap: the image to write; bisect: the folder the images are written to; unpack: the folder to write the parts to; initramfs build: the archive to write; initramfs init: the init script to write (standard output when none is given).",
         ..Input::EMPTY
     };
 
@@ -180,7 +185,7 @@ contract! {
         subcommands: &[Command::Initramfs],
         arg: Some(Arg { value_name: "N", ..Arg::long("net") }),
         env: Some(Env::new("LPOCO_NET")),
-        summary: "initramfs build: the gadget address 172.16.N.1 and the ECM MAC byte (42 when none is given; the files are written at 42).",
+        summary: "initramfs build, init: the gadget address 172.16.N.1 and the ECM MAC byte (42 when none is given; the files are written at 42).",
         ..Input::EMPTY
     };
 

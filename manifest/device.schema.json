@@ -671,6 +671,17 @@
           "additionalProperties": {
             "type": "string"
           }
+        },
+        "gadget": {
+          "description": "the USB gadget the bring-up init (`lpoco-bringup initramfs init`) raises: how the phone names itself on the cable",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/BootGadget"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false,
@@ -680,6 +691,40 @@
         "tags_offset",
         "pagesize",
         "cmdline"
+      ]
+    },
+    "BootGadget": {
+      "description": "`[boot.gadget]`: what the bring-up init says of the phone on the USB cable. The functions (ACM serial\nconsole, ECM network, RNDIS for Windows hosts) and the address (`--net`) are the init's; the names are the device's.",
+      "type": "object",
+      "properties": {
+        "serial": {
+          "description": "the gadget's USB serial number string (the lab finds the phone by it)",
+          "type": "string"
+        },
+        "manufacturer": {
+          "description": "the USB manufacturer string",
+          "type": "string",
+          "default": "linux-phone-oco"
+        },
+        "product": {
+          "description": "the USB product string",
+          "type": "string"
+        },
+        "label": {
+          "description": "the word the init's log lines start with (`LABEL: up, kernel ...`)",
+          "type": "string",
+          "default": "bringup-init"
+        },
+        "rndis": {
+          "description": "a second configuration, RNDIS + ACM, for Windows hosts",
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "serial",
+        "product"
       ]
     },
     "Tools": {
