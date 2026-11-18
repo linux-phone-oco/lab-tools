@@ -328,6 +328,24 @@ fn watchers(st: &State, tools: &[ToolPlan]) -> (FileChange, Vec<Vec<String>>) {
     )
 }
 
+/// The instances with a wants link: what is enabled, whoever enabled it.
+fn enabled_watchers(st: &State) -> Vec<String> {
+    let wants = format!("{}/.config/systemd/user/default.target.wants", st.home);
+    let mut v: Vec<String> = fs::read_dir(wants)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|e| {
+            let n = e.file_name().to_string_lossy().into_owned();
+            n.strip_prefix("devlab-watch@")?
+                .strip_suffix(".service")
+                .map(str::to_string)
+        })
+        .collect();
+    v.sort();
+    v
+}
+
 fn plan(st: &State) {
     let files = files_for(&st.devices, st.lab.gadget_group.as_deref(), &|p| {
         read_file(&st.fs_root, p)
@@ -407,6 +425,12 @@ fn plan(st: &State) {
     );
     if ucmds.is_empty() {
         println!("    nothing to do");
+    }
+    for i in enabled_watchers(st)
+        .iter()
+        .filter(|i| unasked_watchers(&st.home, &st.found, std::slice::from_ref(i)).len() == 1)
+    {
+        println!("    devlab-watch@{i}.service is enabled but its device does not ask to be watched ([host] watch = true in its device.toml); left as it is, prepare never stops it");
     }
     for c in &ucmds {
         println!("    {}", c.join(" "));
