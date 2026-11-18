@@ -154,6 +154,8 @@ fn start_shell(kmsg: &mut Option<File>) -> Option<(OwnedFd, libc::pid_t)> {
                 libc::close(s);
             }
             libc::close(m);
+            // an ignored signal survives execve: the shell gets SIGPIPE back
+            libc::signal(libc::SIGPIPE, libc::SIG_DFL);
             libc::execve(sh.as_ptr(), argv.as_ptr(), envp.as_ptr());
             libc::_exit(127);
         }
@@ -191,7 +193,7 @@ fn pump(from: RawFd, to: RawFd) -> libc::pid_t {
                 if w < 0 && errno() == libc::EINTR {
                     continue;
                 }
-                if w < 0 {
+                if w <= 0 {
                     libc::_exit(0);
                 }
                 o += w;
@@ -216,7 +218,12 @@ impl Bridge {
                     libc::kill(p, libc::SIGKILL);
                 }
             }
-            while libc::waitpid(-1, std::ptr::null_mut(), libc::WNOHANG) > 0 {}
+            // the two pumps by pid (they were just killed), never the shell
+            for p in [self.rd, self.wr] {
+                if p > 0 {
+                    libc::waitpid(p, std::ptr::null_mut(), 0);
+                }
+            }
         }
         self.rd = 0;
         self.wr = 0;
