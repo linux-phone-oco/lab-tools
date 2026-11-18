@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-health-v0.3.2...lpoco-health-v0.3.3) - 2026-11-18
+
+### Added
+
+- suite check suspend-irq-quiet, interrupts across one suspended cycle ([#106](https://github.com/linux-phone-oco/lab-tools/pull/106))
+
 ## [0.3.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-health-v0.3.0...lpoco-health-v0.3.1) - 2026-11-18
 
 ### Other
