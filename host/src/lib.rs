@@ -94,6 +94,9 @@ pub struct Gadget {
 #[derive(Deserialize, Debug, Default, Clone, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct HostTable {
+    /// The device asks to be watched: prepare enables its `devlab-watch@` instance. Watching is the device's own choice, like its gadgets.
+    #[serde(default)]
+    pub watch: bool,
     #[serde(default)]
     pub modules: Vec<String>,
     #[serde(default)]
@@ -551,6 +554,20 @@ pub fn one_per_codename(devices: Vec<Device>) -> (Vec<Device>, Vec<String>) {
 mod one_per_codename_tests {
     use super::*;
 
+    #[test]
+    fn unasked_watchers_are_the_enabled_ones_no_asking_device_maps_to() {
+        let mut asks = dev("/h/Projects/linux-phone-oco/a-lab/device.toml", None);
+        asks.host.watch = true;
+        let silent = dev("/h/Projects/linux-phone-oco/b-lab/device.toml", None);
+        let enabled: Vec<String> = ["b-lab", "a-lab", "gone-lab", "b-lab"]
+            .map(String::from)
+            .to_vec();
+        assert_eq!(
+            unasked_watchers("/h", &[asks, silent], &enabled),
+            vec!["b-lab".to_string(), "gone-lab".to_string()]
+        );
+    }
+
     fn dev(path: &str, serial: Option<&str>) -> Device {
         let gadget = serial.map(|s| Gadget {
             serial: s.into(),
@@ -560,6 +577,7 @@ mod one_per_codename_tests {
             path: path.into(),
             codename: "w".into(),
             host: HostTable {
+                watch: false,
                 modules: vec![],
                 gadget: gadget.into_iter().collect(),
             },
@@ -798,11 +816,13 @@ pub fn watch_unit_text() -> String {
 
 /// The instance each device is watched by: its lab repository's folder name, for a device whose manifest lies at
 /// `HOME/Projects/linux-phone-oco/NAME-lab/device.toml` (the path the unit template names). A worktree (`NAME-lab-wt`,
-/// `wt-...`) or a template repository is not watched: it goes away or is no device.
+/// `wt-...`) or a template repository is not watched: it goes away or is no device. A device whose
+/// `[host]` does not say `watch = true` is not watched either.
 pub fn watch_instances(home: &str, devices: &[Device]) -> Vec<String> {
     let base = format!("{home}/Projects/linux-phone-oco");
     let mut v: Vec<String> = devices
         .iter()
+        .filter(|d| d.host.watch)
         .filter_map(|d| {
             let dir = d.path.parent()?;
             if dir.parent()? != Path::new(&base) {
@@ -849,4 +869,18 @@ pub fn watch_plan(
         }
     }
     (template, cmds)
+}
+
+/// The watcher instances already enabled that no device asks for: named in the plan, never stopped by prepare - a
+/// watcher someone started may be wanted, and stopping it silently would hide the change.
+pub fn unasked_watchers(home: &str, devices: &[Device], enabled: &[String]) -> Vec<String> {
+    let asked = watch_instances(home, devices);
+    let mut v: Vec<String> = enabled
+        .iter()
+        .filter(|i| !asked.contains(i))
+        .cloned()
+        .collect();
+    v.sort();
+    v.dedup();
+    v
 }

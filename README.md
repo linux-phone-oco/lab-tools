@@ -237,6 +237,8 @@ installs the newest release into a clean root and checks both, and that bringup 
 A top-level `gadget_group = "users"` in `lab.toml` (a group the lab user already holds, so no re-login) adds `GROUP` and `MODE="0660"` to
 every gadget rule line beside `TAG+="uaccess"`: access then does not wait on the seat's ACL, nor need the active seat session.
 `check` says which group and whether the lab user is in it.
+A device that wants its health watched says `watch = true` in its `[host]` (`devlab-watch@NAME-lab` user unit, enabled and restarted by prepare);
+without it no watcher is enabled for it, and an instance already enabled for a device that does not ask is named in the plan and left running.
 
     lpoco host [plan]        a diff per file and the exact root commands; changes nothing
     lpoco host prepare now   write /etc/udev/rules.d/70-lpoco-CODENAME.rules and /etc/modules-load.d/lpoco.conf,

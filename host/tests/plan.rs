@@ -37,6 +37,7 @@ codename = "google-walleye"
 [fastboot]
 serial = "FA81N1A00790"
 [host]
+watch = true
 modules = ["usb_storage", "cdc_acm"]
 [[host.gadget]]
 serial = "walleye-first-boot"
@@ -782,4 +783,60 @@ fn worktrees_and_templates_are_not_watched() {
     for n in ["google-walleye-lab-pr-wt", "device-template"] {
         assert!(!s.contains(&format!("devlab-watch@{n}")), "{n}: {s}");
     }
+}
+
+/// Watching is the device's own choice (`[host] watch = true`), like its gadgets: a device that does not ask gets no watcher.
+fn declare(l: &Lab, folder: &str, host_table: &str) {
+    let d = l.dir.join("devs").join(folder);
+    fs::create_dir_all(&d).unwrap();
+    fs::write(
+        d.join("device.toml"),
+        format!("[device]\ncodename = \"{folder}\"\n{host_table}"),
+    )
+    .unwrap();
+}
+
+#[test]
+fn only_devices_that_ask_are_watched() {
+    let l = lab("watch-asks", "");
+    declare(&l, "asks-lab", "[host]\nwatch = true\n");
+    declare(&l, "silent-lab", "[host]\nmodules = [\"cdc_acm\"]\n");
+    declare(&l, "no-host-lab", "");
+    declare(&l, "refuses-lab", "[host]\nwatch = false\n");
+    let s = out(&host(&l, &["plan"]));
+    for n in ["google-walleye-lab", "asks-lab"] {
+        assert!(
+            s.contains(&format!(
+                "systemctl --user enable --now devlab-watch@{n}.service"
+            )),
+            "{n}: {s}"
+        );
+    }
+    for n in ["silent-lab", "no-host-lab", "refuses-lab"] {
+        assert!(!s.contains(&format!("devlab-watch@{n}")), "{n}: {s}");
+    }
+}
+
+#[test]
+fn an_enabled_watcher_of_a_device_that_does_not_ask_is_named_never_stopped() {
+    let l = lab("watch-unasked", "");
+    declare(&l, "quiet-lab", "[host]\nmodules = [\"cdc_acm\"]\n");
+    let wants = l.dir.join("home/.config/systemd/user/default.target.wants");
+    fs::create_dir_all(&wants).unwrap();
+    fs::write(wants.join("devlab-watch@quiet-lab.service"), "").unwrap();
+    let plan = out(&host(&l, &["plan"]));
+    assert!(
+        plan.contains("devlab-watch@quiet-lab.service") && plan.contains("no device that asks"),
+        "named in the plan: {plan}"
+    );
+    let o = host(&l, &["prepare", "now"]);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    let calls = changes(&l).unwrap_or_default();
+    for verb in ["stop", "disable", "mask"] {
+        assert!(
+            !calls.contains(&format!("systemctl --user {verb}")),
+            "{verb}: {calls}"
+        );
+    }
+    assert!(wants.join("devlab-watch@quiet-lab.service").exists());
 }
