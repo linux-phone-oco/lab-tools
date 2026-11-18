@@ -277,7 +277,10 @@ without it no watcher is enabled for it, and an instance already enabled for a d
     lpoco host [plan]        a diff per file and the exact root commands; changes nothing
     lpoco host prepare now   write /etc/udev/rules.d/70-lpoco-CODENAME.rules and /etc/modules-load.d/lpoco.conf,
                              reload and trigger udev, modprobe, install the tools - only where they differ
-    lpoco host check         the lab user opens each declared node that is present; each tool is at its pin
+    lpoco host check         the lab user opens each declared node that is present; each tool is at its pin; the phone share is started and stopped
+                             by the lab user with no password (the polkit rule's own test), its interfaces found from the device's address
+    lpoco host revoke now    removes /etc/sudoers.d/lab-agent, the standing grant: refuses unless check passes, the share was measured and the
+                             root prefix does not name lab-agent; `prepare now` ends with the same share check
 
 Root is one prefix, `LPOCO_ROOT`, then the lab declaration's `root`, then `sudo` (the author's typed password: no standing grant, decision of 2026-11-18); the commands are a fixed
 list the plan prints. `lab.toml` tools: `lpoco = "0.2.0"` installs the family from its release tags with cargo into

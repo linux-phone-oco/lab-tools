@@ -126,6 +126,8 @@ pub struct Device {
     pub host: HostTable,
     pub lpoco_pin: Option<String>,
     pub fastboot_serial: Option<String>,
+    /// The phone's own address on its USB network (the manifest's first `[connection] addresses`): where the lab's side of it is found.
+    pub usb_address: Option<String>,
 }
 
 /// A lab declaration already read: `path` names it, `text` is what it says (the working file, or origin/main's).
@@ -202,6 +204,13 @@ pub fn parse_device(path: &Path, text: &str) -> Result<Device, String> {
         host,
         lpoco_pin: str_at("tools", "lpoco"),
         fastboot_serial: str_at("fastboot", "serial"),
+        usb_address: v
+            .get("connection")
+            .and_then(|c| c.get("addresses"))
+            .and_then(|a| a.as_array())
+            .and_then(|a| a.first())
+            .and_then(|a| a.as_str())
+            .map(str::to_string),
     })
 }
 
@@ -794,6 +803,7 @@ mod one_per_codename_tests {
             },
             lpoco_pin: None,
             fastboot_serial: None,
+            usb_address: None,
         }
     }
 

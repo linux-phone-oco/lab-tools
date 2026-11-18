@@ -84,6 +84,8 @@ start)
 	nft add table ip "$table"
 	nft add chain ip "$table" out '{ type nat hook postrouting priority 100; }'
 	nft add rule ip "$table" out ip saddr "$net" oifname "$up" masquerade
+	# the unit fails unless the table is really there: a start that returns is a share that works
+	nft list table ip "$table" >/dev/null
 	;;
 stop)
 	nft delete table ip "$table" 2>/dev/null || true
@@ -176,5 +178,128 @@ mod tests {
         assert_eq!(run(&["start", "nonexistent0--lo"]).status.code(), Some(2));
         assert_eq!(run(&["bogus", "lo--lo"]).status.code(), Some(2));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+}
+
+/// How the share was measured: the host's own check of what `prepare now` installed.
+#[derive(Debug, PartialEq)]
+pub enum Measured {
+    /// Started and stopped by the lab user with no password, and left nothing behind.
+    Ok(String),
+    /// Not known yet: nothing to share with right now (the phone is not attached).
+    NotMeasured(String),
+    Failed(String),
+}
+
+/// The lab's interface on the phone's subnet, from `ip -o -4 addr` text: (interface, own address).
+pub fn on_subnet(ip_addr: &str, phone: &str) -> Option<(String, String)> {
+    let net = phone.rsplit_once('.')?.0;
+    ip_addr.lines().find_map(|l| {
+        let w: Vec<&str> = l.split_whitespace().collect();
+        let i = w.iter().position(|x| *x == "inet")?;
+        let ip = w.get(i + 1)?.split('/').next()?;
+        let iface = w.get(1)?.trim_end_matches(':').to_string();
+        (ip.rsplit_once('.')?.0 == net && ip != phone).then(|| (iface, ip.to_string()))
+    })
+}
+
+/// The interface of the default route, from `ip route show default` text.
+pub fn uplink(route: &str) -> Option<String> {
+    let w: Vec<&str> = route.lines().next()?.split_whitespace().collect();
+    let i = w.iter().position(|x| *x == "dev")?;
+    w.get(i + 1).map(|s| s.to_string())
+}
+
+fn output(cmd: &str, args: &[&str]) -> String {
+    std::process::Command::new(cmd)
+        .args(args)
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+        .unwrap_or_default()
+}
+
+fn sysctl_run(args: &[&str]) -> Result<(), String> {
+    let o = std::process::Command::new("systemctl")
+        .args(args)
+        .output()
+        .map_err(|e| format!("systemctl: {e}"))?;
+    if o.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&o.stderr).trim().to_string())
+    }
+}
+
+/// Exercises the installed share as the lab user: starts the unit for the phone's USB interface, sees it
+/// active and its state written, stops it, and sees nothing left. No password: this is the polkit rule's own test.
+/// The names of the interfaces come from the device's declaration (its address) and the default route, never typed.
+pub fn probe(codename: &str, phone_addr: Option<&str>) -> Measured {
+    let Some(addr) = phone_addr else {
+        return Measured::NotMeasured(format!("{codename} declares no [connection] address"));
+    };
+    let Some((usb, _)) = on_subnet(&output("ip", &["-o", "-4", "addr"]), addr) else {
+        return Measured::NotMeasured(format!(
+            "{codename}: this host has no interface on {addr}'s subnet (the phone is not attached)"
+        ));
+    };
+    let Some(up) = uplink(&output("ip", &["route", "show", "default"])) else {
+        return Measured::NotMeasured("this host has no default route to share".into());
+    };
+    let inst = format!("{usb}--{up}");
+    let unit = format!("lpoco-share@{inst}.service");
+    if sysctl_run(&["cat", &unit]).is_err() {
+        return Measured::Failed(format!(
+            "{unit} is not installed: run `lpoco host prepare now`"
+        ));
+    }
+    if let Err(e) = sysctl_run(&["start", &unit]) {
+        return Measured::Failed(format!("the lab user could not start {unit}: {e}"));
+    }
+    let active = sysctl_run(&["is-active", "--quiet", &unit]).is_ok();
+    let wrote = std::path::Path::new(&format!("/run/lpoco-share/{inst}.fwd")).exists();
+    let stopped = sysctl_run(&["stop", &unit]);
+    let left = std::path::Path::new(&format!("/run/lpoco-share/{inst}.fwd")).exists();
+    match (active, wrote, stopped, left) {
+        (true, true, Ok(()), false) => Measured::Ok(format!(
+            "{codename}: {unit} started and stopped by the lab user, no password; nothing left behind"
+        )),
+        (false, ..) => Measured::Failed(format!("{unit} started but is not active")),
+        (_, false, ..) => Measured::Failed(format!("{unit} left no state: the helper did not run to its end")),
+        (_, _, Err(e), _) => Measured::Failed(format!("the lab user could not stop {unit}: {e}")),
+        (_, _, _, true) => Measured::Failed(format!("{unit} stopped but left its state in /run/lpoco-share")),
+    }
+}
+
+#[cfg(test)]
+mod probe_tests {
+    use super::*;
+
+    #[test]
+    fn the_lab_side_of_the_phones_subnet_is_found_by_the_declared_address() {
+        let ip = "2: enp6s0    inet 192.168.1.5/24 brd x scope global\n82: enp10s0f3u1    inet 172.16.42.2/24 brd x scope global dynamic\n";
+        assert_eq!(
+            on_subnet(ip, "172.16.42.1"),
+            Some(("enp10s0f3u1".into(), "172.16.42.2".into()))
+        );
+        assert_eq!(
+            on_subnet(ip, "172.16.43.1"),
+            None,
+            "walleye's subnet is not attached"
+        );
+        assert_eq!(on_subnet(ip, "garbage"), None);
+    }
+
+    #[test]
+    fn the_uplink_is_the_default_routes_device() {
+        assert_eq!(
+            uplink("default via 192.168.1.1 dev enp6s0 proto dhcp metric 100\n"),
+            Some("enp6s0".into())
+        );
+        assert_eq!(uplink(""), None);
+    }
+
+    #[test]
+    fn a_device_with_no_address_is_not_measured_not_failed() {
+        assert!(matches!(probe("x", None), Measured::NotMeasured(_)));
     }
 }
