@@ -560,7 +560,7 @@ checksum = "5d15f86d12da44cd8d4ec3c73984537eb7f4cadcb9776a575a0a8a05ca11005c"
 
 [[package]]
 name = "lpoco"
-version = "0.3.6"
+version = "0.3.7"
 dependencies = [
  "argenv-resolve",
  "regex",
@@ -570,7 +570,7 @@ dependencies = [
 
 [[package]]
 name = "lpoco-bringup"
-version = "0.3.6"
+version = "0.3.7"
 dependencies = [
  "abootimg-oxide",
  "argenv-resolve",
@@ -583,7 +583,7 @@ dependencies = [
 
 [[package]]
 name = "lpoco-health"
-version = "0.3.6"
+version = "0.3.7"
 dependencies = [
  "argenv-resolve",
  "lpoco-tone",
@@ -593,7 +593,7 @@ dependencies = [
 
 [[package]]
 name = "lpoco-host"
-version = "0.3.6"
+version = "0.3.7"
 dependencies = [
  "argenv-resolve",
  "glob",
@@ -603,7 +603,7 @@ dependencies = [
 
 [[package]]
 name = "lpoco-lab"
-version = "0.3.6"
+version = "0.3.7"
 dependencies = [
  "anyhow",
  "argenv-resolve",
@@ -619,7 +619,7 @@ dependencies = [
 
 [[package]]
 name = "lpoco-tone"
-version = "0.3.6"
+version = "0.3.7"
 dependencies = [
  "anyhow",
  "argenv-resolve",
