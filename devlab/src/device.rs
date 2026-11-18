@@ -265,6 +265,34 @@ impl Health {
     }
 }
 
+impl Device {
+    /// The files the manifest puts on the phone, as phone paths: what the suite check lab-pieces reports a
+    /// blob id for (PIECE_FILES in health.env). The flash overlays into the root, the provision installs,
+    /// and `checks` (the phone's own checks, relative paths as `suite put` lays them). A target that names
+    /// the device tree (`{compatible}`) is left out: the manifest does not say which file it becomes.
+    pub fn pieces_env(&self, checks: &[String]) -> Result<String> {
+        let mut files: Vec<String> = Vec::new();
+        for o in &self.flash.overlay {
+            if o.if_exists.is_some() {
+                continue; // may never be on this phone: reporting it missing would be noise
+            }
+            if let Some(p) = o.to.strip_prefix("root:") {
+                files.push(p.to_string());
+            }
+        }
+        files.extend(self.provision.install.iter().map(|i| i.to.clone()));
+        files.extend(checks.iter().map(|c| format!("/{c}")));
+        files
+            .retain(|f| f.starts_with('/') && !f.contains('{') && !f.contains(char::is_whitespace));
+        if let Some(bad) = files.iter().find(|f| f.contains('\'')) {
+            anyhow::bail!("a manifest path holds a quote, which health.env cannot carry: {bad}");
+        }
+        files.sort();
+        files.dedup();
+        Ok(format!("PIECE_FILES='{}'\n", files.join(" ")))
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct Tests {
     /// The checks script, relative to the manifest; run on the phone as root, one JSON line per check
@@ -372,6 +400,25 @@ pub fn candidates(manifest: &[String], remembered: Option<&str>) -> Vec<String> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_declared_files_become_the_pieces_the_phone_reports() {
+        let d = Device::parse(
+            "[device]\ncodename = \"p\"\n[connection]\nuser = \"u\"\naddresses = [\"a\"]\n\
+             [[flash.overlay]]\nfrom = \"a\"\nto = \"root:/etc/b.conf\"\n\
+             [[flash.overlay]]\nfrom = \"a\"\nto = \"esp:/loader.conf\"\n\
+             [[provision.install]]\nfrom = \"c\"\nto = \"/usr/bin/c\"\n\
+             [[provision.install]]\nfrom = \"d\"\nto = \"/boot/{compatible}.dtb\"\n",
+        )
+        .unwrap();
+        let e = d
+            .pieces_env(&["usr/lib/lpoco-health/device/base/10-x.sh".to_string()])
+            .unwrap();
+        assert_eq!(
+            e, "PIECE_FILES='/etc/b.conf /usr/bin/c /usr/lib/lpoco-health/device/base/10-x.sh'\n",
+            "root overlays, installs and own checks; not the esp's, not a name the tree decides"
+        );
+    }
 
     #[test]
     fn a_command_that_touches_a_hazard_is_refused_saying_why() {

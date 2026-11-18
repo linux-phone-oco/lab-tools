@@ -82,6 +82,11 @@ const FILES: &[(&str, &str, &str)] = &[
         "644",
     ),
     (
+        "usr/lib/lpoco-health/checks/base/94-lab-pieces.sh",
+        include_str!("../../health/suite/checks/base/94-lab-pieces.sh"),
+        "644",
+    ),
+    (
         "usr/lib/lpoco-health/checks/shell/10-sound-output.sh",
         include_str!("../../health/suite/checks/shell/10-sound-output.sh"),
         "644",
@@ -302,15 +307,18 @@ pub fn put(
             write(rel, text.as_bytes(), mode)?;
         }
     }
+    let mut own_checks: Vec<String> = Vec::new();
     for (rel, local) in device_checks(device, manifest_dir)? {
         write(&rel, &std::fs::read(&local)?, "644")?;
+        own_checks.push(rel);
     }
     write(
         "etc/lpoco-health/health.env",
         format!(
-            "{}{}",
+            "{}{}{}",
             device.health.env(&device.device.codename),
-            device.hear.env()
+            device.hear.env(),
+            device.pieces_env(&own_checks)?
         )
         .as_bytes(),
         "644",
