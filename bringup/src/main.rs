@@ -21,7 +21,7 @@ fn main() {
             "{}",
             cli::usage(
                 "lpoco-bringup",
-                "Boot images and bring-up steps. Commands: image info|unpack|pack|check|swap."
+                "Boot images and bring-up steps. Commands: image info|unpack|pack|check|swap|bisect."
             )
         );
         return;
@@ -51,7 +51,7 @@ fn read(path: &str) -> Result<Vec<u8>, String> {
 fn run(r: &argenv_resolve::Resolution) -> Result<i32, String> {
     let Some(verb) = Contract::VERB.get_from(r) else {
         return Err(
-            "usage: lpoco bringup image info|unpack|pack|check|swap ... (lpoco-bringup --version)"
+            "usage: lpoco bringup image info|unpack|pack|check|swap|bisect ... (lpoco-bringup --version)"
                 .into(),
         );
     };
@@ -62,7 +62,7 @@ fn run(r: &argenv_resolve::Resolution) -> Result<i32, String> {
                 "build is for the initramfs: lpoco-bringup initramfs build --spec FILE --out FILE"
                     .into()
             }
-            _ => "image verbs go with image: lpoco-bringup image info|unpack|pack|check|swap ..."
+            _ => "image verbs go with image: lpoco-bringup image info|unpack|pack|check|swap|bisect ..."
                 .into(),
         });
     }
@@ -131,6 +131,7 @@ fn run(r: &argenv_resolve::Resolution) -> Result<i32, String> {
                 dtb: opt(Contract::DTB.get_from(r))?,
                 ramdisk: opt(Contract::RAMDISK.get_from(r))?,
                 cmdline: Contract::CMDLINE.get_from(r),
+                no_footer: false,
             };
             let (img, said) = swap::swap(&control, &parts, "avbtool")?;
             fs::write(&out, &img).map_err(|e| format!("cannot write {out}: {e}"))?;
@@ -138,6 +139,21 @@ fn run(r: &argenv_resolve::Resolution) -> Result<i32, String> {
                 println!("{line}");
             }
             Ok(0)
+        }
+        Verb::Bisect => {
+            let series = need(Contract::IMAGE.get_from(r), "the series file (SERIES)")?;
+            let out = need(Contract::OUT.get_from(r), "--out DIR")?;
+            let report = lpoco_bringup::bisect::run(Path::new(&series), Path::new(&out))?;
+            for line in &report.lines {
+                println!("{line}");
+            }
+            println!(
+                "{} images: {} ok, {} failed",
+                report.ok + report.failed,
+                report.ok,
+                report.failed
+            );
+            Ok(if report.failed == 0 { 0 } else { 1 })
         }
         Verb::Build => {
             let spec = need(Contract::SPEC.get_from(r), "--spec FILE")?;

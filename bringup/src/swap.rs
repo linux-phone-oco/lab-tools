@@ -16,6 +16,8 @@ pub struct Parts {
     pub dtb: Option<Vec<u8>>,
     pub ramdisk: Option<Vec<u8>>,
     pub cmdline: Option<String>,
+    /// Leave the AVB footer and the partition padding off (the shape of an image dumped before signing).
+    pub no_footer: bool,
 }
 
 const FOOTER: usize = 64;
@@ -110,7 +112,7 @@ fn footer_of(control: &[u8], tool: &str) -> Result<Option<Footer>, String> {
     }))
 }
 
-fn scratch(what: &str) -> Result<std::path::PathBuf, String> {
+pub(crate) fn scratch(what: &str) -> Result<std::path::PathBuf, String> {
     let dir =
         std::env::temp_dir().join(format!("lpoco-bringup-swap-{}-{what}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
@@ -118,7 +120,7 @@ fn scratch(what: &str) -> Result<std::path::PathBuf, String> {
     Ok(dir)
 }
 
-fn run(tool: &str, args: &[&str]) -> Result<String, String> {
+pub(crate) fn run(tool: &str, args: &[&str]) -> Result<String, String> {
     let o = Command::new(tool)
         .args(args)
         .output()
@@ -185,6 +187,7 @@ pub fn swap(
     pad_to(&mut out, page);
     let said = said(body, &img, &out)?;
     let out = match &footer {
+        Some(_) if parts.no_footer => out,
         Some(f) => with_footer(out, control.len(), f, avbtool)?,
         None => {
             // the dumped partition's size is kept: what trailed the image is zero here

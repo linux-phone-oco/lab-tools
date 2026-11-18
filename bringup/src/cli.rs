@@ -10,6 +10,9 @@
 //!   lpoco-bringup image swap CONTROL --out IMG [--ramdisk R] [--kernel K] [--dtb DTB] [--cmdline TEXT]
 //!                                                the control with those parts replaced, its AVB hash footer rebuilt (avbtool),
 //!                                                and what differs said
+//!   lpoco-bringup image bisect SERIES --out DIR
+//!                                                the images a series file declares (control = "...", [[image]] name, kernel, dtb, ramdisk,
+//!                                                cmdline, lz4, footer), each the control with exactly those parts swapped, counted
 //!   lpoco-bringup initramfs build --spec FILE --out FILE [--root DIR] [--net N] [--codec gzip|xz]
 //!                                                a reproducible newc cpio from a gen_init_cpio spec, compressed (replaces build-initramfs.sh)
 //!   lpoco-bringup --version                      this program's version (the lpoco family's one version)
@@ -45,12 +48,13 @@ pub enum Verb {
     Pack,
     Check,
     Swap,
+    Bisect,
     Build,
 }
 
 impl Verb {
     pub const TOKENS: &'static [&'static str] =
-        &["info", "unpack", "pack", "check", "swap", "build"];
+        &["info", "unpack", "pack", "check", "swap", "bisect", "build"];
 }
 
 impl FromRaw for Verb {
@@ -61,6 +65,7 @@ impl FromRaw for Verb {
             "pack" => Verb::Pack,
             "check" => Verb::Check,
             "swap" => Verb::Swap,
+            "bisect" => Verb::Bisect,
             "build" => Verb::Build,
             _ => return None,
         })
@@ -83,7 +88,7 @@ contract! {
         allowed: Verb::TOKENS,
         subcommands: &[Command::Image, Command::Initramfs],
         arg: Some(Arg::positional(0)),
-        summary: "What to do: image info, unpack, pack, check or swap; initramfs build.",
+        summary: "What to do: image info, unpack, pack, check, swap or bisect; initramfs build.",
         ..Input::EMPTY
     };
 
@@ -92,7 +97,7 @@ contract! {
         ty: Type::String,
         subcommands: &[Command::Image],
         arg: Some(Arg { value_name: "IMG", ..Arg::positional(1) }),
-        summary: "The boot image to read (info, unpack, check, swap: the control).",
+        summary: "The boot image to read (info, unpack, check, swap: the control; bisect: the series file).",
         ..Input::EMPTY
     };
 
@@ -147,7 +152,7 @@ contract! {
         ty: Type::String,
         subcommands: &[Command::Image, Command::Initramfs],
         arg: Some(Arg { value_name: "PATH", ..Arg::long("out") }),
-        summary: "pack, swap: the image to write; unpack: the folder to write the parts to; initramfs build: the archive to write.",
+        summary: "pack, swap: the image to write; bisect: the folder the images are written to; unpack: the folder to write the parts to; initramfs build: the archive to write.",
         ..Input::EMPTY
     };
 
