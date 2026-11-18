@@ -57,6 +57,9 @@ pub struct BootGadget {
     /// a second configuration, RNDIS + ACM, for Windows hosts
     #[serde(default = "yes")]
     pub rndis: bool,
+    /// a read-only mass-storage LUN the host can read: the init keeps the phone's kernel log and uptime written into it (a log window when the phone has no network yet)
+    #[serde(default)]
+    pub window: bool,
 }
 
 impl BootGadget {

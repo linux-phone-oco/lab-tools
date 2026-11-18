@@ -19,6 +19,28 @@ ln -s $G/functions/rndis.usb0 $G/configs/c.2/
 ln -s $G/functions/acm.usb0 $G/configs/c.2/
 ";
 
+/// The log window's function: a 2 MiB read-only LUN in memory, in the first configuration.
+const WINDOW: &str =
+    "mkdir -p $G/functions/mass_storage.0 || say \"window: mass_storage function failed\"
+L=$G/functions/mass_storage.0/lun.0
+WIN=/tmp/window.img
+dd if=/dev/zero of=$WIN bs=1024 count=2048 2>/dev/null
+echo 1 > $L/ro
+echo 1 > $L/removable
+echo $WIN > $L/file || say \"window: lun file failed\"
+ln -s $G/functions/mass_storage.0 $G/configs/c.1/
+";
+
+/// The log window's writer, started before the gadget is bound (the host never reads a blank first image): every 5 s the first 64 KiB of the LUN is
+/// rewritten in place with the uptime, the command line and the kernel log.
+const WINDOW_LOOP: &str = "( while :; do
+    { echo \"@LABEL@-LOG up=$(cut -d' ' -f1 /proc/uptime)s\"; echo '--- uname'; uname -a; echo '--- cmdline'; cat /proc/cmdline
+      echo '--- kmsg'; dmesg | tail -n 200; } > /tmp/window.txt
+    dd if=/tmp/window.txt of=$WIN bs=65536 count=1 conv=notrunc,sync 2>/dev/null
+    sleep 5
+done ) &
+";
+
 /// The init text for this gadget at 172.16.`net`.1. The address is rewritten in the template first, the
 /// device's own words after, so a serial that looks like an address comes out as written.
 /// (Re-checks every word: a `BootGadget` can be built without `Manifest::parse`.)
@@ -31,6 +53,8 @@ pub fn make(g: &BootGadget, net: u8) -> Result<String, String> {
     };
     Ok(template
         .replace("@RNDIS@\n", if g.rndis { RNDIS } else { "" })
+        .replace("@WINDOW@\n", if g.window { WINDOW } else { "" })
+        .replace("@WINDOWLOOP@\n", if g.window { WINDOW_LOOP } else { "" })
         .replace("@LABEL@", shell_word("label", &g.label)?)
         .replace("@SERIAL@", shell_word("serial", &g.serial)?)
         .replace(
@@ -74,6 +98,7 @@ mod tests {
             product: "p".into(),
             label: "l".into(),
             rndis: true,
+            window: false,
         };
         assert!(make(&g, DEFAULT_NET).unwrap_err().contains("serial"));
     }

@@ -50,6 +50,8 @@ echo "ACM + ECM" > $G/configs/c.1/strings/0x409/configuration
 ln -s $G/functions/acm.usb0 $G/configs/c.1/
 ln -s $G/functions/ecm.usb0 $G/configs/c.1/
 @RNDIS@
+@WINDOW@
+@WINDOWLOOP@
 # the controller may probe late (clocks, regulators, the PHY): wait for it, up to 30 s
 n=0
 while [ -z "$(ls /sys/class/udc 2>/dev/null)" ] && [ $n -lt 60 ]; do sleep 1; n=$((n+1)); done
