@@ -407,6 +407,7 @@ fn plan(st: &State) {
     if Path::new(&format!("{}{KEPT_RULE}", st.fs_root)).exists() {
         println!("\nkept: {KEPT_RULE} is a wide rule; it is kept for now and prepare never removes or edits it");
     }
+    let _ = print_commands(st, false);
     print_foreign_rules(st);
     let tools = tool_plans(st);
     let (unit, ucmds) = watchers(st, &tools);
@@ -628,6 +629,7 @@ fn check(st: &State) -> Result<i32, String> {
     if Path::new(&format!("{}{KEPT_RULE}", st.fs_root)).exists() {
         println!("kept: {KEPT_RULE} is a wide rule, kept for now");
     }
+    bad += print_commands(st, true) as i32;
     print_foreign_rules(st);
     for d in &st.devices {
         for g in &d.host.gadget {
@@ -767,4 +769,21 @@ fn print_foreign_rules(st: &State) {
     for (name, why) in foreign_rules(&files, &serials) {
         println!("foreign: {UDEV_DIR}/{name} is not ours and {why}; named only, prepare never edits or removes it");
     }
+}
+
+/// Each declared host command, once: found on PATH (where) or missing, with every device that wants it. Read-only; returns how many are missing (only `check` counts them as failures). A command in ~/.local/bin counts only when PATH names it.
+fn print_commands(st: &State, judge: bool) -> usize {
+    let mut missing = 0;
+    for (c, wanted) in commands_of(&st.devices) {
+        let by = wanted.join(", ");
+        match on_path(&st.path, &c) {
+            Some(p) => println!("command {c}: ok, {} (wanted by {by})", p.display()),
+            None => {
+                missing += 1;
+                let word = if judge { "FAIL, missing" } else { "missing" };
+                println!("command {c}: {word} from PATH (wanted by {by}); named only, the tool installs nothing for it");
+            }
+        }
+    }
+    missing
 }

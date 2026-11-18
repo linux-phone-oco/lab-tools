@@ -889,3 +889,74 @@ fn a_foreign_rule_on_our_serial_or_wide_is_named_and_never_touched() {
     assert!(!s.contains("55-comment.rules"), "{s}");
     assert!(changes(&l).is_none());
 }
+
+/// Host commands (lpoco-host part 4): a device names the programs it needs on the host's PATH; the plan and check
+/// say which are found and where, a missing one fails check, and nothing is ever installed for it.
+#[test]
+fn a_missing_host_command_is_named_by_plan_and_fails_check_and_nothing_is_installed() {
+    let l = lab("commands", "");
+    declare(
+        &l,
+        "cmd-lab",
+        "[host]\ncommands = [\"git\", \"no-such-command\"]\n",
+    );
+    let s = out(&host(&l, &["plan"]));
+    assert!(
+        s.lines()
+            .any(|x| x.contains("command git") && x.contains("stubs/git")),
+        "{s}"
+    );
+    assert!(
+        s.lines()
+            .any(|x| x.contains("command no-such-command") && x.contains("missing")),
+        "{s}"
+    );
+    assert!(changes(&l).is_none(), "the plan changed something");
+    let o = host_as(&l, "mll", &["check"]);
+    let c = out(&o);
+    assert!(
+        c.lines()
+            .any(|x| x.contains("no-such-command") && x.contains("FAIL")),
+        "{c}"
+    );
+    assert!(
+        !c.lines()
+            .any(|x| x.contains("command git") && x.contains("FAIL")),
+        "{c}"
+    );
+    assert!(!o.status.success(), "{c}");
+    // a command that would inject into a line is refused when the device is read
+    declare(&l, "bad-lab", "[host]\ncommands = [\"a b;rm\"]\n");
+    let bad = host(&l, &["plan"]);
+    assert!(!bad.status.success());
+    assert!(
+        String::from_utf8_lossy(&bad.stderr).contains("command \"a b;rm\""),
+        "{}",
+        String::from_utf8_lossy(&bad.stderr)
+    );
+}
+
+#[test]
+fn check_passes_with_only_found_commands_and_a_second_device_is_named_too() {
+    let l = lab("commands-ok", "");
+    declare(&l, "one-lab", "[host]\ncommands = [\"git\"]\n");
+    declare(&l, "two-lab", "[host]\ncommands = [\"git\"]\n");
+    let o = host_as(&l, "mll", &["check"]);
+    let c = out(&o);
+    let line = c.lines().find(|x| x.contains("command git")).expect(&c);
+    assert!(
+        line.contains("ok") && line.contains("one-lab") && line.contains("two-lab"),
+        "{c}"
+    );
+    assert_eq!(c.matches("command git").count(), 1, "{c}");
+    assert!(o.status.success(), "{c}");
+    // a file on PATH that is not executable is not a command
+    fs::write(l.dir.join("stubs/plain"), "x").unwrap();
+    declare(&l, "three-lab", "[host]\ncommands = [\"plain\"]\n");
+    let c = out(&host_as(&l, "mll", &["check"]));
+    assert!(
+        c.lines()
+            .any(|x| x.contains("command plain") && x.contains("FAIL")),
+        "{c}"
+    );
+}
