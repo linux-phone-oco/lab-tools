@@ -78,3 +78,12 @@ fn a_gadget_word_that_would_break_the_inits_quotes_is_refused_when_the_manifest_
     ))
     .is_ok());
 }
+
+#[test]
+fn a_shell_word_cannot_be_made_from_a_word_that_would_break_the_quotes() {
+    use lpoco_manifest::ShellWord;
+    for bad in ["a\"b", "a$b", "a`b", "a@b", "a\\b", "a\nb", ""] {
+        assert!(ShellWord::new(bad).is_err(), "{bad:?} is refused");
+    }
+    assert_eq!(ShellWord::new("pixel-1").unwrap().as_str(), "pixel-1");
+}

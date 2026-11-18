@@ -3,7 +3,7 @@
 //! init files each phone's lab kept for itself (walleye carried about twenty variants).
 
 use crate::initramfs::{rewrite_net, DEFAULT_NET};
-use lpoco_manifest::{shell_word, BootGadget};
+use lpoco_manifest::BootGadget;
 
 const TEMPLATE: &str = include_str!("init.sh");
 
@@ -43,7 +43,6 @@ done ) &
 
 /// The init text for this gadget at 172.16.`net`.1. The address is rewritten in the template first, the
 /// device's own words after, so a serial that looks like an address comes out as written.
-/// (Re-checks every word: a `BootGadget` can be built without `Manifest::parse`.)
 pub fn make(g: &BootGadget, net: u8) -> Result<String, String> {
     let template = if net == DEFAULT_NET {
         TEMPLATE.to_string()
@@ -55,13 +54,10 @@ pub fn make(g: &BootGadget, net: u8) -> Result<String, String> {
         .replace("@RNDIS@\n", if g.rndis { RNDIS } else { "" })
         .replace("@WINDOW@\n", if g.window { WINDOW } else { "" })
         .replace("@WINDOWLOOP@\n", if g.window { WINDOW_LOOP } else { "" })
-        .replace("@LABEL@", shell_word("label", &g.label)?)
-        .replace("@SERIAL@", shell_word("serial", &g.serial)?)
-        .replace(
-            "@MANUFACTURER@",
-            shell_word("manufacturer", &g.manufacturer)?,
-        )
-        .replace("@PRODUCT@", shell_word("product", &g.product)?))
+        .replace("@LABEL@", g.label.as_str())
+        .replace("@SERIAL@", g.serial.as_str())
+        .replace("@MANUFACTURER@", g.manufacturer.as_str())
+        .replace("@PRODUCT@", g.product.as_str()))
 }
 
 /// The files the init reads beside itself: the DHCP server's one lease, the client script and the self-test,
@@ -83,23 +79,4 @@ pub fn write_files(dir: &std::path::Path, net: u8) -> Result<Vec<&'static str>, 
         names.push(*name);
     }
     Ok(names)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// `make` re-checks: a `BootGadget` built without `Manifest::parse` is still refused.
-    #[test]
-    fn a_hand_built_gadget_with_a_bad_word_is_refused() {
-        let g = BootGadget {
-            serial: "a\"b".into(),
-            manufacturer: "m".into(),
-            product: "p".into(),
-            label: "l".into(),
-            rndis: true,
-            window: false,
-        };
-        assert!(make(&g, DEFAULT_NET).unwrap_err().contains("serial"));
-    }
 }

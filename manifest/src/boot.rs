@@ -2,7 +2,7 @@
 //! in postmarketOS deviceinfo's words. Every table is declared in lib.rs.
 
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 #[derive(Debug, Clone, Deserialize, PartialEq, JsonSchema)]
@@ -45,15 +45,15 @@ pub struct Boot {
 #[serde(deny_unknown_fields)]
 pub struct BootGadget {
     /// the gadget's USB serial number string (the lab finds the phone by it)
-    pub serial: String,
+    pub serial: ShellWord,
     /// the USB manufacturer string
     #[serde(default = "default_manufacturer")]
-    pub manufacturer: String,
+    pub manufacturer: ShellWord,
     /// the USB product string
-    pub product: String,
+    pub product: ShellWord,
     /// the word the init's log lines start with (`LABEL: up, kernel ...`)
     #[serde(default = "default_label")]
-    pub label: String,
+    pub label: ShellWord,
     /// a second configuration, RNDIS + ACM, for Windows hosts
     #[serde(default = "yes")]
     pub rndis: bool,
@@ -62,40 +62,49 @@ pub struct BootGadget {
     pub window: bool,
 }
 
-impl BootGadget {
-    /// Every word the init puts inside double quotes must be one it can carry: refused here, when the
-    /// manifest is read, not only when the init is made.
-    pub fn check(&self) -> Result<(), String> {
-        for (what, v) in [
-            ("serial", &self.serial),
-            ("manufacturer", &self.manufacturer),
-            ("product", &self.product),
-            ("label", &self.label),
-        ] {
-            shell_word(what, v)?;
-        }
-        Ok(())
-    }
-}
-
 /// A value that goes inside double quotes in a script: not empty, nothing that would end or expand them.
-pub fn shell_word<'a>(what: &str, v: &'a str) -> Result<&'a str, String> {
-    if v.is_empty()
-        || v.chars()
-            .any(|c| matches!(c, '"' | '$' | '`' | '\\' | '\n' | '@'))
-    {
-        return Err(format!(
-            "[boot.gadget] {what} = {v:?}: not empty, and none of \" $ ` \\ @ or a line break"
-        ));
+/// Only `new` and the manifest's reader make one, so a `BootGadget` cannot hold a word the init cannot carry.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(try_from = "String", into = "String")]
+#[schemars(with = "String", inline)]
+pub struct ShellWord(String);
+
+impl ShellWord {
+    pub fn new(v: &str) -> Result<ShellWord, String> {
+        if v.is_empty()
+            || v.chars()
+                .any(|c| matches!(c, '"' | '$' | '`' | '\\' | '\n' | '@'))
+        {
+            return Err(format!(
+                "{v:?}: not empty, and none of \" $ ` \\ @ or a line break"
+            ));
+        }
+        Ok(ShellWord(v.to_string()))
     }
-    Ok(v)
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
-fn default_manufacturer() -> String {
-    "linux-phone-oco".into()
+impl From<ShellWord> for String {
+    fn from(w: ShellWord) -> String {
+        w.0
+    }
 }
-fn default_label() -> String {
-    "bringup-init".into()
+
+impl TryFrom<String> for ShellWord {
+    type Error = String;
+    fn try_from(v: String) -> Result<Self, String> {
+        ShellWord::new(&v)
+    }
+}
+
+fn default_manufacturer() -> ShellWord {
+    ShellWord("linux-phone-oco".into())
+}
+fn default_label() -> ShellWord {
+    ShellWord("bringup-init".into())
 }
 fn yes() -> bool {
     true
@@ -183,6 +192,13 @@ mod tests {
             Boot::parse("[device]\ncodename=\"x\"\n").unwrap_err(),
             "manifest has no [boot] table"
         );
+    }
+
+    #[test]
+    fn the_default_gadget_words_pass_the_one_gate() {
+        for w in [default_manufacturer(), default_label()] {
+            assert_eq!(ShellWord::new(w.as_str()).unwrap(), w);
+        }
     }
 
     #[test]
