@@ -271,7 +271,7 @@ contract! {
         subcommands: &[Command::Gather],
         default: Some(false),
         arg: Some(Arg::long("land")),
-        summary: "Land it too: in devlab's own clone of the lab (and of docs, with --docs or a lab without a base), through `land`.",
+        summary: "Land it too: in lpoco-lab's own clone of the lab (and of docs, with --docs or a lab without a base), through `land`.",
         ..Input::EMPTY
     };
 

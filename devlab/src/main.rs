@@ -468,13 +468,13 @@ fn main() -> Result<()> {
             as_is,
         } => {
             if now != "now" {
-                bail!("usage: devlab flash now IMAGE BOOTLOADER - it overwrites the phone");
+                bail!("usage: lpoco-lab flash now IMAGE BOOTLOADER - it overwrites the phone");
             }
             flash::flash(&dev, &here, &image, &bootloader, dtb.as_deref(), as_is)?;
         }
         Cmd::Provision { now } => {
             if now != "now" {
-                bail!("usage: devlab provision now - it shares this machine's connection with the phone for a while");
+                bail!("usage: lpoco-lab provision now - it shares this machine's connection with the phone for a while");
             }
             provision::provision(&dev, &here)?;
             let (well, said) = suite::after_change(&phone::Phone::find(&dev)?, false)?;
@@ -520,7 +520,7 @@ fn main() -> Result<()> {
         }
         Cmd::Gather { now, docs, land } => {
             if now != "now" {
-                bail!("usage: devlab gather now [--docs DIR] [--land] - it writes into this lab (and docs without a base)");
+                bail!("usage: lpoco-lab gather now [--docs DIR] [--land] - it writes into this lab (and docs without a base)");
             }
             println!("{}", gather::gather(&dev, &here, docs, land)?);
         }
@@ -533,7 +533,7 @@ fn main() -> Result<()> {
                     here: as_is,
                 } => {
                     if now != "now" {
-                        bail!("usage: devlab suite put now [--runner FILE | --built-runner] [--here] - it changes the phone");
+                        bail!("usage: lpoco-lab suite put now [--runner FILE | --built-runner] [--here] - it changes the phone");
                     }
                     let runner = match runner {
                         Some(None) => Some(suite::built_runner()?),
@@ -571,30 +571,28 @@ fn main() -> Result<()> {
         }
         Cmd::Mcp => mcp::serve(dev)?,
         Cmd::Watch => watch::watch(&dev, &here)?,
-        Cmd::Fastboot { action } => {
-            match action {
-                FastbootCmd::State => print!("{}", fastboot::state(&dev)?),
-                FastbootCmd::Getvar { name } => println!("{}", fastboot::getvar(&dev, &name)?),
-                FastbootCmd::Boot { now, image } => {
-                    if now != "now" {
-                        bail!("usage: devlab fastboot boot now IMAGE - it boots the phone");
-                    }
-                    println!("{}", fastboot::boot(&dev, &image)?);
+        Cmd::Fastboot { action } => match action {
+            FastbootCmd::State => print!("{}", fastboot::state(&dev)?),
+            FastbootCmd::Getvar { name } => println!("{}", fastboot::getvar(&dev, &name)?),
+            FastbootCmd::Boot { now, image } => {
+                if now != "now" {
+                    bail!("usage: lpoco-lab fastboot boot now IMAGE - it boots the phone");
                 }
-                FastbootCmd::Reboot { now, bootloader } => {
-                    if now != "now" {
-                        bail!("usage: devlab fastboot reboot now [--bootloader] - it reboots the phone");
-                    }
-                    println!("{}", fastboot::reboot(&dev, bootloader)?);
-                }
-                FastbootCmd::SetActive { now, slot } => {
-                    if now != "now" {
-                        bail!("usage: devlab fastboot set-active now SLOT - it changes the phone's active slot");
-                    }
-                    println!("{}", fastboot::set_active(&dev, &slot)?);
-                }
+                println!("{}", fastboot::boot(&dev, &image)?);
             }
-        }
+            FastbootCmd::Reboot { now, bootloader } => {
+                if now != "now" {
+                    bail!("usage: lpoco-lab fastboot reboot now [--bootloader] - it reboots the phone");
+                }
+                println!("{}", fastboot::reboot(&dev, bootloader)?);
+            }
+            FastbootCmd::SetActive { now, slot } => {
+                if now != "now" {
+                    bail!("usage: lpoco-lab fastboot set-active now SLOT - it changes the phone's active slot");
+                }
+                println!("{}", fastboot::set_active(&dev, &slot)?);
+            }
+        },
         Cmd::Keeper { action } => match action {
             KeeperCmd::Take { name } => println!("{}", keeper::take(&dev, &name)?),
             KeeperCmd::Renew { name } => println!("{}", keeper::renew(&dev, &name)?),
@@ -629,7 +627,7 @@ fn main() -> Result<()> {
                 KernelCmd::Log => kernel::log(&p)?,
                 KernelCmd::Remove { name } => kernel::remove(&p, &name)?,
                 KernelCmd::Keep { name, now } | KernelCmd::Unkeep { name, now } if now != "now" => {
-                    bail!("usage: devlab kernel keep|unkeep {name} now - it changes which kernel the phone boots")
+                    bail!("usage: lpoco-lab kernel keep|unkeep {name} now - it changes which kernel the phone boots")
                 }
                 KernelCmd::Keep { name, .. } => kernel::keep(&p, &name)?,
                 KernelCmd::Unkeep { name, .. } => kernel::unkeep(&p, &name)?,

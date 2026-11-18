@@ -189,7 +189,7 @@ impl Door {
         let rows = suite::rows(&report);
         if rows.is_empty() {
             return Ok(
-                "no report on the phone yet - is the suite on it? (devlab suite put now)".into(),
+                "no report on the phone yet - is the suite on it? (lpoco-lab suite put now)".into(),
             );
         }
         let (_, verdict) = said(
@@ -283,7 +283,7 @@ impl Door {
     async fn kernel_status(&self) -> Result<String, String> {
         let (_, out) = said(self.phone()?.root(
             "echo \"running: $(uname -r)\"; echo entries:; ls /boot/loader/entries/ | sed 's/^/  /'; \
-             [ -f /boot/test-boot.log ] && echo 'a timed-out try left its log (devlab kernel log)'; true\n",
+             [ -f /boot/test-boot.log ] && echo 'a timed-out try left its log (lpoco-lab kernel log)'; true\n",
         ))?;
         Ok(out)
     }

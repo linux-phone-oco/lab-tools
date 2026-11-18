@@ -297,9 +297,9 @@ pub fn keep_script(name: &str) -> String {
     format!(
         "set -e\ncd /boot/loader/entries\n\
          from=$(ls pmos-{name}.conf pmos-{name}+*.conf 2>/dev/null | head -n1)\n\
-         [ -n \"$from\" ] || {{ echo 'pmos-{name} is not installed: devlab kernel install {name} ... first' >&2; exit 1; }}\n\
+         [ -n \"$from\" ] || {{ echo 'pmos-{name} is not installed: lpoco-lab kernel install {name} ... first' >&2; exit 1; }}\n\
          other=$(grep -l '^sort-key 1-kept-' *.conf 2>/dev/null | grep -v \"^pmos-{name}[.+]\" || true)\n\
-         [ -z \"$other\" ] || {{ echo \"another kernel is kept ($other): devlab kernel unkeep it first\" >&2; exit 1; }}\n\
+         [ -z \"$other\" ] || {{ echo \"another kernel is kept ($other): lpoco-lab kernel unkeep it first\" >&2; exit 1; }}\n\
          sed -e 's/^title .*/title postmarketOS (kept kernel: {name})/' -e 's/^sort-key .*/sort-key 1-kept-{name}/' \
          -e 's/ systemd.mask=systemd-bless-boot.service//' \"$from\" > /tmp/kept-entry\n\
          rm -f pmos-{name}.conf pmos-{name}+*.conf\n\
@@ -374,7 +374,7 @@ pub fn remove_script(name: &str) -> String {
     format!(
         "set -e\ncd /boot/loader/entries\n\
          mine=$(ls pmos-{name}.conf pmos-{name}+*.conf 2>/dev/null | head -n1)\n\
-         if [ -n \"$mine\" ] && grep -q '^sort-key 1-kept-' \"$mine\"; then echo 'pmos-{name} is the kept kernel: devlab kernel unkeep {name} now first' >&2; exit 1; fi\n\
+         if [ -n \"$mine\" ] && grep -q '^sort-key 1-kept-' \"$mine\"; then echo 'pmos-{name} is the kept kernel: lpoco-lab kernel unkeep {name} now first' >&2; exit 1; fi\n\
          release=''\n[ -z \"$mine\" ] || release=$(sed -n 's/^{RELEASE_MARK}//p' \"$mine\")\n\
          [ -n \"$release\" ] || release=$(ls /lib/modules | grep -- '-{name}$' || true)\n\
          keep=''\n\

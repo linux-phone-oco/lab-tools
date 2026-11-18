@@ -364,7 +364,7 @@ pub fn run(phone: &Phone) -> Result<Ran> {
         .unwrap_or_default()
         .to_string();
     if rows(&out).is_empty() {
-        bail!("the phone gave no report - is the suite on it? (devlab suite put now)");
+        bail!("the phone gave no report - is the suite on it? (lpoco-lab suite put now)");
     }
     Ok(Ran {
         report: out,
@@ -433,7 +433,7 @@ pub fn after_change(phone: &Phone, rebooted: bool) -> Result<(bool, String)> {
     let Some(ran) = ran else {
         return Ok((
             true,
-            "health: the suite is not on the phone - devlab suite put now".into(),
+            "health: the suite is not on the phone - lpoco-lab suite put now".into(),
         ));
     };
     // the report stays on the phone until the watch gathers it into devlab's own clone and lands it:

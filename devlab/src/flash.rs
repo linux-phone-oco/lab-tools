@@ -67,7 +67,7 @@ pub fn may_write(device: &Device) -> Result<()> {
     if !device.fastboot.writes {
         bail!(
             "{}'s device.toml does not say [fastboot] writes = true - nothing is flashed on it \
-             (devlab fastboot boot now IMAGE boots from memory without writing)",
+             (lpoco-lab fastboot boot now IMAGE boots from memory without writing)",
             device.device.codename
         );
     }
