@@ -42,25 +42,21 @@ mkdir -p $G/strings/0x409
 echo "@SERIAL@" > $G/strings/0x409/serialnumber
 echo "@MANUFACTURER@" > $G/strings/0x409/manufacturer
 echo "@PRODUCT@" > $G/strings/0x409/product
-mkdir -p $G/functions/acm.usb0 $G/functions/ecm.usb0
+mkdir -p $G/functions/@CONSOLE@ $G/functions/ecm.usb0
 echo "02:42:ac:10:2a:01" > $G/functions/ecm.usb0/dev_addr
 echo "02:42:ac:10:2a:02" > $G/functions/ecm.usb0/host_addr
 mkdir -p $G/configs/c.1/strings/0x409
-echo "ACM + ECM" > $G/configs/c.1/strings/0x409/configuration
-ln -s $G/functions/acm.usb0 $G/configs/c.1/
+echo "@CONSOLENAME@ + ECM" > $G/configs/c.1/strings/0x409/configuration
+ln -s $G/functions/@CONSOLE@ $G/configs/c.1/
 ln -s $G/functions/ecm.usb0 $G/configs/c.1/
 @RNDIS@
 @WINDOW@
 @WINDOWLOOP@
-# the controller may probe late (clocks, regulators, the PHY): wait for it, up to 30 s
+# the controller may probe late (clocks, regulators, the PHY): wait for it, up to 60 s
 n=0
 while [ -z "$(ls /sys/class/udc 2>/dev/null)" ] && [ $n -lt 60 ]; do sleep 1; n=$((n+1)); done
 UDC=$(ls /sys/class/udc 2>/dev/null | head -n1)
-if [ -z "$UDC" ]; then
-    say "NO UDC after 60 s: the USB controller did not probe"
-else
-    echo "$UDC" > $G/UDC && say "gadget bound to $UDC" || say "binding $UDC failed"
-fi
+@BIND@
 
 ifconfig lo up
 n=0
@@ -75,9 +71,6 @@ if [ $SELFTEST = 1 ]; then
     poweroff -f
 fi
 
-# a shell on the ACM console for as long as the phone runs
-if [ -c /dev/ttyGS0 ]; then
-    ( while :; do setsid sh -c 'exec sh </dev/ttyGS0 >/dev/ttyGS0 2>&1'; sleep 1; done ) &
-fi
+@SHELL@
 say "ready"
 while :; do sleep 3600; done
