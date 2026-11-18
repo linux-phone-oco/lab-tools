@@ -1,4 +1,5 @@
 //! `lpoco-health awake`: the lab phone's keep-awake (backlog lpoco-awake), the kernel wake lock `lpoco-awake`.
+//! WORKAROUND(sxmo-autosuspend-backoff): the lock stands in for sxmo backing off a failed suspend; without the fix its retry every second drops the lab's USB link.
 //!
 //! Carries surya-lab's lab/devlab-usb-awake into the package. On USB a suspend cannot complete, and one that
 //! does while the port blips leaves the idle phone silent; so the lock is held always, and sxmo's autosuspend
