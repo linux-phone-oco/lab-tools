@@ -7,6 +7,7 @@ use argenv_resolve::{InputResolveExt, OnProblems};
 use cli::{Contract, Verb};
 use lpoco_bringup::boot::Boot;
 use lpoco_bringup::image::{self, Verdict};
+use lpoco_bringup::swap::{self, Parts};
 use std::fs;
 use std::path::Path;
 
@@ -19,7 +20,7 @@ fn main() {
             "{}",
             cli::usage(
                 "lpoco-bringup",
-                "Boot images and bring-up steps. Commands: image info|unpack|pack|check."
+                "Boot images and bring-up steps. Commands: image info|unpack|pack|check|swap."
             )
         );
         return;
@@ -49,7 +50,7 @@ fn read(path: &str) -> Result<Vec<u8>, String> {
 fn run(r: &argenv_resolve::Resolution) -> Result<i32, String> {
     let Some(verb) = Contract::VERB.get_from(r) else {
         return Err(
-            "usage: lpoco bringup image info|unpack|pack|check ... (lpoco-bringup --version)"
+            "usage: lpoco bringup image info|unpack|pack|check|swap ... (lpoco-bringup --version)"
                 .into(),
         );
     };
@@ -104,6 +105,26 @@ fn run(r: &argenv_resolve::Resolution) -> Result<i32, String> {
                 }
             }
             fs::write(&out, &img).map_err(|e| format!("cannot write {out}: {e}"))?;
+            Ok(0)
+        }
+        Verb::Swap => {
+            let control = read(&need(
+                Contract::IMAGE.get_from(r),
+                "the control image (CONTROL)",
+            )?)?;
+            let out = need(Contract::OUT.get_from(r), "--out IMG")?;
+            let opt = |v: Option<String>| v.map(|p| read(&p)).transpose();
+            let parts = Parts {
+                kernel: opt(Contract::KERNEL.get_from(r))?,
+                dtb: opt(Contract::DTB.get_from(r))?,
+                ramdisk: opt(Contract::RAMDISK.get_from(r))?,
+                cmdline: Contract::CMDLINE.get_from(r),
+            };
+            let (img, said) = swap::swap(&control, &parts, "avbtool")?;
+            fs::write(&out, &img).map_err(|e| format!("cannot write {out}: {e}"))?;
+            for line in said {
+                println!("{line}");
+            }
             Ok(0)
         }
         Verb::Check => {
