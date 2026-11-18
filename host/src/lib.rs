@@ -254,6 +254,64 @@ pub fn stale_pieces(
     Ok(out)
 }
 
+/// The lines that name what `report` (the phone's rows, read back from `per`) holds off origin/main of the device's
+/// repository (the folder of its manifest): one line a stale piece, with the commit the phone's copy came from, or
+/// one line saying none is. `Err` when the report is no report; the caller says "not measured". Never touches the phone.
+pub fn stale_lines(d: &Device, report: &str, per: &str) -> Result<Vec<String>, String> {
+    let git = |args: &[&str]| {
+        let dir = d.path.parent().filter(|p| !p.as_os_str().is_empty());
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir.unwrap_or(Path::new(".")))
+            .args(args)
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+    };
+    let main = |from: &str| git(&["show", &format!("origin/main:{from}")]).map(|o| o.stdout);
+    let stale = stale_pieces(d, report, main)?;
+    if stale.is_empty() {
+        return Ok(vec![format!(
+            "{} phone pieces: ok, as main per {per}",
+            d.codename
+        )]);
+    }
+    Ok(stale
+        .into_iter()
+        .map(|s| match s {
+            Stale::File { path, found, main } => {
+                let from = d
+                    .pieces
+                    .iter()
+                    .find(|p| p.to == path)
+                    .map(|p| p.from.clone())
+                    .unwrap_or_default();
+                let came = git(&[
+                    "log",
+                    "--format=%h %s",
+                    &format!("--find-object={found}"),
+                    "origin/main",
+                    "--",
+                    &from,
+                ])
+                // the oldest commit that holds the blob: where the phone's copy came from, not what replaced it
+                .and_then(|o| String::from_utf8_lossy(&o.stdout).lines().last().map(str::to_string))
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| "a commit not found".into());
+                format!("{} phone piece {path}: STALE, runs {found} ({came}), main has {main} (per {per})", d.codename)
+            }
+            Stale::Missing { what } => format!(
+                "{} phone piece {what}: STALE, missing on the phone (per {per})",
+                d.codename
+            ),
+            Stale::Package { name, found, pin } => format!(
+                "{} phone package {name}: STALE, {found} is off the pin {pin} (per {per})",
+                d.codename
+            ),
+        })
+        .collect())
+}
+
 /// A lab declaration already read: `path` names it, `text` is what it says (the working file, or origin/main's).
 pub fn parse_lab(path: &Path, text: &str) -> Result<Lab, String> {
     let lab: Lab = toml::from_str(text).map_err(|e| format!("{}: {e}", path.display()))?;

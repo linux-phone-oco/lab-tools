@@ -542,18 +542,20 @@ fn main() -> Result<()> {
             }
         }
         Cmd::Test => {
-            let checks = health::run_checks(&dev, &here, &phone::Phone::find(&dev)?)?;
+            let report = health::run_report(&dev, &here, &phone::Phone::find(&dev)?)?;
+            let checks = health::parse(&report);
             for c in &checks {
                 println!("{:5} {} - {}", c.outcome, c.key, c.detail);
             }
             let n = |o: &str| checks.iter().filter(|c| c.outcome == o).count();
             println!("{} pass, {} fail, {} skip", n("pass"), n("fail"), n("skip"));
+            health::name_stale_pieces(&dev, &file, &report);
         }
         Cmd::Health { hear, placed } => {
             if hear {
                 hear::placed_or_refuse(placed)?;
             }
-            let r = health::health(&dev, &here, &phone::Phone::find(&dev)?, hear)?;
+            let r = health::health(&dev, &here, &file, &phone::Phone::find(&dev)?, hear)?;
             if r.is_empty() {
                 println!(
                     "all is well ({} checks in the baseline)",

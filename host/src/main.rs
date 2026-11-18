@@ -1015,6 +1015,7 @@ fn print_stale_pieces(d: &Device) {
         return;
     };
     let listing = String::from_utf8_lossy(&listing.stdout).to_string();
+    // report names are YYYYMMDD-HHMMSS (devlab gather refuses any other), so the greatest name is the newest
     let Some(newest) = listing.lines().filter(|l| l.ends_with(".jsonl")).max() else {
         println!(
             "{} phone pieces: not measured, no report at origin/main",
@@ -1026,50 +1027,8 @@ fn print_stale_pieces(d: &Device) {
         return;
     };
     let report = String::from_utf8_lossy(&report.stdout).to_string();
-    let main = |from: &str| git(&["show", &format!("origin/main:{from}")]).map(|o| o.stdout);
-    let stale = match stale_pieces(d, &report, main) {
-        Ok(s) => s,
-        Err(e) => {
-            println!("{} phone pieces: not measured, {e}", d.codename);
-            return;
-        }
-    };
-    if stale.is_empty() {
-        println!("{} phone pieces: ok, as main per {newest}", d.codename);
-    }
-    for s in stale {
-        match s {
-            Stale::File { path, found, main } => {
-                let from = d
-                    .pieces
-                    .iter()
-                    .find(|p| p.to == path)
-                    .map(|p| p.from.clone())
-                    .unwrap_or_default();
-                let came = git(&[
-                    "log",
-                    "--format=%h %s",
-                    "-1",
-                    &format!("--find-object={found}"),
-                    "origin/main",
-                    "--",
-                    &from,
-                ])
-                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-                .filter(|s| !s.is_empty())
-                .unwrap_or_else(|| "a commit not found".into());
-                println!("{} phone piece {path}: STALE, runs {found} ({came}), main has {main} (per {newest})", d.codename);
-            }
-            Stale::Missing { what } => println!(
-                "{} phone piece {what}: STALE, missing on the phone (per {newest})",
-                d.codename
-            ),
-            Stale::Package { name, found, pin } => {
-                println!(
-                    "{} phone package {name}: STALE, {found} is off the pin {pin} (per {newest})",
-                    d.codename
-                );
-            }
-        }
+    match stale_lines(d, &report, newest) {
+        Ok(lines) => lines.iter().for_each(|l| println!("{l}")),
+        Err(e) => println!("{} phone pieces: not measured, {e}", d.codename),
     }
 }

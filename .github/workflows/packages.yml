@@ -1,24 +1,18 @@
 name: Packages
 
-# A signed Alpine repository on GitHub Pages - lpoco-health and sxmo-utils for postmarketOS phones -
-# rebuilt after every lpoco-health release, or when an sxmo-utils-v tag is pushed (or by hand), so a
-# phone's apk upgrade brings both with the rest of its system. Building, signing, checking,
-# publishing and a real install live in the package conveyor; this repository keeps its declarations
-# (packaging/conveyor.toml, packaging/sxmo-utils/conveyor.toml), its APKBUILDs and its public key.
-# The private key is the secret APK_SIGNING_KEY, given to the one conveyor step that signs. Both packages
-# are one repository, so their jobs run one after the other: each keeps what the other published.
-# Tags: lpoco-health-v* are release-plz's (release-plz.toml); sxmo-utils-v* are made by hand, once per
-# lab tag of grenudi/sxmo-utils, and equal the APKBUILD's pkgver.
+# A signed Alpine repository on GitHub Pages - lpoco-health for postmarketOS phones - rebuilt after
+# every release (or by hand), so a phone's apk upgrade brings the suite with the rest of its system.
+# Building, signing, checking, publishing and a real install live in the package conveyor; this
+# repository keeps its declaration (packaging/conveyor.toml), its APKBUILD and its public key. The
+# private key is the secret APK_SIGNING_KEY, given to the one conveyor step that signs.
 on:
   workflow_run:
     workflows: [Release]
     types: [completed]
-  push:
-    tags: ['sxmo-utils-v*']
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag to publish (default - the newest lpoco-health-v and sxmo-utils-v tags, both)
+        description: Release tag to publish (default - the newest lpoco-health-v tag)
         required: false
 
 permissions:
@@ -31,12 +25,11 @@ concurrency:
 jobs:
   tag:
     name: which release?
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
-      health: ${{ steps.tag.outputs.health }}
-      shell: ${{ steps.tag.outputs.shell }}
+      tag: ${{ steps.tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -47,50 +40,25 @@ jobs:
           EVENT: ${{ github.event_name }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           INPUT_TAG: ${{ inputs.tag }}
-          REF_NAME: ${{ github.ref_name }}
         run: |
           git fetch --tags --force
-          newest() { git tag --list "$1" --sort=-v:refname | head -n1; }
-          health=""; shell=""
-          case "$EVENT" in
-            push) given="$REF_NAME" ;;
-            workflow_dispatch) given="$INPUT_TAG" ;;
-            *) given=""; health="$(git tag --points-at "$HEAD_SHA" | grep -E '^lpoco-health-v[0-9]' | head -n1 || true)" ;;
-          esac
-          case "$given" in
-            lpoco-health-v*) health="$given" ;;
-            sxmo-utils-v*) shell="$given" ;;
-            "") if [ "$EVENT" = workflow_dispatch ]; then health="$(newest 'lpoco-health-v*')"; shell="$(newest 'sxmo-utils-v*')"; fi ;;
-            *) echo "a tag that is neither lpoco-health-v nor sxmo-utils-v: $given" >&2; exit 1 ;;
-          esac
-          echo "health=$health" >> "$GITHUB_OUTPUT"
-          echo "shell=$shell" >> "$GITHUB_OUTPUT"
-          echo "release tags: lpoco-health ${health:-none}, sxmo-utils ${shell:-none}"
+          if [ "$EVENT" = workflow_dispatch ]; then
+            tag="${INPUT_TAG:-$(git tag --list 'lpoco-health-v*' --sort=-v:refname | head -n1)}"
+          else
+            tag="$(git tag --points-at "$HEAD_SHA" | grep -E '^lpoco-health-v[0-9]' | head -n1 || true)"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "release tag: ${tag:-none (a push that cut no release)}"
   alpine:
-    name: the package conveyor - lpoco-health
+    name: the package conveyor
     needs: tag
-    if: needs.tag.outputs.health != ''
+    if: needs.tag.outputs.tag != ''
     permissions:
       contents: read
       pages: write
       id-token: write
     uses: linux-package-distribution-oco/conveyor/.github/workflows/alpine.yml@v1
     with:
-      tag: ${{ needs.tag.outputs.health }}
-    secrets:
-      APK_SIGNING_KEY: ${{ secrets.APK_SIGNING_KEY }}
-  alpine-sxmo-utils:
-    name: the package conveyor - sxmo-utils
-    # after lpoco-health's job (the pages are one repository), whether or not that job ran
-    needs: [tag, alpine]
-    if: ${{ !cancelled() && needs.alpine.result != 'failure' && needs.tag.outputs.shell != '' }}
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-    uses: linux-package-distribution-oco/conveyor/.github/workflows/alpine.yml@v1
-    with:
-      tag: ${{ needs.tag.outputs.shell }}
-      declaration: packaging/sxmo-utils/conveyor.toml
+      tag: ${{ needs.tag.outputs.tag }}
     secrets:
       APK_SIGNING_KEY: ${{ secrets.APK_SIGNING_KEY }}
