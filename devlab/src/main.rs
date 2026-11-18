@@ -173,9 +173,10 @@ fn usage_error(found: &cli::Found, said: &str) -> ! {
 
 /// The command line, read once through its argenv declaration (cli.rs).
 fn parse() -> Cli {
-    use argenv_resolve::{InputResolveExt, OnProblems};
+    use argenv_resolve::InputResolveExt;
     use cli::Contract as C;
-    let r = C::parse_and_lint(OnProblems::FailOnError);
+    let model = C::records();
+    let r = argenv_resolve::parse(&model);
     if C::VERSION.get_from(&r).unwrap_or(false) {
         println!("lpoco-lab {VERSION}");
         std::process::exit(0);
@@ -186,11 +187,43 @@ fn parse() -> Cli {
         print!("{}", cli::usage(&found));
         std::process::exit(0);
     }
+    // a mistake in the words is a usage mistake: exit 2 with the usage, as clap had it (exit 1 stays for what a command itself says)
+    let policy = argenv_resolve::LintPolicy::default();
+    let errors: Vec<String> = argenv_resolve::lint(&model, &r)
+        .iter()
+        .filter(|f| policy.severity(f) == argenv_resolve::Severity::Error)
+        .map(|f| f.to_string())
+        .collect();
+    if !errors.is_empty() {
+        usage_error(&found, &errors.join("\n"));
+    }
     let node = match &found {
         cli::Found::Leaf(n) => *n,
         cli::Found::Unknown(w) => usage_error(&found, &format!("unrecognized command '{w}'")),
-        _ => usage_error(&found, "a command is needed"),
+        cli::Found::Group(_) => usage_error(&found, "an action is needed"),
+        cli::Found::Top => usage_error(&found, "a command is needed"),
     };
+    // flags are scoped by argenv to the command; the action it was given to is checked here, from the tree
+    for (key, v) in r.values() {
+        let given = v.source == argenv_resolve::Source::Arg;
+        let is_flag = model
+            .iter()
+            .any(|m| m.key == *key && m.arg.as_ref().is_some_and(|a| a.position.is_none()));
+        if given
+            && is_flag
+            && !node.flags.contains(&key.as_str())
+            && !["device", "help", "version"].contains(&key.as_str())
+        {
+            usage_error(
+                &found,
+                &format!(
+                    "--{} does not apply to {}",
+                    key.replace('_', "-"),
+                    node.path.join(" ")
+                ),
+            );
+        }
+    }
     if words.len() > node.path.len() + node.args.len() {
         usage_error(
             &found,

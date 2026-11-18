@@ -69,16 +69,6 @@ impl FromRaw for Command {
     }
 }
 
-/// The commands that take an action as their second word.
-const WITH_ACTIONS: &[Command] = &[
-    Command::Phone,
-    Command::Suite,
-    Command::Fastboot,
-    Command::Keeper,
-    Command::Guard,
-    Command::Kernel,
-];
-
 contract! {
     COMMAND: Command = Input {
         key: "command",
@@ -86,15 +76,6 @@ contract! {
         allowed: Command::TOKENS,
         arg: Some(Arg::positional(0)),
         summary: "What to do.",
-        ..Input::EMPTY
-    };
-
-    ACTION: String, Command = Input {
-        key: "action",
-        ty: Type::String,
-        subcommands: WITH_ACTIONS,
-        arg: Some(Arg::positional(0)),
-        summary: "What to do with it (the command's --help lists them).",
         ..Input::EMPTY
     };
 
@@ -299,7 +280,7 @@ contract! {
         ty: Type::String,
         subcommands: &[Command::Suite],
         arg: Some(Arg { value_name: "FILE", ..Arg::long("runner") }),
-        summary: "A runner built elsewhere, copied with the generic checks - to try what is not released yet. Without --runner and --built-runner, the Alpine package (lpoco-health).",
+        summary: "A runner built elsewhere, copied with the generic checks - to try what is not released yet. (Alone, the built runner is now --built-runner.) Without --runner and --built-runner, the Alpine package (lpoco-health).",
         ..Input::EMPTY
     };
 

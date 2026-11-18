@@ -144,13 +144,20 @@ fn a_missing_or_extra_argument_is_refused_with_the_usage_before_any_manifest_is_
         &["suite", "off", "t"],
         &["suite", "put", "now", "--runner", "a", "--built-runner"],
         &["kernel", "keep", "k"],
+        &["kernel", "install", "n", "v", "d", "m", "--dtb", "x"],
+        &["suite", "on", "t", "--reason", "x"],
+        &["fastboot", "state", "--bootloader"],
+        &["phone", "find", "--dtb", "x"],
+        &["test", "--no-such-flag"],
+        &["bogus"],
+        &["suite", "put", "now", "--runner"],
     ] {
         let (code, _, err) = run(args);
         assert_eq!(code, 2, "{args:?}: {err}");
         assert!(err.contains("Usage: lpoco-lab"), "{args:?}: {err}");
     }
-    // an unknown command is refused by argenv itself, naming what is accepted
-    let (code, _, err) = run(&["bogus"]);
-    assert_ne!(code, 0);
-    assert!(err.contains("accepted: phone"), "{err}");
+    // help wins over a mistake in the words
+    let (code, out, _) = run(&["bogus", "--help"]);
+    assert_eq!(code, 0);
+    assert!(out.starts_with("Usage: lpoco-lab"));
 }
