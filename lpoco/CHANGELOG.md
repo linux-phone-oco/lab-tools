@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-v0.6.1...lpoco-v0.7.0) - 2026-11-18
+
+### Added
+
+- *(host)* watchers only for devices whose [host] says watch = true ([#135](https://github.com/linux-phone-oco/lab-tools/pull/135))
+- *(host)* devlab-watch@ user units per device, enabled and restarted by prepare ([#133](https://github.com/linux-phone-oco/lab-tools/pull/133))
+
 ## [0.6.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-v0.6.0...lpoco-v0.6.1) - 2026-11-18
 
 ### Added
