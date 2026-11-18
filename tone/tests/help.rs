@@ -89,3 +89,30 @@ fn make_then_find_still_works_with_a_negative_level() {
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_value_out_of_range_or_zero_is_a_usage_mistake() {
+    for args in [
+        &["make", "--channels", "70000", "a.wav"][..],
+        &["make", "--channels", "0", "a.wav"],
+        &["make", "--rate", "5000000000", "a.wav"],
+        &["make", "--rate", "0", "a.wav"],
+        &["make", "--secs", "inf", "a.wav"],
+        &["make", "--rate", "x", "a.wav"],
+    ] {
+        let (code, _, err) = run(BINS[0], args);
+        assert_eq!(code, 2, "{args:?}: {err}");
+        assert!(err.contains("Usage: lpoco-tone"), "{args:?}: {err}");
+    }
+}
+
+#[test]
+fn the_version_is_printed_under_both_names() {
+    for bin in BINS {
+        for flag in ["--version", "-V"] {
+            let (code, out, _) = run(bin, &[flag]);
+            assert_eq!(code, 0);
+            assert!(out.starts_with("lpoco-tone "), "{out}");
+        }
+    }
+}

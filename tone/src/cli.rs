@@ -1,5 +1,5 @@
 //! lpoco-tone's invocation surface, declared once with argenv (backlog lpoco-tone-argenv): its commands,
-//! their arguments and the environment it reads (none). The words are the ones clap gave it.
+//! their arguments and the environment it reads (none). The words are those it has always had.
 //!
 //!   lpoco-tone make [--freq HZ] [--secs S] [--level DBFS] [--rate HZ] [--channels N] OUT
 //!   lpoco-tone find [--freq HZ] [--min-snr DB] INPUT      JSON on stdout; exit 0 when found, 1 when not
@@ -88,7 +88,7 @@ contract! {
         ..Input::EMPTY
     };
 
-    RATE: u32, Command = Input {
+    RATE: u64, Command = Input {
         key: "rate",
         ty: Type::Uint,
         subcommands: &[Command::Make],
@@ -98,7 +98,7 @@ contract! {
         ..Input::EMPTY
     };
 
-    CHANNELS: u16, Command = Input {
+    CHANNELS: u64, Command = Input {
         key: "channels",
         ty: Type::Uint,
         subcommands: &[Command::Make],

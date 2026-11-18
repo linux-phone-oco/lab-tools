@@ -6,7 +6,7 @@
 mod cli;
 
 use anyhow::{Context, Result};
-use argenv_resolve::InputResolveExt;
+use argenv_resolve::{InputResolveDefaultExt, InputResolveExt};
 use cli::{Command, Contract as C};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -77,21 +77,28 @@ fn main() -> Result<()> {
         Some(Command::Make) => {
             let out = std::path::PathBuf::from(need(C::OUT.get_from(&r), "OUT"));
             let (freq, secs, level) = (
-                C::FREQ.get_from(&r).unwrap_or(1000.0),
-                C::SECS.get_from(&r).unwrap_or(3.0),
-                C::LEVEL.get_from(&r).unwrap_or(-20.0),
+                C::FREQ.get_from_or_default(&r).unwrap_or_default(),
+                C::SECS.get_from_or_default(&r).unwrap_or_default(),
+                C::LEVEL.get_from_or_default(&r).unwrap_or_default(),
             );
-            let (rate, channels) = (
-                C::RATE.get_from(&r).unwrap_or(48_000),
-                C::CHANNELS.get_from(&r).unwrap_or(2),
-            );
+            let rate = u32::try_from(C::RATE.get_from_or_default(&r).unwrap_or_default())
+                .ok()
+                .filter(|n| *n > 0)
+                .unwrap_or_else(|| usage_error(known, "--rate must be between 1 and 4294967295"));
+            let channels = u16::try_from(C::CHANNELS.get_from_or_default(&r).unwrap_or_default())
+                .ok()
+                .filter(|n| *n > 0)
+                .unwrap_or_else(|| usage_error(known, "--channels must be between 1 and 65535"));
+            if ![freq, secs, level].iter().all(|x| x.is_finite()) {
+                usage_error(known, "--freq, --secs and --level must be finite numbers");
+            }
             tone::wav::write(&out, &tone::tone(freq, secs, level, rate), rate, channels)
                 .with_context(|| format!("writing {}", out.display()))
         }
         Some(Command::Find) => {
             let input = std::path::PathBuf::from(need(C::INPUT.get_from(&r), "INPUT"));
-            let freq = C::FREQ.get_from(&r).unwrap_or(1000.0);
-            let min_snr = C::MIN_SNR.get_from(&r).unwrap_or(20.0);
+            let freq = C::FREQ.get_from_or_default(&r).unwrap_or_default();
+            let min_snr = C::MIN_SNR.get_from_or_default(&r).unwrap_or_default();
             let (samples, rate) = tone::wav::read_mono(&input)
                 .with_context(|| format!("reading {}", input.display()))?;
             let f = tone::find(&samples, rate, freq, min_snr);
