@@ -20,7 +20,7 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 fn main() {
     let r = Contract::parse_and_lint(OnProblems::FailOnError);
     if Contract::HELP.get_from(&r).unwrap_or(false) {
-        print!("{}", cli::usage("lpoco-host", "The lab host prepared from declarations (run as lpoco host). Commands: plan (the default; changes nothing on the host, only fetches each device clone), prepare now (changes only what differs), check (reads)."));
+        print!("{}", cli::usage("lpoco-host", "The lab host prepared from declarations (run as lpoco host). Commands: plan (the default; changes nothing on the host, only fetches each declaration's clone), prepare now (changes only what differs), check (reads)."));
         return;
     }
     if Contract::VERSION.get_from(&r).unwrap_or(false) {
@@ -54,7 +54,8 @@ fn load(r: &Resolution) -> Result<State, String> {
     let lab_path = Contract::LAB
         .get_from(r)
         .unwrap_or_else(|| expand_home("~/Projects/lab-machine/lab.toml", &home));
-    let lab = read_lab(Path::new(&lab_path))?;
+    let (lab_text, lab_how) = declared_text(Path::new(&lab_path))?;
+    let lab = parse_lab(Path::new(&lab_path), &lab_text)?;
     let root = Contract::ROOT
         .get_from(r)
         .or_else(|| Contract::DEVLAB_ROOT.get_from(r))
@@ -66,9 +67,9 @@ fn load(r: &Resolution) -> Result<State, String> {
         .map(Devices::patterns)
         .unwrap_or_else(|| vec![DEFAULT_DEVICES.to_string()]);
     let mut devices = Vec::new();
-    let mut reads = Vec::new();
+    let mut reads: Vec<String> = lab_how.into_iter().collect();
     for p in find_devices(&patterns, &home)? {
-        let (text, how) = device_text(&p)?;
+        let (text, how) = declared_text(&p)?;
         reads.extend(how);
         devices.push(parse_device(&p, &text)?);
     }
@@ -91,11 +92,11 @@ fn load(r: &Resolution) -> Result<State, String> {
     })
 }
 
-/// A device declaration as its repository says it: a clone is fetched (never prompting, bounded) and `device.toml` is
+/// A declaration (`lab.toml`, `device.toml`) as its repository says it: a clone is fetched (never prompting, bounded) and the file is
 /// read from `origin/main`, so a stale checkout cannot hide a `[host]` table. The second part names what was read: the
 /// commit, how far the checkout is behind it, whether the working file differs; or why the file as it lies was read.
 /// A plain file outside any clone has nothing to say.
-fn device_text(p: &Path) -> Result<(String, Option<String>), String> {
+fn declared_text(p: &Path) -> Result<(String, Option<String>), String> {
     let file = || fs::read_to_string(p).map_err(|e| format!("cannot read {}: {e}", p.display()));
     let lie = |why: &str| -> Result<(String, Option<String>), String> {
         Ok((
@@ -313,7 +314,9 @@ fn plan(st: &State) {
     let files = files_for(&st.devices, &|p| read_file(&st.fs_root, p));
     let modules = modules_of(&st.devices);
     let stage = stage_dir(&st.home);
-    println!("lpoco host plan (nothing on the host is changed; each device clone is fetched)");
+    println!(
+        "lpoco host plan (nothing on the host is changed; each declaration's clone is fetched)"
+    );
     for r in &st.reads {
         println!("read: {r}");
     }

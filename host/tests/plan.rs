@@ -468,3 +468,84 @@ fn is_read_only_git(call: &str) -> bool {
     t.next()
         .is_some_and(|s| ["rev-parse", "fetch", "show", "rev-list"].contains(&s))
 }
+
+#[test]
+fn reads_lab_toml_from_origin_main_and_ignores_a_working_file_that_differs() {
+    let l = lab("lab-origin-main", "");
+    let origin = l.dir.join("lab-origin.git");
+    let work = l.dir.join("lab-work");
+    let clone = l.dir.join("lab-clone");
+    for d in [&origin, &work] {
+        fs::create_dir_all(d).unwrap();
+    }
+    let devs_glob = format!("devices = \"{}/devs/*/device.toml\"\n", l.dir.display());
+    git(&origin, &["init", "-q", "--bare", "-b", "main"]);
+    git(&work, &["init", "-q", "-b", "main"]);
+    fs::write(
+        work.join("lab.toml"),
+        format!("{devs_glob}[tools]\nlpoco = \"0.4.0\"\n"),
+    )
+    .unwrap();
+    git(&work, &["add", "."]);
+    git(&work, &["commit", "-q", "-m", "pin 0.4.0"]);
+    git(
+        &work,
+        &["remote", "add", "origin", origin.to_str().unwrap()],
+    );
+    git(&work, &["push", "-q", "origin", "main"]);
+    git(
+        &l.dir,
+        &["clone", "-q", origin.to_str().unwrap(), "lab-clone"],
+    );
+    fs::write(
+        work.join("lab.toml"),
+        format!("{devs_glob}[tools]\nlpoco = \"0.4.1\"\n"),
+    )
+    .unwrap();
+    git(&work, &["commit", "-q", "-am", "pin 0.4.1"]);
+    git(&work, &["push", "-q", "origin", "main"]);
+    let real_git = String::from_utf8(
+        Command::new("sh")
+            .args(["-c", "command -v git"])
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .unwrap();
+    let git_dir = Path::new(real_git.trim()).parent().unwrap().to_path_buf();
+    fs::remove_file(l.dir.join("stubs/git")).unwrap();
+    let o = Command::new(env!("CARGO_BIN_EXE_lpoco-host"))
+        .arg("plan")
+        .env_clear()
+        .env("HOME", l.dir.join("home"))
+        .env(
+            "PATH",
+            format!("{}:{}", l.dir.join("stubs").display(), git_dir.display()),
+        )
+        .env("LPOCO_LAB", clone.join("lab.toml"))
+        .env("LPOCO_ROOT", l.dir.join("stubs/root"))
+        .env("LPOCO_FS_ROOT", l.dir.join("fs"))
+        .output()
+        .unwrap();
+    let s = out(&o);
+    assert!(
+        o.status.success(),
+        "{s}{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+    assert!(
+        s.contains("--tag lpoco-v0.4.1 "),
+        "pins are origin/main's, not the working file's: {s}"
+    );
+    assert!(!s.contains("lpoco-v0.4.0"), "{s}");
+    let read = s
+        .lines()
+        .find(|x| x.starts_with("read:") && x.contains("lab.toml"))
+        .unwrap_or("");
+    assert!(
+        read.contains("from origin/main")
+            && read.contains("1 behind")
+            && read.contains("differs and is ignored"),
+        "the plan names the rev it read: {s}"
+    );
+}
