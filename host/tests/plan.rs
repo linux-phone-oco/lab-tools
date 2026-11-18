@@ -1101,4 +1101,10 @@ fn a_gadgets_usb_network_gets_a_stable_name_by_its_serial_and_nothing_changes_wi
     let o = host(&l, &["plan"]);
     assert_eq!(o.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&o.stderr).contains("net_name"));
+    declare(
+        &l,
+        "google-walleye-lab",
+        "[host]\n[[host.gadget]]\nserial = \"w\"\naccess = [\"tty\"]\nnet_name = \".\"\n",
+    );
+    assert_eq!(host(&l, &["plan"]).status.code(), Some(2));
 }

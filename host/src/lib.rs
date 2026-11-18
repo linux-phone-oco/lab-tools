@@ -159,7 +159,7 @@ pub fn parse_device(path: &Path, text: &str) -> Result<Device, String> {
         safe_word("gadget serial", &g.serial).map_err(at)?;
         if let Some(n) = &g.net_name {
             safe_word("gadget net_name", n).map_err(at)?;
-            if n.len() > 15 {
+            if n.len() > 15 || n == "." {
                 return Err(at(format!(
                     "gadget net_name {n:?} is longer than 15 characters, an interface name's limit"
                 )));
