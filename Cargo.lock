@@ -583,6 +583,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "lpoco-ffs-acm"
+version = "0.20.0"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "lpoco-health"
 version = "0.20.0"
 dependencies = [
