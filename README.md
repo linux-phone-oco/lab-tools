@@ -14,28 +14,28 @@ manifest, `device.toml`, in its lab repository (found like cargo finds Cargo.tom
 Secrets and what is learned at run time stay outside repositories: `~/.config/devlab/CODENAME/`
 (the password, mode 600) and `~/.local/state/devlab/CODENAME/` (the Wi-Fi address).
 
-    devlab phone find              which address answers (the manifest's, then the remembered one)
-    devlab phone sh   < script     commands as the user - on standard input, so no quoting layer
-    devlab phone root < script     commands as root
-    devlab phone put LOCAL REMOTE
-    devlab phone reboot            reboot, and wait until it answers again
-    devlab flash now IMAGE BOOT    the manifest's fixes baked in, the device tree fingerprinted -
+    lpoco lab phone find              which address answers (the manifest's, then the remembered one)
+    lpoco lab phone sh   < script     commands as the user - on standard input, so no quoting layer
+    lpoco lab phone root < script     commands as root
+    lpoco lab phone put LOCAL REMOTE
+    lpoco lab phone reboot            reboot, and wait until it answers again
+    lpoco lab flash now IMAGE BOOT    the manifest's fixes baked in, the device tree fingerprinted -
                                    by [fastboot] serial, only where the manifest says writes = true
-    devlab fastboot state | getvar NAME | boot now BOOT.IMG | reboot now [--bootloader]
+    lpoco lab fastboot state | getvar NAME | boot now BOOT.IMG | reboot now [--bootloader]
                                    a phone in fastboot, by its serial: read it, boot from memory
-    devlab provision now           a freshly flashed phone: packages, files, Wi-Fi
-    devlab test | health | watch   its checks; regressions against what worked; after every boot
+    lpoco lab provision now           a freshly flashed phone: packages, files, Wi-Fi
+    lpoco lab test | health | watch   its checks; regressions against what worked; after every boot
 
 ## The phone checks itself: lpoco-health
 
-`devlab suite put now` puts the health suite on the phone - the lab's checks and manifest as its main has them (devlab's own clone; `--here` takes this clone's, to try a check before it lands): `lpoco-health` - the
+`lpoco lab suite put now` puts the health suite on the phone - the lab's checks and manifest as its main has them (devlab's own clone; `--here` takes this clone's, to try a check before it lands): `lpoco-health` - the
 runner (a small static Rust program) and the generic checks in `health/suite/checks/` - from
 lab-tools' signed repository (its key and repository added to the phone once), then the phone's own
 checks from its lab repository and what the manifest's `[health]` expects of this phone. With
 `--built-runner` devlab builds the runner (`health/build.sh aarch64-unknown-linux-musl`) in the lab-tools it
 was itself built from and copies it with that tree's checks instead, to try what is not released yet;
 `--runner FILE` copies a runner built elsewhere. A timer runs the suite 120 s after
-every boot; `devlab suite run` runs it now and passes on what the phone says; `devlab suite latest`
+every boot; `lpoco lab suite run` runs it now and passes on what the phone says; `lpoco lab suite latest`
 reads its latest report.
 
 Each check is a small shell file in postmarketOS's test shape that prints `pass|fail|skip TEST
@@ -58,22 +58,22 @@ and reports "not measured: no SIM card". Nothing is written down - put the SIM b
 again. What somebody *chooses* is a **switch**: `lpoco-health off TEST --reason WORDS [--by WHO]`, `lpoco-health
 on TEST`, `lpoco-health list` (tests, switches with who and when, conditions found now), kept in
 `/etc/lpoco-health/switches` on the phone and reported as `skip: switched off: REASON (by WHO, WHEN)`. A test
-is never off without a reason. From the lab: `devlab suite off|on|list`, and the MCP door's
+is never off without a reason. From the lab: `lpoco lab suite off|on|list`, and the MCP door's
 `health_switch_off`, `health_switch_on`, `health_switches`. The phone's state never goes into docs; docs keep
 the hardware's facts and the results. The command line is declared once with argenv (`health/src/cli.rs`).
-`devlab suite put now` moves a phone from the old `devlab-health` (reports, month's data ledger, once-a-day
+`lpoco lab suite put now` moves a phone from the old `devlab-health` (reports, month's data ledger, once-a-day
 marks) to `lpoco-health` and leaves `devlab-health` as another name of the program.
 
 The package is released by release-plz (a `lpoco-health-vX.Y.Z` tag) and published by the package
 conveyor (`packaging/`, `.github/workflows/packages.yml`) at https://linux-phone-oco.github.io/lab-tools/,
 for postmarketOS v26.06 (Alpine 3.24): any postmarketOS phone can take it with the lines on that page.
 
-`devlab kernel install NAME VMLINUZ DTB MODULES.tgz | try NAME | log | remove NAME` - the safe test-kernel boot (one try by boot
+`lpoco lab kernel install NAME VMLINUZ DTB MODULES.tgz | try NAME | log | remove NAME` - the safe test-kernel boot (one try by boot
 counting, a stalled boot saves its log and falls back to stock), proven on surya.
 
 ## The phone for any agent
 
-`devlab mcp` is devlab's door for agents: an MCP server on standard input and output, with the tools
+`lpoco lab mcp` is devlab's door for agents: an MCP server on standard input and output, with the tools
 `run` (commands as the user or root, no quoting layer), `put` and `get` (files), `health_report` and
 `health_run` (the phone's own suite, with its verdict), `kernel_install`, `kernel_try` (once, falling
 back by itself, then the health of the boot it came to), `kernel_status`, and `reboot` (and wait, and
@@ -90,8 +90,8 @@ the new boot's health). Each calls what the command line calls.
 
 Make a test tone, and find it in a recording - a device's speaker tests its microphone:
 
-    tone make --freq 1000 --level -20 tone.wav    # gentle: -20 dBFS by default
-    tone find --freq 1000 recording.wav           # JSON; exit 0 when found, 1 when not
+    lpoco tone make --freq 1000 --level -20 tone.wav    # gentle: -20 dBFS by default
+    lpoco tone find --freq 1000 recording.wav           # JSON; exit 0 when found, 1 when not
 
 `find` measures the frequency by the Goertzel algorithm (Hann window) and compares it with
 neighbouring frequencies, off the tone and its harmonics: found means it stands `--min-snr` dB
@@ -108,7 +108,7 @@ for now; moving it onto argenv, as lab-agent uses, is a contained change.
 
 ## The phone's way, held for agents
 
-`devlab guard tool` is what Claude Code's PreToolUse hook on the lab calls, so that changing the phone
+`lpoco lab guard tool` is what Claude Code's PreToolUse hook on the lab calls, so that changing the phone
 outside devlab is refused when it is tried, not remembered: a Bash command that reaches a phone by ssh,
 scp, sftp, rsync or sshpass exits 2, saying why. So does raw `fastboot` with any verb but `devices`, `getvar` and
 `help` (and `-w` or `--set-active` with any): it would change whichever phone it reaches. It needs no manifest.
@@ -133,16 +133,16 @@ A phone's manifest names what harms it to touch, each with what it did:
     path = "/sys/kernel/debug/gpio"
     why = "read while LPASS is idle it stalls the bus and the phone hangs until a person holds power"
 
-devlab refuses any command it carries to the phone - `devlab phone sh|root`, the MCP door - that names
+devlab refuses any command it carries to the phone - `lpoco lab phone sh|root`, the MCP door - that names
 one, saying why; the phone is never reached for it.
 
-`devlab kernel keep NAME now` makes an installed test kernel the phone's default: its entry sorted
+`lpoco lab kernel keep NAME now` makes an installed test kernel the phone's default: its entry sorted
 ahead of stock with three tries and boot blessing on, so its first good boot is blessed (the default
 from then on), and three bad boots in a row put stock back by themselves - the initramfs timeout still
-guards each boot. `devlab kernel unkeep NAME now` gives the default back to stock; the kernel stays
+guards each boot. `lpoco lab kernel unkeep NAME now` gives the default back to stock; the kernel stays
 installed. One kernel is kept at a time.
 
-`devlab kernel try NAME --dtb FILE` boots installed kernel NAME - its kernel, initramfs and modules -
+`lpoco lab kernel try NAME --dtb FILE` boots installed kernel NAME - its kernel, initramfs and modules -
 once with another device tree, as the entry NAME-dt: a device-tree change is one boot, even on the kept
 kernel. A try is judged by the entry the bootloader says it booted (LoaderEntrySelected).
 
@@ -157,7 +157,7 @@ hold two:
     writes = false            # the default: devlab flash refuses this phone; say true only by a decision
     slot_switch = false       # the default: devlab fastboot set-active refuses; true only by a decision
 
-`devlab fastboot state` says whether it is in fastboot and what its bootloader says of itself (product,
+`lpoco lab fastboot state` says whether it is in fastboot and what its bootloader says of itself (product,
 unlocked, slot-count, current-slot, versions); `getvar NAME` reads one. `boot now BOOT.IMG` boots an
 Android boot image from memory - devlab writes nothing - reading the slots' flags before, then saying where
 the phone went (back to fastboot, Android's adb, Linux on its USB network) and what the flags became: the
@@ -170,7 +170,7 @@ phone's own (by codename), so one phone's keeper never blocks another's.
 ## The phone's keeper
 
 One session owns a phone's flow at a time - its keeper, taking up the phone's queue (docs: `tad q
-phone-queue`) one change at a time; devlab still holds the phone for every change. `devlab keeper take
+phone-queue`) one change at a time; devlab still holds the phone for every change. `lpoco lab keeper take
 NAME` takes the lease (refused while another keeper is live), `renew NAME` as the keeper works, `release
 NAME` as it ends, `status` says who keeps the phone. A lease left unrenewed for 90 minutes has lapsed: its
 keeper ended or was cut off, and the next one may take it.
