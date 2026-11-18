@@ -474,7 +474,7 @@ fn is_read_only_git(call: &str) -> bool {
         t.nth(1);
     }
     t.next()
-        .is_some_and(|s| ["rev-parse", "fetch", "show", "rev-list"].contains(&s))
+        .is_some_and(|s| ["rev-parse", "fetch", "show", "rev-list", "ls-tree", "log"].contains(&s))
 }
 
 #[test]
