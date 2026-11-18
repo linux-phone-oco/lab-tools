@@ -362,10 +362,11 @@ pub fn probe(codename: &str, phone_addr: Option<&str>, fs_root: &str) -> Measure
     }
     // a share a keeper is using is never stopped by a check: it is read, not exercised
     if sysctl_run(&["is-active", "--quiet", &unit]).is_ok() {
-        let marked = std::path::Path::new(&format!("{fs_root}/run/lpoco-share/active/{inst}")).exists();
+        let marked =
+            std::path::Path::new(&format!("{fs_root}/run/lpoco-share/active/{inst}")).exists();
         return if marked {
-            Measured::Ok(format!(
-                "{codename}: {unit} is running (in use), its state is there; left as it is"
+            Measured::NotMeasured(format!(
+                "{codename}: {unit} is in use and left as it is; the lab user's start rule is not exercised"
             ))
         } else {
             Measured::Failed(format!(
