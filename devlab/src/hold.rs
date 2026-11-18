@@ -26,8 +26,8 @@ mod tests {
 
     #[test]
     fn the_phone_is_held_by_one_change_at_a_time() {
-        let d: Device = toml::from_str(
-            "[device]\ncodename = \"devlab-hold-guard\"\n[connection]\nuser = \"u\"\naddresses = []",
+        let d = Device::parse(
+            "[device]\ncodename = \"devlab-hold-guard\"\n[connection]\nuser = \"u\"\naddresses = [\"a\"]",
         )
         .unwrap();
         let first = hold(&d).unwrap();

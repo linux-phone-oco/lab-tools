@@ -1,0 +1,135 @@
+# This device's manifest, read by linux-phone-oco/lab-tools (devlab). Secrets and what is learned at
+# run time stay outside the repository: ~/.config/devlab/xiaomi-surya/ and ~/.local/state/devlab/xiaomi-surya/
+[device]
+codename = "xiaomi-surya"
+
+[connection]
+user = "user"
+addresses = ["172.16.42.1"]   # USB networking; the Wi-Fi address is remembered once learned
+
+[provision]
+packages = "provision/packages.txt"
+
+# mobile data: the connection, with no APN (see the file)
+[[provision.install]]
+from = "lab/mobile.nmconnection"
+to = "/etc/NetworkManager/system-connections/mobile.nmconnection"
+mode = "600"
+
+# the Sxmo device profile, until sxmo-utils ships it - where Sxmo is installed
+[[provision.install]]
+from = "../sxmo-deviceprofiles/profiles/sxmo_deviceprofile_{compatible}.sh"
+to = "/usr/bin/sxmo_deviceprofile_{compatible}.sh"
+mode = "755"
+when = "command -v sxmo_init.sh"
+
+[flash]
+sector_size = 4096
+dtb = "esp:dtbs/qcom/sm7150-xiaomi-surya-huaxing.dtb"
+# masked services:
+#  - sensorspd: the ADSP crash-looped with the sensors service on (its registry init needs writes hexagonrpcd refuses)
+#  - rootpd: with this FastRPC helper attached, the ADSP died on every suspend attempt (24 of 24; 0 of 9 without it);
+#    sound does not need it
+mask = ["hexagonrpcd-adsp-sensorspd.service", "hexagonrpcd-adsp-rootpd.service"]
+enable = ["sshd.service", "devlab-usb-awake.service", "devlab-call-uplink.service", "q6voiced.service"]                         # the image disables sshd by preset
+
+[[flash.overlay]]   # awake while on USB to a host: no suspend attempts that drop the link, under any shell
+from = "lab/devlab-usb-awake"
+to = "root:/usr/local/bin/devlab-usb-awake"
+mode = "755"
+
+[[flash.overlay]]
+from = "lab/devlab-usb-awake.service"
+to = "root:/etc/systemd/system/devlab-usb-awake.service"
+
+[[flash.overlay]]   # the PD mapper before the ADSP: without it the audio PD sometimes never comes up and there is no
+from = "lab/devlab-pd-mapper.conf"                 # sound card (8 of 42 runs before; 21 of 21 boots with it, 2026-11-17)
+to = "root:/etc/modprobe.d/devlab-pd-mapper.conf"
+
+[[flash.overlay]]   # Alpine edge community, tagged @edge, for the few packages stable has too old (tqftpserv)
+from = "lab/devlab-edge.list"
+to = "root:/etc/apk/repositories.d/devlab-edge.list"
+
+[[flash.overlay]]   # calls: the use cases with the Voice Call verb (alsa-ucm-conf lists HiFi only for this card)
+from = "ucm/conf.d/sm8250/POCO-X3.conf"
+to = "root:/usr/share/alsa/ucm2/conf.d/sm8250/POCO X3.conf"
+
+[[flash.overlay]]   # calls: the Voice Call verb
+from = "ucm/Xiaomi/surya/VoiceCall.conf"
+to = "root:/usr/share/alsa/ucm2/Xiaomi/surya/VoiceCall.conf"
+
+[[flash.overlay]]   # calls: q6voiced opens the VoiceMMode1 PCM (0,6) during a call
+from = "lab/q6voiced.conf"
+to = "root:/etc/conf.d/q6voiced"
+
+[[flash.overlay]]   # calls: the uplink capture the DSP needs during a call
+from = "lab/devlab-call-uplink"
+to = "root:/usr/local/bin/devlab-call-uplink"
+mode = "755"
+
+[[flash.overlay]]
+from = "lab/devlab-call-uplink.service"
+to = "root:/etc/systemd/system/devlab-call-uplink.service"
+
+[[flash.overlay]]   # the stereo speaker profile
+from = "ucm/Xiaomi/surya/HiFi.conf"
+to = "root:/usr/share/alsa/ucm2/Xiaomi/surya/HiFi.conf"
+
+[[flash.overlay]]   # the fixed amplifier driver (slot length, volume) - only for the kernel it was built for
+from = "../../surya-audio/kernel-rc3/snd-soc-tas2562.ko.zst"
+to = "root:/lib/modules/7.1.0-rc3-sm7150/kernel/sound/soc/codecs/snd-soc-tas2562.ko.zst"
+if_exists = "root:/lib/modules/7.1.0-rc3-sm7150"
+
+# the lab's ear (devlab hear): tones played on the phone and heard through the lab's microphone
+# how loud every test sound is (devlab hear, and the suite's TEST_TONE_DBFS and TEST_VOLUME): the author, 2026-11-17 -
+# "sound is fine, just quieter - about 20% volume"; the phone's own microphone sits right by its speakers.
+# -20 dBFS at 20% was inaudible and barely reached the microphone; -6 dBFS at 20% the author heard as a
+# quiet beep ("i hear the beep now", 2026-11-17) and the phone's microphone found it 65 dB above the noise
+[hear]
+level_dbfs = -6.0
+volume = 20
+
+[[hear.tone]]
+name = "heard-left"
+channel = "left"
+freq = 1000
+
+[[hear.tone]]
+name = "heard-right"
+channel = "right"
+freq = 1000
+
+# what the phone's own health suite expects (devlab suite put now; lab-tools/health)
+[health]
+sound_cards = ["POCO X3"]
+checks = "tests/health"   # surya's own: the speaker amplifiers, the microphones, the earpiece, the call audio path
+data_budget_mb = 250       # mobile data the checks may spend a month (the telephony layer's mobile-data, lab-tools):
+                          # the author gave a SIM with 3 GB for tests; ~150 kB a boot and 5 MB a week stay under it
+gaps = [                  # never had working on surya: measured every run, not ill health
+  "fingerprint",          # no reader exposed by the kernel
+  "sensors",              # the ADSP sensors service is masked: it crash-looped the audio DSP
+  "camera-rear",          # no driver exists for any of the 5 sensors
+  "camera-front",
+]
+known_failed_units = [
+  "qbootctl.service",     # marks an A/B slot good; surya has no A/B slots ("No slots found"), so it always fails
+]
+known_warnings = [
+  "drivers/soc/qcom/rpmh-rsc.c:451",  # a TCS completion with no request: the bootloader's leftover traffic
+  "drivers/clk/clk.c:1188",           # dsi0_phy_pll_out_dsiclk already disabled: the display clock the bootloader
+  "drivers/clk/clk.c:1048",           #   left running, released while the DSI PHY re-parents it
+]
+
+[health.remoteprocs]   # the signal processors, and what rests on each
+adsp = "audio-speaker"
+cdsp = "kernel"
+modem = "modem-data"
+
+# paths devlab refuses to carry to the phone (devlab guard): reading them can hang the phone
+[[hazard]]
+path = "/sys/kernel/debug/gpio"
+why = "dumps every GPIO chip, the LPASS LPI pins among them; with an LPI driver that maps the sensor DSP's pins (0x62b40000-0x62b51fff, the 32-pin driver of the WCD test kernels) the read stalls the bus and the phone hangs until a person holds power (2026-11-17, ~02:15 UTC)"
+
+[[hazard]]
+path = "/sys/kernel/debug/pinctrl/62b40000"
+why = "the LPASS LPI pin controller registered from 0x62b40000 includes the sensor DSP's pins; reading its pins or pinconf there faults the bus and hangs the phone (2026-11-17). The branch driver's controller at 62b52000 maps only the 14 pins after them"

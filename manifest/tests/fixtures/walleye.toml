@@ -1,0 +1,60 @@
+# This phone's manifest - the only file a new phone's lab needs to say. Every tool reads it:
+# lpoco lab (linux-phone-oco/lab-tools) finds it like cargo finds Cargo.toml, or by --device.
+# Secrets and what is learned at run time stay outside the repository:
+#   ~/.config/devlab/CODENAME/   the phone user's password (mode 600), Wi-Fi name and password
+#   ~/.local/state/devlab/CODENAME/   the Wi-Fi address once learned, results kept by the lab
+# Replace every value marked CHANGE; delete what does not apply. Unknown fields are refused.
+
+[device]
+codename = "google-walleye"        # the Pixel 2; fastboot serial FA81N1A00790; until Linux runs it speaks only fastboot
+
+[connection]
+user = "user"                      # the phone's user
+addresses = ["172.16.43.1"]   # walleye's own USB-networking address: surya answers on 172.16.42.1 on the same host
+
+[provision]
+packages = "provision/packages.txt"   # installed on a freshly flashed phone: lpoco lab provision now
+
+[fastboot]
+# every fastboot call lpoco lab makes names this serial; writes stays false until a recorded decision says otherwise
+# (decision walleye-fastboot-first): lpoco lab fastboot boot now BOOT.IMG boots from memory without writing.
+serial = "FA81N1A00790"
+writes = false
+slot_switch = true                 # set-active only, metadata: decision walleye-slot-flags-tries-on-b
+
+[flash]
+# How an image goes onto this phone (lpoco lab flash now IMAGE BOOTLOADER). The defaults suit an A-only
+# phone flashed over fastboot with the image on userdata; say what differs.
+sector_size = 4096                 # UFS
+dtb = ""                           # not known yet: walleye boots only by fastboot boot for now; A/B slots untouched until a recorded decision
+mask = []                          # services masked in the image - each with its reason beside it
+enable = ["sshd.service"]          # the image disables sshd by preset; the lab must reach the phone
+
+# What the phone's own health suite expects of it (lpoco lab suite put now). The phone checks itself 120 s
+# after every boot; every change lpoco lab makes ends with that report. Say only facts about the hardware.
+[health]
+sound_cards = []                   # names as /proc/asound/cards shows them, e.g. ["POCO X3"]
+checks = "tests/health"            # this phone's own checks, beside the generic ones
+absent = ["jack"]                   # the Pixel 2 has no headphone jack; the rest is not measured yet
+                                   #   camera, jack, display, touchscreen, haptics, sensors, usb-otg
+gaps = []                          # components never working yet (docs component ids): measured, not ill health
+known_failed_units = []            # units known to fail here, each with its reason beside it
+known_warnings = []                # boot warnings (file:line) known here, each with its reason
+
+[health.remoteprocs]               # signal processors that must run, and the component resting on each
+# adsp = "audio-speaker"
+# modem = "modem-data"
+
+# walleye is a fastboot-first phone (decision 2026-11-17-walleye-fastboot-first): while no Linux runs on it, lpoco lab reaches it
+# only over fastboot (`fastboot boot` of a kernel held in memory, nothing written); both A/B slots stay as they are
+# until a recorded decision says otherwise. Its lease is its own, never surya's.
+
+# What the lab host needs to read this phone's gadget (declared 2026-11-17 for the lab-prepare tool, whose first use is
+# its acceptance test): our gadget's USB serial, the kinds of device nodes the lab user must be able to open, and the
+# host modules the gadget functions need. Nothing here is read by lpoco lab itself; the shape is the tool's to settle.
+[host]
+modules = ["usb_storage", "cdc_acm"]
+
+[[host.gadget]]
+serial = "walleye-first-boot"
+access = ["block", "tty"]          # /dev/sdX (mass_storage window m1) and /dev/ttyACM* (FunctionFS console n3)

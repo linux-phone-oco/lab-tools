@@ -71,52 +71,7 @@ pub struct Lab {
     pub tools: BTreeMap<String, ToolPin>,
 }
 
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum Access {
-    Block,
-    Tty,
-}
-
-impl Access {
-    pub fn subsystem(self) -> &'static str {
-        match self {
-            Access::Block => "block",
-            Access::Tty => "tty",
-        }
-    }
-}
-
-#[derive(Deserialize, Debug, Clone, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct Gadget {
-    pub serial: String,
-    pub access: Vec<Access>,
-    /// A stable name for the gadget's USB network interface (CDC-NCM and friends), set by udev at plug-in: the kernel's own name follows the port.
-    #[serde(default)]
-    pub net_name: Option<String>,
-    /// The host's address on that network, as IPv4 CIDR (`10.55.0.1/24`): written as a link config for the host's own network manager, only with the verb. Needs `net_name`.
-    #[serde(default)]
-    pub net_address: Option<String>,
-}
-
-#[derive(Deserialize, Debug, Default, Clone, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct HostTable {
-    /// The device asks to be watched: prepare enables its `devlab-watch@` instance. Watching is the device's own choice, like its gadgets.
-    #[serde(default)]
-    pub watch: bool,
-    #[serde(default)]
-    pub modules: Vec<String>,
-    /// Programs the device needs on the host's PATH: named by plan, judged by check, never installed (installing is a root pacman the author grants).
-    #[serde(default)]
-    pub commands: Vec<String>,
-    /// Rust targets the device's tools are built for: named by plan, judged by check (a standard library on the host), never installed.
-    #[serde(default)]
-    pub targets: Vec<String>,
-    #[serde(default)]
-    pub gadget: Vec<Gadget>,
-}
+pub use lpoco_manifest::{Access, Gadget, HostTable};
 
 /// What the host needs from one device's manifest.
 #[derive(Debug, Clone)]
@@ -328,6 +283,8 @@ pub fn read_device(path: &Path) -> Result<Device, String> {
 /// A device manifest already read: `path` names it, `text` is what it says (the working file, or origin/main's).
 pub fn parse_device(path: &Path, text: &str) -> Result<Device, String> {
     let v: toml::Value = toml::from_str(text).map_err(|e| format!("{}: {e}", path.display()))?;
+    let m =
+        lpoco_manifest::Manifest::parse(text).map_err(|e| format!("{}: {e}", path.display()))?;
     let str_at = |t: &str, k: &str| {
         v.get(t)
             .and_then(|t| t.get(k))
@@ -336,13 +293,7 @@ pub fn parse_device(path: &Path, text: &str) -> Result<Device, String> {
     };
     let codename = str_at("device", "codename")
         .ok_or_else(|| format!("{}: [device] codename is missing", path.display()))?;
-    let host = match v.get("host") {
-        Some(h) => h
-            .clone()
-            .try_into::<HostTable>()
-            .map_err(|e| format!("{}: [host]: {e}", path.display()))?,
-        None => HostTable::default(),
-    };
+    let host = m.host.clone();
     let at = |e: String| format!("{}: {e}", path.display());
     safe_word("codename", &codename).map_err(at)?;
     for g in &host.gadget {

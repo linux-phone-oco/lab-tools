@@ -575,6 +575,7 @@ dependencies = [
  "abootimg-oxide",
  "argenv-resolve",
  "flate2",
+ "lpoco-manifest",
  "serde",
  "sha1",
  "toml",
@@ -597,6 +598,7 @@ version = "0.17.1"
 dependencies = [
  "argenv-resolve",
  "glob",
+ "lpoco-manifest",
  "serde",
  "serde_json",
  "sha1",
@@ -612,11 +614,23 @@ dependencies = [
  "hound",
  "ideal-agent",
  "lpoco-host",
+ "lpoco-manifest",
  "lpoco-tone",
  "rmcp",
  "serde",
  "serde_json",
  "tokio",
+ "toml",
+]
+
+[[package]]
+name = "lpoco-manifest"
+version = "0.17.1"
+dependencies = [
+ "argenv-resolve",
+ "schemars",
+ "serde",
+ "serde_json",
  "toml",
 ]
 
