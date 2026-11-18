@@ -59,12 +59,13 @@ fn load(r: &Resolution) -> Result<State, String> {
         .or_else(|| Contract::DEVLAB_ROOT.get_from(r))
         .or_else(|| lab.root.clone())
         .unwrap_or_else(|| DEFAULT_ROOT.to_string());
-    let pattern = lab
+    let patterns = lab
         .devices
-        .clone()
-        .unwrap_or_else(|| DEFAULT_DEVICES.to_string());
+        .as_ref()
+        .map(Devices::patterns)
+        .unwrap_or_else(|| vec![DEFAULT_DEVICES.to_string()]);
     let mut devices = Vec::new();
-    for p in find_devices(&pattern, &home)? {
+    for p in find_devices(&patterns, &home)? {
         devices.push(read_device(&p)?);
     }
     let (devices, mut notes) = one_per_codename(devices);
@@ -208,7 +209,17 @@ fn read_file(fs_root: &str, p: &str) -> Option<String> {
 }
 
 fn tool_plans(st: &State) -> Vec<ToolPlan> {
-    tools_for(&st.lab, &st.home, &|n| version_found(&st.path, &st.home, n))
+    tools_for(
+        &st.lab,
+        &st.home,
+        &|n| version_found(&st.path, &st.home, n),
+        &|n| {
+            fs::read_to_string(stamp_path(&st.home, n))
+                .ok()
+                .map(|s| s.trim().to_string())
+        },
+        &|n| on_path(&format!("{}/.local/bin:{}", st.home, st.path), n).is_some(),
+    )
 }
 
 fn plan(st: &State) {
@@ -267,7 +278,7 @@ fn plan(st: &State) {
     }
     println!("\ntools:");
     for t in tool_plans(st) {
-        let found = t.found.clone().unwrap_or_else(|| "not found".into());
+        let found = t.found_text();
         if t.unpinned() {
             println!(
                 "    {:<14} pin not known yet, found {found}: nothing installed",
@@ -286,7 +297,7 @@ fn plan(st: &State) {
                 println!("        {}", s.show());
             }
             if let Some(by) = &t.installed_by {
-                println!("        off the pin: an older {} is first on PATH; {by} installs this name too, so reinstall {by} and put ~/.cargo/bin before ~/.local/bin (or remove the old one)", t.name);
+                println!("        off the pin: an older {} is first on PATH; {by} installs this name too, so reinstall {by} into ~/.local and remove any copy that shadows it", t.name);
             }
         }
     }
@@ -344,6 +355,14 @@ fn prepare(st: &State) -> Result<i32, String> {
                     if !status.success() {
                         return Err(format!("{} failed ({status})", s.show()));
                     }
+                }
+                Step::Stamp { to, rev } => {
+                    if let Some(d) = Path::new(to).parent() {
+                        fs::create_dir_all(d)
+                            .map_err(|e| format!("cannot make {}: {e}", d.display()))?;
+                    }
+                    fs::write(to, format!("{rev}\n"))
+                        .map_err(|e| format!("cannot write {to}: {e}"))?;
                 }
                 Step::Copy { from, to } => {
                     if let Some(d) = Path::new(to).parent() {
@@ -457,7 +476,7 @@ fn check(st: &State) -> Result<i32, String> {
                 "tool {}: FAIL, pinned {} found {}",
                 t.name,
                 t.pinned,
-                t.found.unwrap_or_else(|| "not found".into())
+                t.found_text()
             );
         }
     }

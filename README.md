@@ -213,7 +213,7 @@ installs the newest release into a clean root and checks both, and that bringup 
 ## lpoco host: the lab host prepared from declarations
 
 `lpoco-host` (run as `lpoco host ...`) prepares the machine the lab runs on from two declarations: the lab's own
-`lab.toml` (`--lab FILE` / `LPOCO_LAB`; default `~/Projects/lab-machine/lab.toml`: `devices` a glob, default
+`lab.toml` (`--lab FILE` / `LPOCO_LAB`; default `~/Projects/lab-machine/lab.toml`: `devices` a glob or a list of globs, default
 `~/Projects/linux-phone-oco/*/device.toml`; `root` a prefix; `[tools]` each host tool at its pin) and each device's
 `device.toml` `[host]` (`modules`, and a `[[host.gadget]]` per `serial` with `access = ["block", "tty"]`).
 
@@ -224,8 +224,8 @@ installs the newest release into a clean root and checks both, and that bringup 
 
 Root is one prefix, `LPOCO_ROOT`, then `DEVLAB_ROOT`, then `sudo -n lab-agent root-exec --`; the commands are a fixed
 list the plan prints. `lab.toml` tools: `lpoco = "0.2.0"` installs the family from its release tags with cargo into
-`~/.local`; `[tools.NAME]` with `git`, `path`, `rev`, `version` installs a script of another repository at a commit
-into `~/.local/bin`. A device whose `[tools] lpoco` the lab's pin does not meet is named and nothing is prepared for it.
+`~/.local`; `[tools.NAME]` with `git`, `path`, `rev`, `version` installs a script of another repository at a commit (`version` is a label only; the pin is `rev`)
+into `~/.local/bin` and stamps the rev in `~/.local/share/lpoco-host/rev-NAME`: a script is judged by that stamp (never by `--version`; on PATH without a stamp it is "rev not known"). A device whose `[tools] lpoco` the lab's pin does not meet is named and nothing is prepared for it.
 
 `lpoco = "X.Y.Z"` must be a full version (it names the release tags); a tool with no source yet is `oco-work = "unknown"`
 and is listed as "not known yet". Codenames, serials, module and tool names that reach a root command or a file name are
