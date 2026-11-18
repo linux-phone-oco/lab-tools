@@ -128,6 +128,130 @@ pub struct Device {
     pub fastboot_serial: Option<String>,
     /// The phone's own address on its USB network (the manifest's first `[connection] addresses`): where the lab's side of it is found.
     pub usb_address: Option<String>,
+    /// Files the manifest puts on the phone (`[[flash.overlay]]`, `[[provision.install]]`).
+    pub pieces: Vec<Piece>,
+}
+
+/// One declared phone-side file: `from` in the device repository, `to` on the phone (a `root:` prefix, the image's root, is dropped).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Piece {
+    pub from: String,
+    pub to: String,
+}
+
+fn pieces_of(v: &toml::Value) -> Vec<Piece> {
+    let list = |path: &[&str]| {
+        let mut at = Some(v);
+        for k in path {
+            at = at.and_then(|t| t.get(*k));
+        }
+        at.and_then(|a| a.as_array()).cloned().unwrap_or_default()
+    };
+    let mut out = Vec::new();
+    for e in list(&["flash", "overlay"])
+        .iter()
+        .chain(list(&["provision", "install"]).iter())
+    {
+        let get = |k: &str| e.get(k).and_then(|x| x.as_str());
+        if let (Some(from), Some(to)) = (get("from"), get("to")) {
+            out.push(Piece {
+                from: from.into(),
+                to: to.strip_prefix("root:").unwrap_or(to).into(),
+            });
+        }
+    }
+    out
+}
+
+/// A phone-side piece found off what main declares.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Stale {
+    /// A file on the phone whose blob is not the one at origin/main.
+    File {
+        path: String,
+        found: String,
+        main: String,
+    },
+    /// A declared file or a lab-tools package the phone does not hold.
+    Missing { what: String },
+    /// A lab-tools package on the phone off the `[tools] lpoco` pin.
+    Package {
+        name: String,
+        found: String,
+        pin: String,
+    },
+}
+
+/// Git's blob id of `bytes`: sha1 of `blob LEN\0` and the bytes (the phone computes the same with busybox).
+pub fn blob_id(bytes: &[u8]) -> String {
+    use sha1::{Digest, Sha1};
+    let mut h = Sha1::new();
+    h.update(format!("blob {}\0", bytes.len()).as_bytes());
+    h.update(bytes);
+    h.finalize().iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// What the phone's last gathered report (jsonl, one result a line; the rows of health's 94-lab-pieces.sh) says is
+/// off main. A row `test = "piece-file:PATH"` has detail `PATH BLOBID|missing`; `test = "piece-package-NAME"` has
+/// `NAME VERSION|missing`. `main` gives the bytes origin/main holds for a declared `from` (None: not judged).
+/// Rows the report lacks are not judged: not measured is not stale. A line that is not a row is an error.
+pub fn stale_pieces(
+    d: &Device,
+    report: &str,
+    main: impl Fn(&str) -> Option<Vec<u8>>,
+) -> Result<Vec<Stale>, String> {
+    let mut out: Vec<Stale> = Vec::new();
+    for line in report.lines().filter(|l| !l.trim().is_empty()) {
+        let v: serde_json::Value =
+            serde_json::from_str(line).map_err(|e| format!("report line {line:?}: {e}"))?;
+        let (Some(test), Some(detail)) = (v["test"].as_str(), v["detail"].as_str()) else {
+            return Err(format!("report line {line:?}: no test or detail"));
+        };
+        let mut w = detail.split_whitespace();
+        let (Some(what), Some(found)) = (w.next(), w.next()) else {
+            continue;
+        };
+        let s = if test.starts_with("piece-file:") {
+            let Some(p) = d.pieces.iter().find(|p| p.to == what) else {
+                continue;
+            };
+            let Some(bytes) = main(&p.from) else { continue };
+            let m = blob_id(&bytes);
+            if found == "missing" {
+                Stale::Missing { what: what.into() }
+            } else if m != found {
+                Stale::File {
+                    path: what.into(),
+                    found: found.into(),
+                    main: m,
+                }
+            } else {
+                continue;
+            }
+        } else if test.starts_with("piece-package-") {
+            let Some(pin) = d.lpoco_pin.as_deref() else {
+                continue;
+            };
+            if found == "missing" {
+                Stale::Missing { what: what.into() }
+            } else if !pin_matches(pin, found.split("-r").next().unwrap_or(found)) {
+                let found = found.split("-r").next().unwrap_or(found);
+                Stale::Package {
+                    name: what.into(),
+                    found: found.into(),
+                    pin: pin.into(),
+                }
+            } else {
+                continue;
+            }
+        } else {
+            continue;
+        };
+        if !out.contains(&s) {
+            out.push(s);
+        }
+    }
+    Ok(out)
 }
 
 /// A lab declaration already read: `path` names it, `text` is what it says (the working file, or origin/main's).
@@ -211,6 +335,7 @@ pub fn parse_device(path: &Path, text: &str) -> Result<Device, String> {
             .and_then(|a| a.first())
             .and_then(|a| a.as_str())
             .map(str::to_string),
+        pieces: pieces_of(&v),
     })
 }
 
@@ -804,6 +929,7 @@ mod one_per_codename_tests {
             lpoco_pin: None,
             fastboot_serial: None,
             usb_address: None,
+            pieces: Vec::new(),
         }
     }
 

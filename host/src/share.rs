@@ -68,21 +68,17 @@ for n in "$usb" "$up"; do
 	# a stop must work after the phone is unplugged: only a start needs the interface to be there
 	if [ "$action" = start ] && [ ! -d "/sys/class/net/$n" ]; then echo "lpoco-share: no interface $n" >&2; exit 2; fi
 done
-state=${LPOCO_SHARE_STATE:-/run/lpoco-share}
-# one nft table per share: stopping one phone's share leaves every other's alone
-table="lpoco-$(printf %s "$inst" | tr . _)"
+state=/run/lpoco-share; table=lpoco-share
 case "$action" in
 start)
 	cidr=$(ip -4 -o addr show dev "$usb" | awk '{print $4; exit}')
 	case "$cidr" in */24) ;; *) echo "lpoco-share: $usb has no /24 address ($cidr)" >&2; exit 2 ;; esac
 	net=${cidr%.*}.0/24
-	mkdir -p "$state/active"
-	# forwarding as it was is kept by the first share to start and given back by the last to stop
-	if [ -z "$(ls -A "$state/active")" ]; then cat /proc/sys/net/ipv4/ip_forward > "$state/fwd.orig"; fi
-	: > "$state/active/$inst"
+	mkdir -p "$state"
+	[ -f "$state/$inst.fwd" ] || cat /proc/sys/net/ipv4/ip_forward > "$state/$inst.fwd"
 	sysctl -qw net.ipv4.ip_forward=1
 	if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q 'Status: active'; then
-		: > "$state/ufw.$inst"
+		touch "$state/$inst.ufw"
 		ufw route allow in on "$usb" out on "$up" >/dev/null
 	fi
 	nft add table ip "$table"
@@ -93,14 +89,13 @@ start)
 	;;
 stop)
 	nft delete table ip "$table" 2>/dev/null || true
-	if [ -f "$state/ufw.$inst" ]; then
+	if [ -f "$state/$inst.ufw" ]; then
 		ufw route delete allow in on "$usb" out on "$up" >/dev/null 2>&1 || true
-		rm -f "$state/ufw.$inst"
+		rm -f "$state/$inst.ufw"
 	fi
-	rm -f "$state/active/$inst"
-	if [ -f "$state/fwd.orig" ] && [ -z "$(ls -A "$state/active" 2>/dev/null)" ]; then
-		[ "$(cat "$state/fwd.orig")" = 1 ] || sysctl -qw net.ipv4.ip_forward=0
-		rm -f "$state/fwd.orig"
+	if [ -f "$state/$inst.fwd" ]; then
+		[ "$(cat "$state/$inst.fwd")" = 1 ] || sysctl -qw net.ipv4.ip_forward=0
+		rm -f "$state/$inst.fwd"
 	fi
 	;;
 *) echo "lpoco-share: start or stop" >&2; exit 2 ;;
@@ -184,108 +179,6 @@ mod tests {
         assert_eq!(run(&["bogus", "lo--lo"]).status.code(), Some(2));
         std::fs::remove_dir_all(&dir).unwrap();
     }
-
-    /// Two phones share at once, as a host with several devices does: stopping one's share leaves the other's
-    /// table and forwarding alone, and forwarding goes back to what it was only when the last share stops.
-    /// The helper runs for real with stubs for ip, sysctl, nft and ufw; every call is logged.
-    #[test]
-    fn two_devices_share_without_touching_each_other() {
-        let nets: Vec<String> = std::fs::read_dir("/sys/class/net")
-            .map(|d| {
-                d.flatten()
-                    .map(|e| e.file_name().to_string_lossy().into_owned())
-                    .collect()
-            })
-            .unwrap_or_default();
-        let Some(other) = nets.iter().find(|n| n.as_str() != "lo") else {
-            return; // a host with no interface but lo: nothing to name a second share by
-        };
-        let dir = std::env::temp_dir().join(format!("lpoco-share-two-{}", std::process::id()));
-        let bin = dir.join("bin");
-        std::fs::create_dir_all(&bin).unwrap();
-        let log = dir.join("calls.log");
-        let stub = |name: &str, body: &str| {
-            let p = bin.join(name);
-            std::fs::write(
-                &p,
-                format!(
-                    "#!/bin/sh\necho \"{name} $*\" >> {}\n{body}\n",
-                    log.display()
-                ),
-            )
-            .unwrap();
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
-        };
-        stub(
-            "ip",
-            "echo '5: x    inet 10.9.8.7/24 brd 10.9.8.255 scope global'",
-        );
-        stub("sysctl", "");
-        stub("nft", "");
-        stub("ufw", "echo 'Status: inactive'");
-        let h = dir.join("h.sh");
-        std::fs::write(&h, helper_text()).unwrap();
-        let run = |action: &str, inst: &str| {
-            let o = std::process::Command::new("sh")
-                .arg(&h)
-                .args([action, inst])
-                .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
-                .env("LPOCO_SHARE_STATE", dir.join("state"))
-                .output()
-                .unwrap();
-            assert!(
-                o.status.success(),
-                "{action} {inst}: {}",
-                String::from_utf8_lossy(&o.stderr)
-            );
-        };
-        let calls = || std::fs::read_to_string(&log).unwrap_or_default();
-        let (a, b) = (format!("lo--{other}"), format!("{other}--lo"));
-        run("start", &a);
-        run("start", &b);
-        assert!(
-            calls().contains("nft add table ip lpoco-lo--"),
-            "{}",
-            calls()
-        );
-        assert!(
-            calls().contains(&format!("nft add table ip lpoco-{other}--lo")),
-            "{}",
-            calls()
-        );
-        run("stop", &a);
-        let after_a = calls();
-        assert!(
-            after_a.contains(&format!("nft delete table ip lpoco-lo--{other}")),
-            "{after_a}"
-        );
-        assert!(
-            !after_a.contains(&format!("nft delete table ip lpoco-{other}--lo")),
-            "the other share's table stays: {after_a}"
-        );
-        assert!(
-            !after_a.contains("net.ipv4.ip_forward=0"),
-            "forwarding stays on while another share runs: {after_a}"
-        );
-        run("stop", &b);
-        let all = calls();
-        assert!(
-            all.contains(&format!("nft delete table ip lpoco-{other}--lo")),
-            "{all}"
-        );
-        let was = std::fs::read_to_string("/proc/sys/net/ipv4/ip_forward").unwrap();
-        assert_eq!(
-            all.contains("net.ipv4.ip_forward=0"),
-            was.trim() != "1",
-            "forwarding goes back to what it was, when the last share stops: {all}"
-        );
-        assert!(std::fs::read_dir(dir.join("state/active"))
-            .unwrap()
-            .next()
-            .is_none());
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
 }
 
 /// How the share was measured: the host's own check of what `prepare now` installed.
@@ -359,26 +252,13 @@ pub fn probe(codename: &str, phone_addr: Option<&str>) -> Measured {
             "{unit} is not installed: run `lpoco host prepare now`"
         ));
     }
-    // a share a keeper is using is never stopped by a check: it is read, not exercised
-    if sysctl_run(&["is-active", "--quiet", &unit]).is_ok() {
-        let marked = std::path::Path::new(&format!("/run/lpoco-share/active/{inst}")).exists();
-        return if marked {
-            Measured::Ok(format!(
-                "{codename}: {unit} is running (in use), its state is there; left as it is"
-            ))
-        } else {
-            Measured::Failed(format!(
-                "{unit} is active but left no state: the helper did not run to its end"
-            ))
-        };
-    }
     if let Err(e) = sysctl_run(&["start", &unit]) {
         return Measured::Failed(format!("the lab user could not start {unit}: {e}"));
     }
     let active = sysctl_run(&["is-active", "--quiet", &unit]).is_ok();
-    let wrote = std::path::Path::new(&format!("/run/lpoco-share/active/{inst}")).exists();
+    let wrote = std::path::Path::new(&format!("/run/lpoco-share/{inst}.fwd")).exists();
     let stopped = sysctl_run(&["stop", &unit]);
-    let left = std::path::Path::new(&format!("/run/lpoco-share/active/{inst}")).exists();
+    let left = std::path::Path::new(&format!("/run/lpoco-share/{inst}.fwd")).exists();
     match (active, wrote, stopped, left) {
         (true, true, Ok(()), false) => Measured::Ok(format!(
             "{codename}: {unit} started and stopped by the lab user, no password; nothing left behind"

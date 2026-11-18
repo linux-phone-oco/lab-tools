@@ -792,6 +792,7 @@ fn check(st: &State) -> Result<i32, String> {
                 Err(_) => println!("{} fastboot: not measured, no fastboot on PATH", d.codename),
             }
         }
+        print_stale_pieces(d);
     }
     let declared: Vec<String> = st
         .devices
@@ -984,4 +985,91 @@ fn replace_file(to: &str, bytes: &[u8], mode: u32) -> std::io::Result<()> {
         let _ = fs::remove_file(&tmp);
     }
     written
+}
+
+/// Names what the phone's last gathered report (its newest tests/results/*.jsonl at origin/main) holds off main: a
+/// piece whose blob differs, a package off the pin, with the commit the installed copy came from. Never fails the
+/// check and never touches the phone: no report is "not measured".
+fn print_stale_pieces(d: &Device) {
+    let Some(dir) = d.path.parent() else { return };
+    let git = |args: &[&str]| {
+        Proc::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(args)
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+    };
+    let Some(listing) = git(&[
+        "ls-tree",
+        "-r",
+        "--name-only",
+        "origin/main",
+        "tests/results/",
+    ]) else {
+        println!(
+            "{} phone pieces: not measured, no report at origin/main",
+            d.codename
+        );
+        return;
+    };
+    let listing = String::from_utf8_lossy(&listing.stdout).to_string();
+    let Some(newest) = listing.lines().filter(|l| l.ends_with(".jsonl")).max() else {
+        println!(
+            "{} phone pieces: not measured, no report at origin/main",
+            d.codename
+        );
+        return;
+    };
+    let Some(report) = git(&["show", &format!("origin/main:{newest}")]) else {
+        return;
+    };
+    let report = String::from_utf8_lossy(&report.stdout).to_string();
+    let main = |from: &str| git(&["show", &format!("origin/main:{from}")]).map(|o| o.stdout);
+    let stale = match stale_pieces(d, &report, main) {
+        Ok(s) => s,
+        Err(e) => {
+            println!("{} phone pieces: not measured, {e}", d.codename);
+            return;
+        }
+    };
+    if stale.is_empty() {
+        println!("{} phone pieces: ok, as main per {newest}", d.codename);
+    }
+    for s in stale {
+        match s {
+            Stale::File { path, found, main } => {
+                let from = d
+                    .pieces
+                    .iter()
+                    .find(|p| p.to == path)
+                    .map(|p| p.from.clone())
+                    .unwrap_or_default();
+                let came = git(&[
+                    "log",
+                    "--format=%h %s",
+                    "-1",
+                    &format!("--find-object={found}"),
+                    "origin/main",
+                    "--",
+                    &from,
+                ])
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| "a commit not found".into());
+                println!("{} phone piece {path}: STALE, runs {found} ({came}), main has {main} (per {newest})", d.codename);
+            }
+            Stale::Missing { what } => println!(
+                "{} phone piece {what}: STALE, missing on the phone (per {newest})",
+                d.codename
+            ),
+            Stale::Package { name, found, pin } => {
+                println!(
+                    "{} phone package {name}: STALE, {found} is off the pin {pin} (per {newest})",
+                    d.codename
+                );
+            }
+        }
+    }
 }
