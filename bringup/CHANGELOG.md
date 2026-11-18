@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.15.1...lpoco-bringup-v0.16.0) - 2026-11-18
+
+### Added
+
+- *(host)* record each root file prepare installs, so plan reads an unreadable one as up to date ([#173](https://github.com/linux-phone-oco/lab-tools/pull/173))
+
 ## [0.15.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.15.0...lpoco-bringup-v0.15.1) - 2026-11-18
 
 ### Added
