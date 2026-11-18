@@ -195,6 +195,13 @@ mod tests {
     }
 
     #[test]
+    fn the_default_gadget_words_pass_the_one_gate() {
+        for w in [default_manufacturer(), default_label()] {
+            assert_eq!(ShellWord::new(w.as_str()).unwrap(), w);
+        }
+    }
+
+    #[test]
     fn an_unknown_boot_field_is_refused() {
         assert!(Boot::parse("[boot]\nbogus = 1\n").is_err());
     }
