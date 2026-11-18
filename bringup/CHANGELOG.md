@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.5](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.3.4...lpoco-bringup-v0.3.5) - 2026-11-18
+
+### Other
+
+- release v0.3.4 ([#109](https://github.com/linux-phone-oco/lab-tools/pull/109))
+- image swap, a control image with parts replaced and its AVB footer rebuilt ([#110](https://github.com/linux-phone-oco/lab-tools/pull/110))
+
 ## [0.3.4](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.3.3...lpoco-bringup-v0.3.4) - 2026-11-18
 
 ### Other
