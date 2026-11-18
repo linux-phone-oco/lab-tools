@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.2](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-tone-v0.18.1...lpoco-tone-v0.18.2) - 2026-11-18
+
+### Added
+
+- *(manifest)* a bad [boot.gadget] word is refused when device.toml is read ([#185](https://github.com/linux-phone-oco/lab-tools/pull/185))
+
 ## [0.18.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-tone-v0.18.0...lpoco-tone-v0.18.1) - 2026-11-18
 
 ### Other
