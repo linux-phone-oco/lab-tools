@@ -17,6 +17,8 @@
 //!                                                a reproducible newc cpio from a gen_init_cpio spec, compressed (replaces build-initramfs.sh)
 //!   lpoco-bringup initramfs init [--device device.toml] [--out FILE] [--net N]
 //!                                                the bring-up /init made from the device's [boot.gadget] (configfs gadget, DHCP, telnet, ACM shell)
+//!   lpoco-bringup initramfs files --out DIR [--net N]
+//!                                                the files the init reads beside itself: udhcpd.conf, udhcpc.script, selftest.sh
 //!   lpoco-bringup --version                      this program's version (the lpoco family's one version)
 
 use argenv_resolve::*;
@@ -53,11 +55,12 @@ pub enum Verb {
     Bisect,
     Build,
     Init,
+    Files,
 }
 
 impl Verb {
     pub const TOKENS: &'static [&'static str] = &[
-        "info", "unpack", "pack", "check", "swap", "bisect", "build", "init",
+        "info", "unpack", "pack", "check", "swap", "bisect", "build", "init", "files",
     ];
 }
 
@@ -72,6 +75,7 @@ impl FromRaw for Verb {
             "bisect" => Verb::Bisect,
             "build" => Verb::Build,
             "init" => Verb::Init,
+            "files" => Verb::Files,
             _ => return None,
         })
     }
@@ -93,7 +97,7 @@ contract! {
         allowed: Verb::TOKENS,
         subcommands: &[Command::Image, Command::Initramfs],
         arg: Some(Arg::positional(0)),
-        summary: "What to do: image info, unpack, pack, check, swap or bisect; initramfs build or init.",
+        summary: "What to do: image info, unpack, pack, check, swap or bisect; initramfs build, init or files.",
         ..Input::EMPTY
     };
 
@@ -157,7 +161,7 @@ contract! {
         ty: Type::String,
         subcommands: &[Command::Image, Command::Initramfs],
         arg: Some(Arg { value_name: "PATH", ..Arg::long("out") }),
-        summary: "pack, swap: the image to write; bisect: the folder the images are written to; unpack: the folder to write the parts to; initramfs build: the archive to write; initramfs init: the init script to write (standard output when none is given).",
+        summary: "pack, swap: the image to write; bisect: the folder the images are written to; unpack: the folder to write the parts to; initramfs build: the archive to write; initramfs init: the init script to write (standard output when none is given); initramfs files: the folder to write the files to.",
         ..Input::EMPTY
     };
 
