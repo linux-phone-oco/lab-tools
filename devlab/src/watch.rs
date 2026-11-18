@@ -30,7 +30,7 @@ pub fn watch(device: &Device, manifest_dir: &Path) -> Result<()> {
     let mut alerting: Option<String> = None;
     let mut due: Option<Instant> = None;
     println!(
-        "devlab watch: {codename} - after every boot, its own health report, gathered and landed"
+        "lpoco-lab watch: {codename} - after every boot, its own health report, gathered and landed"
     );
     loop {
         if let Ok(phone) = Phone::find(device) {
@@ -41,11 +41,11 @@ pub fn watch(device: &Device, manifest_dir: &Path) -> Result<()> {
                         let text = alert_text(codename, ran.well, &ran.verdict);
                         match (&text, &alerting) {
                             (Some(t), a) if a.as_ref() != Some(t) => {
-                                println!("devlab watch: {t}");
+                                println!("lpoco-lab watch: {t}");
                                 board(&["set", &task, t, "--project", "linux-phone-oco"]);
                             }
                             (None, Some(_)) => {
-                                println!("devlab watch: all is well again");
+                                println!("lpoco-lab watch: all is well again");
                                 board(&["done", &task]);
                             }
                             _ => {}
@@ -57,12 +57,12 @@ pub fn watch(device: &Device, manifest_dir: &Path) -> Result<()> {
                     }
                     Ok(None) => {
                         println!(
-                            "devlab watch: the suite is not on the phone - devlab suite put now"
+                            "lpoco-lab watch: the suite is not on the phone - lpoco-lab suite put now"
                         );
                         last_boot = boot;
                     }
                     // no report yet: asked again at the next turn
-                    Err(e) => eprintln!("devlab watch: {e:#}"),
+                    Err(e) => eprintln!("lpoco-lab watch: {e:#}"),
                 }
             }
         }
@@ -85,15 +85,15 @@ fn gather_landed(device: &Device, manifest_dir: &Path) {
     for attempt in 1..=TRIES {
         match gather::gather(device, manifest_dir, None, true) {
             Ok(said) => {
-                println!("devlab watch: {said}");
+                println!("lpoco-lab watch: {said}");
                 return;
             }
             Err(e) => eprintln!(
-                "devlab watch: gathering did not go through (try {attempt} of {TRIES}): {e:#}"
+                "lpoco-lab watch: gathering did not go through (try {attempt} of {TRIES}): {e:#}"
             ),
         }
     }
-    eprintln!("devlab watch: left for the next quiet period - what is unfiled is filed then");
+    eprintln!("lpoco-lab watch: left for the next quiet period - what is unfiled is filed then");
 }
 
 #[cfg(test)]

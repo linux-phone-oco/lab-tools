@@ -88,10 +88,10 @@ impl Came {
     /// In plain words, with what to do next.
     pub fn say(&self, name: &str) -> String {
         match self {
-            Came::Booted { release } => format!("booted the test kernel {release}: the phone stays on it until the next reboot (devlab phone reboot returns it to stock; a kernel of the same release installs only after that)"),
+            Came::Booted { release } => format!("booted the test kernel {release}: the phone stays on it until the next reboot (lpoco-lab phone reboot returns it to stock; a kernel of the same release installs only after that)"),
             Came::NotChosen { release } => format!("the bootloader did not choose pmos-{name}: stock {release} runs, and the entry still has its try"),
             Came::StoppedEarly { release } => format!("pmos-{name} was chosen and stopped before it could log anything - is it an EFI image? stock {release} came back"),
-            Came::TimedOut { release } => format!("pmos-{name} ran for five minutes without reaching a system; its log is saved (devlab kernel log); stock {release} came back"),
+            Came::TimedOut { release } => format!("pmos-{name} ran for five minutes without reaching a system; its log is saved (lpoco-lab kernel log); stock {release} came back"),
             Came::Unclear { release } => format!("stock {release} runs and pmos-{name} is gone from the entries - nothing can be read about the try"),
         }
     }
@@ -243,6 +243,6 @@ mod tests {
             release: "s".into()
         }
         .say("wcd")
-        .contains("devlab kernel log"));
+        .contains("lpoco-lab kernel log"));
     }
 }

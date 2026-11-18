@@ -334,7 +334,7 @@ pub fn boot(device: &Device, image: &Path) -> Result<String> {
     } else {
         out.push_str(
             "the slots' flags are not known yet: the phone is not in fastboot to say them \
-             (devlab fastboot state once it is back)",
+             (lpoco-lab fastboot state once it is back)",
         );
     }
     Ok(out)
