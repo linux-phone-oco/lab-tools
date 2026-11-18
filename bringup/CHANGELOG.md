@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.16.0...lpoco-bringup-v0.17.0) - 2026-11-18
+
+### Added
+
+- *(host)* a passing share check records the rule it proved, so the first plan asks no sudo ([#175](https://github.com/linux-phone-oco/lab-tools/pull/175))
+
 ## [0.16.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.15.1...lpoco-bringup-v0.16.0) - 2026-11-18
 
 ### Added
