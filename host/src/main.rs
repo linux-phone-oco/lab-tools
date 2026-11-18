@@ -229,6 +229,7 @@ fn root_commands(
     let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
     let mut cmds = Vec::new();
     let mut rules_changed = false;
+    let mut link_reload: Option<Vec<String>> = None;
     let mut serials = Vec::new();
     for f in files.iter().filter(|f| f.changed()) {
         let base = f.dst.rsplit('/').next().unwrap_or(&f.dst);
@@ -236,10 +237,15 @@ fn root_commands(
             "install",
             "-D",
             "-m",
-            "0644",
+            file_mode(&f.dst),
             &format!("{stage}/{base}"),
             &f.dst,
         ]));
+        if f.dst.starts_with(NM_DIR) {
+            link_reload = Some(LinkManager::NetworkManager.reload());
+        } else if f.dst.starts_with(NETWORKD_DIR) {
+            link_reload = Some(LinkManager::Networkd.reload());
+        }
         if f.dst.starts_with(UDEV_DIR) {
             rules_changed = true;
             serials.extend(f.serials.clone());
@@ -264,6 +270,8 @@ fn root_commands(
             "--subsystem-match=tty",
         ]));
     }
+    // the name is set by udev at the next plug-in; the manager reads its new file now
+    cmds.extend(link_reload);
     let modules_file_changed = files.iter().any(|f| f.dst == MODULES_FILE && f.changed());
     if kernel_modules_present(fs_root) {
         for m in modules
@@ -347,9 +355,12 @@ fn enabled_watchers(st: &State) -> Vec<String> {
 }
 
 fn plan(st: &State) {
-    let files = files_for(&st.devices, st.lab.gadget_group.as_deref(), &|p| {
-        read_file(&st.fs_root, p)
-    });
+    let files = files_for(
+        &st.devices,
+        st.lab.gadget_group.as_deref(),
+        LinkManager::detect(&st.fs_root),
+        &|p| read_file(&st.fs_root, p),
+    );
     let modules = modules_of(&st.devices);
     let stage = stage_dir(&st.home);
     println!(
@@ -403,6 +414,9 @@ fn plan(st: &State) {
     }
     for c in &cmds {
         println!("    {}", c.join(" "));
+    }
+    if !net_links(&st.devices).is_empty() && LinkManager::detect(&st.fs_root).is_none() {
+        println!("\nlink config: no NetworkManager or systemd-networkd runs on this host, so the address of {} is not written; start one and plan again", net_links(&st.devices).iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>().join(", "));
     }
     if Path::new(&format!("{}{KEPT_RULE}", st.fs_root)).exists() {
         println!("\nkept: {KEPT_RULE} is a wide rule; it is kept for now and prepare never removes or edits it");
@@ -481,9 +495,12 @@ fn prepare(st: &State) -> Result<i32, String> {
     for r in &st.reads {
         println!("read: {r}");
     }
-    let files = files_for(&st.devices, st.lab.gadget_group.as_deref(), &|p| {
-        read_file(&st.fs_root, p)
-    });
+    let files = files_for(
+        &st.devices,
+        st.lab.gadget_group.as_deref(),
+        LinkManager::detect(&st.fs_root),
+        &|p| read_file(&st.fs_root, p),
+    );
     let modules = modules_of(&st.devices);
     let stage = stage_dir(&st.home);
     // root installs from here: a fresh folder only this user can write

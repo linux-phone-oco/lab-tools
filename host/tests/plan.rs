@@ -1108,3 +1108,114 @@ fn a_gadgets_usb_network_gets_a_stable_name_by_its_serial_and_nothing_changes_wi
     );
     assert_eq!(host(&l, &["plan"]).status.code(), Some(2));
 }
+
+fn net_gadget(l: &Lab, extra: &str) {
+    declare(
+        l,
+        "google-walleye-lab",
+        &format!(
+            "[host]\n[[host.gadget]]\nserial = \"walleye-first-boot\"\naccess = [\"tty\"]\nnet_name = \"lpoco-walleye\"\n{extra}"
+        ),
+    );
+}
+
+#[test]
+fn a_named_usb_network_gets_the_hosts_link_config_in_the_format_of_the_manager_it_runs_and_only_with_the_verb(
+) {
+    // NetworkManager runs: a keyfile NM will read (mode 0600), reloaded with nmcli
+    let l = lab("link-nm", "");
+    net_gadget(&l, "net_address = \"10.55.0.1/24\"\n");
+    fs::create_dir_all(l.dir.join("fs/run/NetworkManager")).unwrap();
+    let s = out(&host(&l, &["plan"]));
+    assert!(
+        s.contains("/etc/NetworkManager/system-connections/lpoco-walleye.nmconnection"),
+        "{s}"
+    );
+    assert!(s.contains("interface-name=lpoco-walleye"), "{s}");
+    assert!(s.contains("address1=10.55.0.1/24"), "{s}");
+    assert!(s.contains("install -D -m 0600"), "{s}");
+    assert!(s.contains("nmcli connection reload"), "{s}");
+    assert!(!s.contains("/etc/systemd/network"), "{s}");
+    assert!(changes(&l).is_none(), "the plan called the root prefix");
+
+    // only networkd runs: a .network file matching the name
+    let l = lab("link-networkd", "");
+    net_gadget(&l, "net_address = \"10.55.0.1/24\"\n");
+    fs::create_dir_all(l.dir.join("fs/run/systemd/netif")).unwrap();
+    let s = out(&host(&l, &["plan"]));
+    assert!(
+        s.contains("/etc/systemd/network/70-lpoco-walleye.network"),
+        "{s}"
+    );
+    assert!(s.contains("Name=lpoco-walleye"), "{s}");
+    assert!(s.contains("Address=10.55.0.1/24"), "{s}");
+    assert!(s.contains("networkctl reload"), "{s}");
+    assert!(!s.contains("NetworkManager/system-connections"), "{s}");
+    assert!(changes(&l).is_none());
+
+    // neither runs: named, no file planned, not an error
+    let l = lab("link-none", "");
+    net_gadget(&l, "net_address = \"10.55.0.1/24\"\n");
+    let o = host(&l, &["plan"]);
+    let s = out(&o);
+    assert!(o.status.success(), "{s}");
+    assert!(s.contains("no NetworkManager or systemd-networkd"), "{s}");
+    assert!(
+        !s.contains(".nmconnection") && !s.contains(".network"),
+        "{s}"
+    );
+
+    // no address declared: the stable name only, no link file
+    let l = lab("link-noaddr", "");
+    net_gadget(&l, "");
+    fs::create_dir_all(l.dir.join("fs/run/NetworkManager")).unwrap();
+    let s = out(&host(&l, &["plan"]));
+    assert!(!s.contains(".nmconnection"), "{s}");
+
+    // prepare now stages the keyfile with its own mode
+    let l = lab("link-prepare", "");
+    net_gadget(&l, "net_address = \"10.55.0.1/24\"\n");
+    fs::create_dir_all(l.dir.join("fs/run/NetworkManager")).unwrap();
+    let o = host(&l, &["prepare", "now"]);
+    assert!(
+        o.status.success(),
+        "{}{}",
+        out(&o),
+        String::from_utf8_lossy(&o.stderr)
+    );
+    let c = changes(&l).unwrap();
+    assert!(
+        c.contains("install -D -m 0600") && c.contains("lpoco-walleye.nmconnection"),
+        "{c}"
+    );
+    assert!(c.contains("nmcli connection reload"), "{c}");
+
+    // an address that is not an IPv4 CIDR, or one without a net_name, is refused
+    for bad in [
+        "net_address = \"10.55.0.1\"\n",
+        "net_address = \"x/24\"\n",
+        "net_address = \"10.55.0.1/33\"\n",
+        "net_address = \"10.55.0.1/24\\nexec=y\"\n",
+    ] {
+        let l = lab("link-bad", "");
+        net_gadget(&l, bad);
+        let o = host(&l, &["plan"]);
+        assert_eq!(o.status.code(), Some(2), "{bad}");
+        assert!(
+            String::from_utf8_lossy(&o.stderr).contains("net_address"),
+            "{bad}"
+        );
+    }
+    let l = lab("link-noname", "");
+    declare(&l, "google-walleye-lab", "[host]\n[[host.gadget]]\nserial = \"w\"\naccess = [\"tty\"]\nnet_address = \"10.55.0.1/24\"\n");
+    assert_eq!(host(&l, &["plan"]).status.code(), Some(2));
+}
+
+#[test]
+fn one_net_name_declared_twice_by_a_device_is_refused() {
+    let l = lab("link-twice", "");
+    declare(&l, "google-walleye-lab", "[host]\n[[host.gadget]]\nserial = \"a\"\naccess = [\"tty\"]\nnet_name = \"lpoco-x\"\n[[host.gadget]]\nserial = \"b\"\naccess = [\"tty\"]\nnet_name = \"lpoco-x\"\n");
+    let o = host(&l, &["plan"]);
+    assert_eq!(o.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&o.stderr).contains("declared twice"));
+}

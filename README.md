@@ -237,6 +237,12 @@ installs the newest release into a clean root and checks both, and that bringup 
 A top-level `gadget_group = "users"` in `lab.toml` (a group the lab user already holds, so no re-login) adds `GROUP` and `MODE="0660"` to
 every gadget rule line beside `TAG+="uaccess"`: access then does not wait on the seat's ACL, nor need the active seat session.
 `check` says which group and whether the lab user is in it.
+A gadget's `net_name = "lpoco-NAME"` gives its USB network a stable interface name (a udev rule by serial, at the next plug-in);
+`net_address = "10.55.0.1/24"` (IPv4 CIDR, needs `net_name`) adds the host's address on it as a link config for the manager the host
+runs: a NetworkManager keyfile (`/etc/NetworkManager/system-connections/NAME.nmconnection`, mode 0600, `nmcli connection reload`)
+when `/run/NetworkManager` exists, else a systemd-networkd file (`/etc/systemd/network/70-NAME.network`, `networkctl reload`) when
+`/run/systemd/netif` exists; with neither, plan says so and writes nothing. Planned in the diff, written only by `prepare now`.
+The NetworkManager directory is root-only, so the lab user cannot read an existing keyfile: it is planned as new and rewritten at each `prepare now` (same content, one `nmcli connection reload`).
 A device that wants its health watched says `watch = true` in its `[host]` (`devlab-watch@NAME-lab` user unit, enabled and restarted by prepare);
 without it no watcher is enabled for it, and an instance already enabled for a device that does not ask is named in the plan and left running.
 

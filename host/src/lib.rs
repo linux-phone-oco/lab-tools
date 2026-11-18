@@ -92,6 +92,9 @@ pub struct Gadget {
     /// A stable name for the gadget's USB network interface (CDC-NCM and friends), set by udev at plug-in: the kernel's own name follows the port.
     #[serde(default)]
     pub net_name: Option<String>,
+    /// The host's address on that network, as IPv4 CIDR (`10.55.0.1/24`): written as a link config for the host's own network manager, only with the verb. Needs `net_name`.
+    #[serde(default)]
+    pub net_address: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Default, Clone, PartialEq)]
@@ -165,6 +168,21 @@ pub fn parse_device(path: &Path, text: &str) -> Result<Device, String> {
                 )));
             }
         }
+    }
+    for g in &host.gadget {
+        if let Some(a) = &g.net_address {
+            if g.net_name.is_none() {
+                return Err(at("gadget net_address needs a net_name: the link config matches the interface by that name".into()));
+            }
+            valid_cidr(a).map_err(|e| at(format!("gadget net_address {a:?}: {e}")))?;
+        }
+    }
+    let mut names: Vec<&String> = Vec::new();
+    for n in host.gadget.iter().filter_map(|g| g.net_name.as_ref()) {
+        if names.contains(&n) {
+            return Err(at(format!("gadget net_name {n:?} is declared twice")));
+        }
+        names.push(n);
     }
     for m in &host.modules {
         safe_word("module", m).map_err(at)?;
@@ -245,6 +263,88 @@ pub fn rules_text(d: &Device, group: Option<&str>) -> String {
     s
 }
 
+/// An IPv4 address with its prefix, `a.b.c.d/n`, n from 1 to 32: nothing else reaches a link file.
+pub fn valid_cidr(s: &str) -> Result<(), String> {
+    let (a, n) = s.split_once('/').ok_or("not a.b.c.d/n")?;
+    a.parse::<std::net::Ipv4Addr>()
+        .map_err(|_| "not an IPv4 address".to_string())?;
+    match n.parse::<u8>() {
+        Ok(p) if (1..=32).contains(&p) && n.chars().all(|c| c.is_ascii_digit()) => Ok(()),
+        _ => Err("the prefix is not 1 to 32".into()),
+    }
+}
+
+/// The network manager that runs on the host: it decides the format of a link config.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LinkManager {
+    NetworkManager,
+    Networkd,
+}
+
+pub const NM_DIR: &str = "/etc/NetworkManager/system-connections";
+pub const NETWORKD_DIR: &str = "/etc/systemd/network";
+
+impl LinkManager {
+    /// NetworkManager when it runs (`/run/NetworkManager`), else systemd-networkd when it runs (`/run/systemd/netif`), else none.
+    pub fn detect(fs_root: &str) -> Option<LinkManager> {
+        let has = |p: &str| Path::new(&format!("{fs_root}{p}")).is_dir();
+        if has("/run/NetworkManager") {
+            Some(LinkManager::NetworkManager)
+        } else if has("/run/systemd/netif") {
+            Some(LinkManager::Networkd)
+        } else {
+            None
+        }
+    }
+
+    pub fn file_for(self, name: &str) -> String {
+        match self {
+            LinkManager::NetworkManager => format!("{NM_DIR}/{name}.nmconnection"),
+            LinkManager::Networkd => format!("{NETWORKD_DIR}/70-{name}.network"),
+        }
+    }
+
+    pub fn reload(self) -> Vec<String> {
+        let v: &[&str] = match self {
+            LinkManager::NetworkManager => &["nmcli", "connection", "reload"],
+            LinkManager::Networkd => &["networkctl", "reload"],
+        };
+        v.iter().map(|x| x.to_string()).collect()
+    }
+
+    pub fn text(self, name: &str, address: &str) -> String {
+        match self {
+            LinkManager::NetworkManager => format!(
+                "# lpoco host: the host's address on {name} - written by `lpoco host prepare now` from its device.toml; edit the manifest, not this file\n[connection]\nid={name}\ntype=ethernet\ninterface-name={name}\nautoconnect=true\n\n[ipv4]\nmethod=manual\naddress1={address}\n\n[ipv6]\nmethod=disabled\n"
+            ),
+            LinkManager::Networkd => format!(
+                "# lpoco host: the host's address on {name} - written by `lpoco host prepare now` from its device.toml; edit the manifest, not this file\n[Match]\nName={name}\n\n[Network]\nAddress={address}\n"
+            ),
+        }
+    }
+}
+
+/// NetworkManager refuses a keyfile that is not root's and private; every other file we write is world-readable.
+pub fn file_mode(dst: &str) -> &'static str {
+    if dst.starts_with(NM_DIR) {
+        "0600"
+    } else {
+        "0644"
+    }
+}
+
+/// The gadgets that declare an address, as (interface name, address).
+pub fn net_links(devices: &[Device]) -> Vec<(String, String)> {
+    let mut v: Vec<(String, String)> = devices
+        .iter()
+        .flat_map(|d| &d.host.gadget)
+        .filter_map(|g| Some((g.net_name.clone()?, g.net_address.clone()?)))
+        .collect();
+    v.sort();
+    v.dedup();
+    v
+}
+
 pub fn modules_text(modules: &[String]) -> String {
     let mut s = String::from("# lpoco host: modules the devices' gadget functions need - written by `lpoco host prepare now`\n");
     for m in modules {
@@ -290,6 +390,7 @@ impl FileChange {
 pub fn files_for(
     devices: &[Device],
     group: Option<&str>,
+    manager: Option<LinkManager>,
     read: &dyn Fn(&str) -> Option<String>,
 ) -> Vec<FileChange> {
     let mut files = Vec::new();
@@ -308,6 +409,17 @@ pub fn files_for(
             if !modules.contains(m) {
                 modules.push(m.clone());
             }
+        }
+    }
+    if let Some(m) = manager {
+        for (name, address) in net_links(devices) {
+            let dst = m.file_for(&name);
+            files.push(FileChange {
+                existing: read(&dst),
+                content: m.text(&name, &address),
+                serials: vec![],
+                dst,
+            });
         }
     }
     if !modules.is_empty() {
@@ -647,6 +759,7 @@ mod one_per_codename_tests {
             serial: s.into(),
             access: vec![Access::Block],
             net_name: None,
+            net_address: None,
         });
         Device {
             path: path.into(),
