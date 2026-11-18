@@ -282,3 +282,55 @@ fn the_window_is_ready_before_the_bind_and_the_script_is_valid_shell() {
         .unwrap()
         .success());
 }
+
+#[test]
+fn an_ffs_console_swaps_the_kernel_acm_for_the_helper_that_binds_the_udc() {
+    let d = tmp("ffs");
+    let g = format!("{GADGET}console = \"ffs\"\nrndis = true\n");
+    let o = init(&["--device", &manifest(&d, &g)]);
+    assert!(o.status.success(), "{}", text(&o.stderr));
+    let s = text(&o.stdout);
+    assert!(
+        !s.contains("acm.usb0") && !s.contains("ttyGS0"),
+        "no kernel acm function: {s}"
+    );
+    for part in [
+        "mkdir -p $G/functions/ffs.acm",
+        "ln -s $G/functions/ffs.acm $G/configs/c.1/",
+        "ln -s $G/functions/ffs.acm $G/configs/c.2/",
+        "mount -t functionfs acm /dev/ffs",
+        "/bin/ffs-acm &",
+        "ffs-acm missing",
+    ] {
+        assert!(s.contains(part), "missing {part}: {s}");
+    }
+    assert!(
+        !s.contains("> $G/UDC"),
+        "the helper binds, after it wrote ep0; the init does not: {s}"
+    );
+    let at = |p: &str| s.find(p).unwrap_or_else(|| panic!("missing {p}: {s}"));
+    assert!(at("mount -t functionfs") < at("/bin/ffs-acm &"));
+    assert!(at("ln -s $G/functions/ffs.acm $G/configs/c.1/") < at("/bin/ffs-acm &"));
+    let f = d.join("init");
+    fs::write(&f, &s).unwrap();
+    assert!(Command::new("sh")
+        .arg("-n")
+        .arg(&f)
+        .status()
+        .unwrap()
+        .success());
+}
+
+#[test]
+fn the_default_console_is_the_kernel_acm_and_an_unknown_one_is_refused() {
+    let d = tmp("console");
+    let s = text(&init(&["--device", &manifest(&d, GADGET)]).stdout);
+    assert!(
+        s.contains("functions/acm.usb0") && !s.contains("ffs"),
+        "{s}"
+    );
+    let g = format!("{GADGET}console = \"telepathy\"\n");
+    let o = init(&["--device", &manifest(&d, &g)]);
+    assert!(!o.status.success());
+    assert!(text(&o.stderr).contains("console"), "{}", text(&o.stderr));
+}

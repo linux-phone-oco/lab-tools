@@ -724,12 +724,29 @@
           "description": "a read-only mass-storage LUN the host can read: the init keeps the phone's kernel log and uptime written into it (a log window when the phone has no network yet)",
           "type": "boolean",
           "default": false
+        },
+        "console": {
+          "description": "the serial console: `acm` (the kernel's ACM function, default) or `ffs` (the `ffs-acm` helper over FunctionFS: one interface without CDC descriptors, for kernels whose ACM function is missing; the helper must be in the ramdisk as /bin/ffs-acm and it binds the UDC itself)",
+          "default": "acm",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Console"
+            }
+          ]
         }
       },
       "additionalProperties": false,
       "required": [
         "serial",
         "product"
+      ]
+    },
+    "Console": {
+      "description": "Which serial console the bring-up init raises.",
+      "type": "string",
+      "enum": [
+        "acm",
+        "ffs"
       ]
     },
     "Tools": {

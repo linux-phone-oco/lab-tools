@@ -3,7 +3,7 @@
 //! init files each phone's lab kept for itself (walleye carried about twenty variants).
 
 use crate::initramfs::{rewrite_net, DEFAULT_NET};
-use lpoco_manifest::BootGadget;
+use lpoco_manifest::{BootGadget, Console};
 
 const TEMPLATE: &str = include_str!("init.sh");
 
@@ -14,9 +14,9 @@ const FILES: &[(&str, &str, u32)] = &[
 ];
 
 const RNDIS: &str = "mkdir -p $G/functions/rndis.usb0 $G/configs/c.2/strings/0x409
-echo \"RNDIS + ACM\" > $G/configs/c.2/strings/0x409/configuration
+echo \"RNDIS + @CONSOLENAME@\" > $G/configs/c.2/strings/0x409/configuration
 ln -s $G/functions/rndis.usb0 $G/configs/c.2/
-ln -s $G/functions/acm.usb0 $G/configs/c.2/
+ln -s $G/functions/@CONSOLE@ $G/configs/c.2/
 ";
 
 /// The log window's function: a 2 MiB read-only LUN in memory, in the first configuration.
@@ -41,6 +41,32 @@ const WINDOW_LOOP: &str = "( while :; do
 done ) &
 ";
 
+/// The kernel's ACM console: bind the controller the init waited for.
+const BIND_ACM: &str = "if [ -z \"$UDC\" ]; then
+    say \"NO UDC after 60 s: the USB controller did not probe\"
+else
+    echo \"$UDC\" > $G/UDC && say \"gadget bound to $UDC\" || say \"binding $UDC failed\"
+fi
+";
+
+/// The FunctionFS console: mount the function, start the helper, which writes the descriptors to ep0 and only then binds the UDC (so the init never does).
+const BIND_FFS: &str = "mkdir -p /dev/ffs
+if ! mount -t functionfs acm /dev/ffs; then
+    say \"functionfs mount failed: the gadget is not bound\"
+elif [ -x /bin/ffs-acm ]; then
+    /bin/ffs-acm &
+    say \"ffs-acm started: it binds the UDC after its descriptors\"
+else
+    say \"ffs-acm missing: /bin/ffs-acm is not in the ramdisk, the gadget is not bound\"
+fi
+";
+
+/// A shell on the kernel's ACM console for as long as the phone runs (the FunctionFS helper bridges its own).
+const SHELL_ACM: &str = "if [ -c /dev/ttyGS0 ]; then
+    ( while :; do setsid sh -c 'exec sh </dev/ttyGS0 >/dev/ttyGS0 2>&1'; sleep 1; done ) &
+fi
+";
+
 /// The init text for this gadget at 172.16.`net`.1. The address is rewritten in the template first, the
 /// device's own words after, so a serial that looks like an address comes out as written.
 pub fn make(g: &BootGadget, net: u8) -> Result<String, String> {
@@ -50,10 +76,21 @@ pub fn make(g: &BootGadget, net: u8) -> Result<String, String> {
         let bytes = rewrite_net(TEMPLATE.as_bytes().to_vec(), net, "init")?;
         String::from_utf8(bytes).map_err(|e| e.to_string())?
     };
-    Ok(template
-        .replace("@RNDIS@\n", if g.rndis { RNDIS } else { "" })
+    let ffs = g.console == Console::Ffs;
+    let text = template
+        .replace("@BIND@\n", if ffs { BIND_FFS } else { BIND_ACM })
+        .replace("@SHELL@\n", if ffs { "" } else { SHELL_ACM })
+        .replace("@RNDIS@\n", if g.rndis { RNDIS } else { "" });
+    let (func, name) = if ffs {
+        ("ffs.acm", "FFS-ACM")
+    } else {
+        ("acm.usb0", "ACM")
+    };
+    Ok(text
         .replace("@WINDOW@\n", if g.window { WINDOW } else { "" })
         .replace("@WINDOWLOOP@\n", if g.window { WINDOW_LOOP } else { "" })
+        .replace("@CONSOLE@", func)
+        .replace("@CONSOLENAME@", name)
         .replace("@LABEL@", g.label.as_str())
         .replace("@SERIAL@", g.serial.as_str())
         .replace("@MANUFACTURER@", g.manufacturer.as_str())

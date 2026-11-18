@@ -60,6 +60,18 @@ pub struct BootGadget {
     /// a read-only mass-storage LUN the host can read: the init keeps the phone's kernel log and uptime written into it (a log window when the phone has no network yet)
     #[serde(default)]
     pub window: bool,
+    /// the serial console: `acm` (the kernel's ACM function, default) or `ffs` (the `ffs-acm` helper over FunctionFS: one interface without CDC descriptors, for kernels whose ACM function is missing; the helper must be in the ramdisk as /bin/ffs-acm and it binds the UDC itself)
+    #[serde(default)]
+    pub console: Console,
+}
+
+/// Which serial console the bring-up init raises.
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum Console {
+    #[default]
+    Acm,
+    Ffs,
 }
 
 /// A value that goes inside double quotes in a script: not empty, nothing that would end or expand them.
