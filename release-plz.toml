@@ -5,6 +5,10 @@ publish = false
 git_only = true
 git_tag_enable = true
 git_release_enable = false
+# release-plz counts every commit since a tag as a change, its own 'chore: release' commit too, and
+# would open the next release PR for ever. Only these kinds release; chore (release commits among
+# them) does not. Proof: release_plz_ignores_its_own_release_commits.
+release_commits = '^(feat|fix|perf|refactor|docs|test|build|ci)(\([^)]*\))?!?:'
 
 # the lpoco family is released together: one version for the dispatcher and every lpoco-* program
 # (version_group), so `lpoco NAME` can refuse a program of another version. Tags stay per package:

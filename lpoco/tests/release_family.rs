@@ -139,3 +139,45 @@ fn the_workflow_reads_the_pattern_checks_commits_and_stops() {
         "the changelog rule is not run"
     );
 }
+
+/// release-plz counts every commit since the last tag as a change; its own release commit would
+/// open the next release PR at once, for ever. `release_commits` names the kinds that release.
+#[test]
+fn release_plz_ignores_its_own_release_commits() {
+    let toml = read("release-plz.toml");
+    let line = toml
+        .lines()
+        .find_map(|l| l.trim().strip_prefix("release_commits"))
+        .expect(
+            "release-plz.toml has no release_commits: its release commit opens the next release PR",
+        );
+    let pattern = line
+        .trim_start()
+        .strip_prefix('=')
+        .unwrap()
+        .trim()
+        .trim_matches('\'');
+    let re = regex::Regex::new(pattern).unwrap();
+    for refused in [
+        "chore: release v0.3.6 (#117)",
+        "chore: release v0.3.7",
+        "chore(release): v0.3.7",
+    ] {
+        assert!(
+            !re.is_match(refused),
+            "a release commit releases: {refused}"
+        );
+    }
+    for released in [
+        "feat: x",
+        "fix(host): x",
+        "perf: x",
+        "refactor!: x",
+        "docs: x",
+        "build: x",
+        "ci: x",
+        "test: x",
+    ] {
+        assert!(re.is_match(released), "a change must release: {released}");
+    }
+}
