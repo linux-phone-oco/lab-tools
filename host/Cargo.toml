@@ -1,7 +1,7 @@
 [package]
 name = "lpoco-host"
 # the family is released together: one version with lpoco and every lpoco-* program (release-plz.toml, version_group)
-version = "0.18.0"
+version = "0.18.1"
 edition = "2021"
 description = "lpoco host: the lab host prepared from the lab's and each device's declarations - udev access for gadget serials, modules, the host's tools at their pins"
 license = "MIT OR Apache-2.0"
