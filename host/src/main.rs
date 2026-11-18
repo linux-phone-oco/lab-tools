@@ -20,7 +20,7 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 fn main() {
     let r = Contract::parse_and_lint(OnProblems::FailOnError);
     if Contract::HELP.get_from(&r).unwrap_or(false) {
-        print!("{}", cli::usage("lpoco-host", "The lab host prepared from declarations (run as lpoco host). Commands: plan (the default; changes nothing on the host, only fetches each device clone), prepare now (changes only what differs), check (reads)."));
+        print!("{}", cli::usage("lpoco-host", "The lab host prepared from declarations (run as lpoco host). Commands: plan (the default; changes nothing on the host, only fetches each declaration's clone), prepare now (changes only what differs), check (reads)."));
         return;
     }
     if Contract::VERSION.get_from(&r).unwrap_or(false) {
@@ -314,7 +314,9 @@ fn plan(st: &State) {
     let files = files_for(&st.devices, &|p| read_file(&st.fs_root, p));
     let modules = modules_of(&st.devices);
     let stage = stage_dir(&st.home);
-    println!("lpoco host plan (nothing on the host is changed; each device clone is fetched)");
+    println!(
+        "lpoco host plan (nothing on the host is changed; each declaration's clone is fetched)"
+    );
     for r in &st.reads {
         println!("read: {r}");
     }

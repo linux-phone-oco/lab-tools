@@ -108,12 +108,6 @@ pub struct Device {
     pub fastboot_serial: Option<String>,
 }
 
-pub fn read_lab(path: &Path) -> Result<Lab, String> {
-    let text = std::fs::read_to_string(path)
-        .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
-    parse_lab(path, &text)
-}
-
 /// A lab declaration already read: `path` names it, `text` is what it says (the working file, or origin/main's).
 pub fn parse_lab(path: &Path, text: &str) -> Result<Lab, String> {
     let lab: Lab = toml::from_str(text).map_err(|e| format!("{}: {e}", path.display()))?;
