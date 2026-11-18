@@ -8,6 +8,7 @@
 //!   lpoco-health conditions                  what this phone finds out about itself right now
 //!   lpoco-health off TEST --reason WORDS     switch a test off, with a reason (--by WHO, or LPOCO_HEALTH_BY)
 //!   lpoco-health on TEST                     switch it on again
+//!   lpoco-health awake [--once]             hold the kernel wake lock lpoco-awake (the lab phone's keep-awake; --once: one step)
 //!   lpoco-health suspend plan|cycle         one controlled suspend and wake, counted (--seconds N, --settle N; the way back is the manifest's)
 
 use argenv_resolve::*;
@@ -22,6 +23,7 @@ pub enum Command {
     Off,
     On,
     Suspend,
+    Awake,
 }
 
 impl Command {
@@ -33,6 +35,7 @@ impl Command {
         "off",
         "on",
         "suspend",
+        "awake",
     ];
 }
 
@@ -46,6 +49,7 @@ impl FromRaw for Command {
             "off" => Command::Off,
             "on" => Command::On,
             "suspend" => Command::Suspend,
+            "awake" => Command::Awake,
             _ => return None,
         })
     }
@@ -115,6 +119,16 @@ contract! {
         default: Some(2),
         arg: Some(Arg { value_name: "N", ..Arg::long("settle") }),
         summary: "suspend: seconds to let the phone settle after waking before it is counted again (default 2).",
+        ..Input::EMPTY
+    };
+
+    ONCE: bool, Command = Input {
+        key: "once",
+        ty: Type::Bool,
+        default: Some(false),
+        subcommands: &[Command::Awake],
+        arg: Some(Arg::long("once")),
+        summary: "awake: take one step (hold or release the wake lock as the phone stands) and stop, not every 5 s.",
         ..Input::EMPTY
     };
 

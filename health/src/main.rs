@@ -17,6 +17,7 @@
 //!                           what a check computes, it asks of this one binary, not of awk
 //!   lpoco-health data plan|spent ...   the month's mobile data: what a check may spend, what it spent (src/data.rs)
 
+mod awake;
 mod cli;
 mod data;
 mod suspend;
@@ -431,7 +432,7 @@ fn main() {
     }
     let r = cli::Contract::parse_and_lint(OnProblems::FailOnError);
     if cli::Contract::HELP.get_from(&r).unwrap_or(false) {
-        print!("{}", cli::usage("lpoco-health", "The phone's health, measured on the phone. Commands: (none) run every check, latest, tone make|find, data plan|spent, suspend plan|cycle."));
+        print!("{}", cli::usage("lpoco-health", "The phone's health, measured on the phone. Commands: (none) run every check, latest, tone make|find, data plan|spent, suspend plan|cycle, awake."));
         return;
     }
     if cli::Contract::VERSION.get_from(&r).unwrap_or(false) {
@@ -487,6 +488,14 @@ fn main() {
                 }
             }
             return;
+        }
+        Some(cli::Command::Awake) => {
+            let root: std::path::PathBuf =
+                cli::Contract::ROOT.get_from(&r).unwrap_or_default().into();
+            std::process::exit(awake::run(
+                &root,
+                cli::Contract::ONCE.get_from(&r).unwrap_or(false),
+            ));
         }
         Some(cli::Command::Suspend) => {
             let ask = suspend::Ask {

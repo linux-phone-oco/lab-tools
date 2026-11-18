@@ -1,0 +1,11 @@
+[Unit]
+Description=Awake always (the lab phone must not idle-suspend nor drop its USB link)
+
+[Service]
+ExecStart=/usr/bin/lpoco-health awake
+ExecStopPost=-/bin/sh -c 'echo lpoco-awake > /sys/power/wake_unlock'
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target
