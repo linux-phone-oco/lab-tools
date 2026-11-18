@@ -19,6 +19,7 @@
 
 mod cli;
 mod data;
+mod suspend;
 mod switches;
 mod tone;
 
@@ -430,7 +431,7 @@ fn main() {
     }
     let r = cli::Contract::parse_and_lint(OnProblems::FailOnError);
     if cli::Contract::HELP.get_from(&r).unwrap_or(false) {
-        print!("{}", cli::usage("lpoco-health", "The phone's health, measured on the phone. Commands: (none) run every check, latest, tone make|find, data plan|spent."));
+        print!("{}", cli::usage("lpoco-health", "The phone's health, measured on the phone. Commands: (none) run every check, latest, tone make|find, data plan|spent, suspend plan|cycle."));
         return;
     }
     if cli::Contract::VERSION.get_from(&r).unwrap_or(false) {
@@ -486,6 +487,28 @@ fn main() {
                 }
             }
             return;
+        }
+        Some(cli::Command::Suspend) => {
+            let ask = suspend::Ask {
+                root: cli::Contract::ROOT.get_from(&r).unwrap_or_default().into(),
+                seconds: cli::Contract::SECONDS.get_from(&r).unwrap_or(15),
+                settle: cli::Contract::SETTLE.get_from(&r).unwrap_or(2),
+            };
+            let (code, report) = match cli::Contract::VERB.get_from(&r).as_deref() {
+                Some("plan") => suspend::plan(&ask),
+                Some("cycle") => suspend::cycle(&ask),
+                _ => {
+                    eprintln!("lpoco-health: suspend what? plan or cycle");
+                    std::process::exit(2);
+                }
+            };
+            println!("{report}");
+            if let Some(why) = report["refused"].as_array() {
+                for w in why {
+                    eprintln!("lpoco-health: refused: {}", w.as_str().unwrap_or_default());
+                }
+            }
+            std::process::exit(code);
         }
         Some(cli::Command::Run) | None => {}
     }
