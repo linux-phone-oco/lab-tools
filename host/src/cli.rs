@@ -92,6 +92,14 @@ contract! {
         ..Input::EMPTY
     };
 
+    USER: String = Input {
+        key: "user",
+        ty: Type::String,
+        env: Some(Env::new("USER")),
+        summary: "The lab user, whom check looks for in the gadget group.",
+        ..Input::EMPTY
+    };
+
     PATH: String = Input {
         key: "path",
         ty: Type::String,

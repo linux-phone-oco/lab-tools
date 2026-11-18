@@ -62,6 +62,8 @@ impl Devices {
 pub struct Lab {
     pub devices: Option<Devices>,
     pub root: Option<String>,
+    /// A group the lab user already holds: each gadget node gets it and mode 0660, so access does not wait on the seat's uaccess ACL.
+    pub gadget_group: Option<String>,
     #[serde(default)]
     pub tools: BTreeMap<String, ToolPin>,
 }
@@ -185,8 +187,15 @@ pub fn pin_matches(pin: &str, version: &str) -> bool {
     p.len() <= 3 && p.len() <= v.len() && p.iter().zip(&v).all(|(a, b)| !a.is_empty() && a == b)
 }
 
+/// `, GROUP="g", MODE="0660"` when the lab declares a gadget group, else nothing.
+fn group_part(group: Option<&str>) -> String {
+    group
+        .map(|g| format!(", GROUP=\"{g}\", MODE=\"0660\""))
+        .unwrap_or_default()
+}
+
 /// The udev rule file of one device: one line per access kind of each gadget.
-pub fn rules_text(d: &Device) -> String {
+pub fn rules_text(d: &Device, group: Option<&str>) -> String {
     let mut s = format!(
         "# lpoco host: {} - written by `lpoco host prepare now` from its device.toml; edit the manifest, not this file\n",
         d.codename
@@ -194,9 +203,10 @@ pub fn rules_text(d: &Device) -> String {
     for g in &d.host.gadget {
         for a in &g.access {
             s += &format!(
-                "ACTION!=\"remove\", SUBSYSTEM==\"{}\", ATTRS{{serial}}==\"{}\", TAG+=\"uaccess\"\n",
+                "ACTION!=\"remove\", SUBSYSTEM==\"{}\", ATTRS{{serial}}==\"{}\", TAG+=\"uaccess\"{}\n",
                 a.subsystem(),
-                g.serial
+                g.serial,
+                group_part(group)
             );
         }
     }
@@ -245,7 +255,11 @@ impl FileChange {
     }
 }
 
-pub fn files_for(devices: &[Device], read: &dyn Fn(&str) -> Option<String>) -> Vec<FileChange> {
+pub fn files_for(
+    devices: &[Device],
+    group: Option<&str>,
+    read: &dyn Fn(&str) -> Option<String>,
+) -> Vec<FileChange> {
     let mut files = Vec::new();
     let mut modules: Vec<String> = Vec::new();
     for d in devices {
@@ -253,7 +267,7 @@ pub fn files_for(devices: &[Device], read: &dyn Fn(&str) -> Option<String>) -> V
             let dst = format!("{UDEV_DIR}/70-lpoco-{}.rules", d.codename);
             files.push(FileChange {
                 existing: read(&dst),
-                content: rules_text(d),
+                content: rules_text(d, group),
                 serials: d.host.gadget.iter().map(|g| g.serial.clone()).collect(),
                 dst,
             });
@@ -592,6 +606,9 @@ fn full_version(v: &str) -> bool {
 }
 
 fn validate_lab(lab: &Lab) -> Result<(), String> {
+    if let Some(g) = &lab.gadget_group {
+        safe_word("gadget_group", g)?;
+    }
     for (name, pin) in &lab.tools {
         safe_word("tool name", name)?;
         match pin {
@@ -629,4 +646,48 @@ fn validate_lab(lab: &Lab) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// Is `user` in `group`: named in its member list in /etc/group, or with the group as primary gid in /etc/passwd?
+/// `None` when the group is not there; an empty user is in no group.
+pub fn group_has_member(
+    etc_group: &str,
+    etc_passwd: &str,
+    group: &str,
+    user: &str,
+) -> Option<bool> {
+    for line in etc_group.lines() {
+        let mut f = line.split(':');
+        if f.next() == Some(group) {
+            if user.is_empty() {
+                return Some(false);
+            }
+            let gid = f.nth(1).unwrap_or("");
+            let members = f.next().unwrap_or("");
+            let primary = etc_passwd.lines().any(|p| {
+                let p: Vec<&str> = p.split(':').collect();
+                p.first() == Some(&user) && p.get(3).is_some_and(|g| !gid.is_empty() && *g == gid)
+            });
+            return Some(primary || members.split(',').any(|m| m == user));
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod group_tests {
+    use super::group_has_member as has;
+    const G: &str = "users:x:982:alice,mll\nusers2:x:983:bob\nempty:x:984:\n";
+    const P: &str = "carol:x:1001:982::/home/carol:/bin/sh\n";
+
+    #[test]
+    fn membership_by_list_by_primary_gid_and_never_by_prefix_or_empty() {
+        assert_eq!(has(G, P, "users", "mll"), Some(true));
+        assert_eq!(has(G, P, "users", "bob"), Some(false));
+        assert_eq!(has(G, P, "users", "carol"), Some(true));
+        assert_eq!(has(G, P, "users", ""), Some(false));
+        assert_eq!(has(G, P, "empty", ""), Some(false));
+        assert_eq!(has(G, P, "empty", "mll"), Some(false));
+        assert_eq!(has(G, P, "nope", "mll"), None);
+    }
 }

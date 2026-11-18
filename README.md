@@ -234,6 +234,9 @@ installs the newest release into a clean root and checks both, and that bringup 
 `lab.toml` (`--lab FILE` / `LPOCO_LAB`; default `~/Projects/lab-machine/lab.toml`: `devices` a glob or a list of globs, default
 `~/Projects/linux-phone-oco/*/device.toml`; `root` a prefix; `[tools]` each host tool at its pin) and each device's
 `device.toml` `[host]` (`modules`, and a `[[host.gadget]]` per `serial` with `access = ["block", "tty"]`).
+A top-level `gadget_group = "users"` in `lab.toml` (a group the lab user already holds, so no re-login) adds `GROUP` and `MODE="0660"` to
+every gadget rule line beside `TAG+="uaccess"`: access then does not wait on the seat's ACL, nor need the active seat session.
+`check` says which group and whether the lab user is in it.
 
     lpoco host [plan]        a diff per file and the exact root commands; changes nothing
     lpoco host prepare now   write /etc/udev/rules.d/70-lpoco-CODENAME.rules and /etc/modules-load.d/lpoco.conf,
