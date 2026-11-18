@@ -3,7 +3,15 @@
 //! sentences stay for later slices, and the aliases keep working.
 
 const SUBCOMMANDS: [&str; 9] = [
-    "flash", "provision", "gather", "suite", "fastboot", "kernel", "phone", "mcp", "watch",
+    "flash",
+    "provision",
+    "gather",
+    "suite",
+    "fastboot",
+    "kernel",
+    "phone",
+    "mcp",
+    "watch",
 ];
 const LATER: [&str; 1] = ["guard.rs"];
 

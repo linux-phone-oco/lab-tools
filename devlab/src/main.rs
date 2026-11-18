@@ -571,30 +571,28 @@ fn main() -> Result<()> {
         }
         Cmd::Mcp => mcp::serve(dev)?,
         Cmd::Watch => watch::watch(&dev, &here)?,
-        Cmd::Fastboot { action } => {
-            match action {
-                FastbootCmd::State => print!("{}", fastboot::state(&dev)?),
-                FastbootCmd::Getvar { name } => println!("{}", fastboot::getvar(&dev, &name)?),
-                FastbootCmd::Boot { now, image } => {
-                    if now != "now" {
-                        bail!("usage: lpoco-lab fastboot boot now IMAGE - it boots the phone");
-                    }
-                    println!("{}", fastboot::boot(&dev, &image)?);
+        Cmd::Fastboot { action } => match action {
+            FastbootCmd::State => print!("{}", fastboot::state(&dev)?),
+            FastbootCmd::Getvar { name } => println!("{}", fastboot::getvar(&dev, &name)?),
+            FastbootCmd::Boot { now, image } => {
+                if now != "now" {
+                    bail!("usage: lpoco-lab fastboot boot now IMAGE - it boots the phone");
                 }
-                FastbootCmd::Reboot { now, bootloader } => {
-                    if now != "now" {
-                        bail!("usage: lpoco-lab fastboot reboot now [--bootloader] - it reboots the phone");
-                    }
-                    println!("{}", fastboot::reboot(&dev, bootloader)?);
-                }
-                FastbootCmd::SetActive { now, slot } => {
-                    if now != "now" {
-                        bail!("usage: lpoco-lab fastboot set-active now SLOT - it changes the phone's active slot");
-                    }
-                    println!("{}", fastboot::set_active(&dev, &slot)?);
-                }
+                println!("{}", fastboot::boot(&dev, &image)?);
             }
-        }
+            FastbootCmd::Reboot { now, bootloader } => {
+                if now != "now" {
+                    bail!("usage: lpoco-lab fastboot reboot now [--bootloader] - it reboots the phone");
+                }
+                println!("{}", fastboot::reboot(&dev, bootloader)?);
+            }
+            FastbootCmd::SetActive { now, slot } => {
+                if now != "now" {
+                    bail!("usage: lpoco-lab fastboot set-active now SLOT - it changes the phone's active slot");
+                }
+                println!("{}", fastboot::set_active(&dev, &slot)?);
+            }
+        },
         Cmd::Keeper { action } => match action {
             KeeperCmd::Take { name } => println!("{}", keeper::take(&dev, &name)?),
             KeeperCmd::Renew { name } => println!("{}", keeper::renew(&dev, &name)?),
