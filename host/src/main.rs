@@ -40,6 +40,7 @@ fn main() {
 /// Everything the verbs need, read once.
 struct State {
     home: String,
+    user: Option<String>,
     path: String,
     root: Vec<String>,
     devices: Vec<Device>,
@@ -83,6 +84,7 @@ fn load(r: &Resolution) -> Result<State, String> {
     Ok(State {
         path: Contract::PATH.get_from(r).unwrap_or_default(),
         fs_root: Contract::FS_ROOT.get_from(r).unwrap_or_default(),
+        user: Contract::USER.get_from(r),
         home,
         root: root.split_whitespace().map(String::from).collect(),
         devices,
@@ -311,7 +313,9 @@ fn tool_plans(st: &State) -> Vec<ToolPlan> {
 }
 
 fn plan(st: &State) {
-    let files = files_for(&st.devices, &|p| read_file(&st.fs_root, p));
+    let files = files_for(&st.devices, st.lab.gadget_group.as_deref(), &|p| {
+        read_file(&st.fs_root, p)
+    });
     let modules = modules_of(&st.devices);
     let stage = stage_dir(&st.home);
     println!(
@@ -414,7 +418,9 @@ fn prepare(st: &State) -> Result<i32, String> {
     for r in &st.reads {
         println!("read: {r}");
     }
-    let files = files_for(&st.devices, &|p| read_file(&st.fs_root, p));
+    let files = files_for(&st.devices, st.lab.gadget_group.as_deref(), &|p| {
+        read_file(&st.fs_root, p)
+    });
     let modules = modules_of(&st.devices);
     let stage = stage_dir(&st.home);
     // root installs from here: a fresh folder only this user can write
@@ -513,6 +519,31 @@ fn check(st: &State) -> Result<i32, String> {
         println!("read: {r}");
     }
     let mut bad = 0;
+    if let Some(g) = &st.lab.gadget_group {
+        let user = st.user.as_deref().unwrap_or("");
+        match group_has_member(
+            &read_file(&st.fs_root, "/etc/group").unwrap_or_default(),
+            &read_file(&st.fs_root, "/etc/passwd").unwrap_or_default(),
+            g,
+            user,
+        ) {
+            Some(true) => println!("gadget group {g}: ok, {user} is in it (per /etc/group)"),
+            Some(false) => {
+                bad += 1;
+                if user.is_empty() {
+                    println!(
+                        "gadget group {g}: FAIL, USER is not set, so who is in it is not known"
+                    );
+                } else {
+                    println!("gadget group {g}: FAIL, {user} is not in it");
+                }
+            }
+            None => {
+                bad += 1;
+                println!("gadget group {g}: FAIL, no such group");
+            }
+        }
+    }
     if Path::new(&format!("{}{KEPT_RULE}", st.fs_root)).exists() {
         println!("kept: {KEPT_RULE} is a wide rule, kept for now");
     }

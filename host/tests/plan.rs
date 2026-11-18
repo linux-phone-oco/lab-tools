@@ -549,3 +549,84 @@ fn reads_lab_toml_from_origin_main_and_ignores_a_working_file_that_differs() {
         "the plan names the rev it read: {s}"
     );
 }
+
+fn host_as(l: &Lab, user: &str, args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_lpoco-host"))
+        .args(args)
+        .env_clear()
+        .env("HOME", l.dir.join("home"))
+        .env("USER", user)
+        .env("PATH", l.dir.join("stubs"))
+        .env("LPOCO_LAB", l.dir.join("lab.toml"))
+        .env("LPOCO_ROOT", l.dir.join("stubs/root"))
+        .env("LPOCO_FS_ROOT", l.dir.join("fs"))
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn the_gadget_group_from_lab_toml_goes_into_each_rule_line_beside_uaccess() {
+    let l = lab("group-rule", "gadget_group = \"users\"\n");
+    let s = out(&host(&l, &["plan"]));
+    for kind in ["block", "tty"] {
+        assert!(
+            s.contains(&format!(
+                "ACTION!=\"remove\", SUBSYSTEM==\"{kind}\", ATTRS{{serial}}==\"walleye-first-boot\", TAG+=\"uaccess\", GROUP=\"users\", MODE=\"0660\""
+            )),
+            "{s}"
+        );
+    }
+}
+
+#[test]
+fn check_says_which_group_and_that_the_lab_user_is_in_it() {
+    let l = lab("group-check", "gadget_group = \"users\"\n");
+    fs::create_dir_all(l.dir.join("fs/etc")).unwrap();
+    fs::write(
+        l.dir.join("fs/etc/group"),
+        "uucp:x:14:\nusers:x:982:alice,mll\n",
+    )
+    .unwrap();
+    let s = out(&host_as(&l, "mll", &["check"]));
+    assert!(s.contains("gadget group users: ok, mll is in it"), "{s}");
+    let o = host_as(&l, "bob", &["check"]);
+    let s = out(&o);
+    assert!(
+        s.contains("gadget group users: FAIL, bob is not in it"),
+        "{s}"
+    );
+    assert!(!o.status.success(), "{s}");
+    fs::write(l.dir.join("fs/etc/group"), "uucp:x:14:\n").unwrap();
+    let s = out(&host_as(&l, "mll", &["check"]));
+    assert!(s.contains("gadget group users: FAIL, no such group"), "{s}");
+}
+
+#[test]
+fn a_gadget_group_that_would_inject_into_a_rule_is_refused() {
+    let l = lab("group-inject", "gadget_group = \"users\\\", RUN+=\\\"x\"\n");
+    let o = host(&l, &["plan"]);
+    assert!(!o.status.success());
+    assert!(
+        String::from_utf8_lossy(&o.stderr).contains("gadget_group"),
+        "{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+}
+
+#[test]
+fn check_counts_the_primary_group_and_refuses_an_unset_user() {
+    let l = lab("group-primary", "gadget_group = \"users\"\n");
+    fs::create_dir_all(l.dir.join("fs/etc")).unwrap();
+    fs::write(l.dir.join("fs/etc/group"), "users:x:982:\n").unwrap();
+    fs::write(
+        l.dir.join("fs/etc/passwd"),
+        "carol:x:1001:982::/home/carol:/bin/sh\n",
+    )
+    .unwrap();
+    let s = out(&host_as(&l, "carol", &["check"]));
+    assert!(s.contains("gadget group users: ok, carol is in it"), "{s}");
+    let o = host_as(&l, "", &["check"]);
+    let s = out(&o);
+    assert!(s.contains("FAIL, USER is not set"), "{s}");
+    assert!(!o.status.success());
+}
