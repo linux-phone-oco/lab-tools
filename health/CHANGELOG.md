@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-health-v0.7.1...lpoco-health-v0.8.0) - 2026-11-18
+
+### Added
+
+- *(host)* [host] commands - plan names each, check fails a missing one, nothing installed ([#138](https://github.com/linux-phone-oco/lab-tools/pull/138))
+
 ## [0.7.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-health-v0.7.0...lpoco-health-v0.7.1) - 2026-11-18
 
 ### Added

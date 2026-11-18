@@ -1,7 +1,7 @@
 [package]
 name = "lpoco-tone"
 # the family is released together: one version (release-plz.toml, version_group)
-version = "0.7.1"
+version = "0.8.0"
 edition = "2021"
 description = "Make a test tone, and find it in a recording - so a device's speaker can test its microphone"
 license = "MIT OR Apache-2.0"
