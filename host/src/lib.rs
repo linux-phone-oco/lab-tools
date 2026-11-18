@@ -99,6 +99,9 @@ pub struct HostTable {
     pub watch: bool,
     #[serde(default)]
     pub modules: Vec<String>,
+    /// Programs the device needs on the host's PATH: named by plan, judged by check, never installed (installing is a root pacman the author grants).
+    #[serde(default)]
+    pub commands: Vec<String>,
     #[serde(default)]
     pub gadget: Vec<Gadget>,
 }
@@ -151,6 +154,9 @@ pub fn parse_device(path: &Path, text: &str) -> Result<Device, String> {
     }
     for m in &host.modules {
         safe_word("module", m).map_err(at)?;
+    }
+    for c in &host.commands {
+        safe_word("command", c).map_err(at)?;
     }
     Ok(Device {
         path: path.to_path_buf(),
@@ -301,6 +307,20 @@ pub fn modules_of(devices: &[Device]) -> Vec<String> {
     m.sort();
     m.dedup();
     m
+}
+
+/// Each declared command once, with every device that wants it, sorted by command.
+pub fn commands_of(devices: &[Device]) -> Vec<(String, Vec<String>)> {
+    let mut m: std::collections::BTreeMap<String, Vec<String>> = Default::default();
+    for d in devices {
+        for c in &d.host.commands {
+            let w = m.entry(c.clone()).or_default();
+            if !w.contains(&d.codename) {
+                w.push(d.codename.clone());
+            }
+        }
+    }
+    m.into_iter().collect()
 }
 
 /// One thing a tool's installation does.
@@ -568,6 +588,23 @@ mod one_per_codename_tests {
         );
     }
 
+    #[test]
+    fn commands_are_listed_once_with_every_device_that_wants_them() {
+        let mut a = dev("a/device.toml", None);
+        a.codename = "a".into();
+        a.host.commands = vec!["git".into(), "zip".into()];
+        let mut b = dev("b/device.toml", None);
+        b.codename = "b".into();
+        b.host.commands = vec!["git".into(), "git".into()];
+        assert_eq!(
+            commands_of(&[a, b]),
+            vec![
+                ("git".to_string(), vec!["a".to_string(), "b".to_string()]),
+                ("zip".to_string(), vec!["a".to_string()]),
+            ]
+        );
+    }
+
     fn dev(path: &str, serial: Option<&str>) -> Device {
         let gadget = serial.map(|s| Gadget {
             serial: s.into(),
@@ -579,6 +616,7 @@ mod one_per_codename_tests {
             host: HostTable {
                 watch: false,
                 modules: vec![],
+                commands: vec![],
                 gadget: gadget.into_iter().collect(),
             },
             lpoco_pin: None,
