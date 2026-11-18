@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-tone-v0.12.0...lpoco-tone-v0.12.1) - 2026-11-18
+
+### Added
+
+- *(health)* lpoco-health awake, the lab phone's keep-awake as a package unit ([#148](https://github.com/linux-phone-oco/lab-tools/pull/148))
+
 ## [0.12.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-tone-v0.11.0...lpoco-tone-v0.12.0) - 2026-11-18
 
 ### Fixed
