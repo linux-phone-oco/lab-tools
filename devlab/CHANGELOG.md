@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-lab-v0.3.1...lpoco-lab-v0.3.2) - 2026-11-18
+
+### Added
+
+- lpoco-lab reads its declared environment through the argenv contract ([#103](https://github.com/linux-phone-oco/lab-tools/pull/103))
+
+### Other
+
+- messages tell the reader to type lpoco-lab, kept so by a test (names-sweep) ([#104](https://github.com/linux-phone-oco/lab-tools/pull/104))
+
 ## [0.3.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-lab-v0.3.0...lpoco-lab-v0.3.1) - 2026-11-18
 
 ### Other
