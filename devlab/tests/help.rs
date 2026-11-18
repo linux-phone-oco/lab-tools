@@ -118,7 +118,7 @@ fn every_path_answers_help_with_its_arguments() {
 #[test]
 fn the_environment_it_reads_is_declared() {
     let (_, out, _) = run(&["--help"]);
-    for v in ["DEVLAB_ROOT", "PHONE_PASS", "DEVLAB_MICROPHONE"] {
+    for v in ["PHONE_PASS", "DEVLAB_MICROPHONE"] {
         assert!(out.contains(v), "{v} missing:\n{out}");
     }
 }

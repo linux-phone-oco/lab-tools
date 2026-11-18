@@ -51,15 +51,6 @@ pub fn fill(template: &str, compatible: &str) -> String {
     template.replace("{compatible}", compatible)
 }
 
-/// A command as root on this machine: $DEVLAB_ROOT (default: lab-agent's root-exec).
-fn host_root(args: &[&str]) -> Result<bool> {
-    let prefix = crate::cli::env().devlab_root.clone();
-    let mut p = prefix.split_whitespace();
-    let mut c = Command::new(p.next().context("no root program")?);
-    c.args(p).args(args);
-    Ok(c.status()?.success())
-}
-
 fn output(cmd: &str, args: &[&str]) -> String {
     Command::new(cmd)
         .args(args)
@@ -68,17 +59,15 @@ fn output(cmd: &str, args: &[&str]) -> String {
         .unwrap_or_default()
 }
 
-/// The lab machine's connection, shared with the phone while it lives.
+/// The lab machine's connection, shared with the phone while it lives. The sharing is root's work (forwarding,
+/// a masquerade rule, a ufw route) and is done by the system unit `lpoco-share@USB--UPLINK.service`, which `lpoco
+/// host prepare now` installs together with the polkit rule that lets the lab user start and stop exactly that
+/// unit: no sudo here, and nothing of it left once this value goes out of scope, on any error too.
 struct Share<'a> {
     phone: &'a Phone,
-    usb: String,
-    uplink: String,
+    unit: String,
     pc: String,
-    forwarding_was_on: bool,
-    ufw: bool,
 }
-
-const TABLE: &str = "devlab-provision";
 
 impl<'a> Share<'a> {
     fn start(phone: &'a Phone, phone_addr: &str) -> Result<Share<'a>> {
@@ -86,59 +75,21 @@ impl<'a> Share<'a> {
             .context("no default route on this machine")?;
         let (usb, pc) = local_on_subnet(&output("ip", &["-o", "-4", "addr"]), phone_addr)
             .context("no address on the phone's USB subnet")?;
-        let forwarding_was_on = std::fs::read_to_string("/proc/sys/net/ipv4/ip_forward")
-            .map(|s| s.trim() == "1")
-            .unwrap_or(false);
-        let ufw = Command::new("sh")
-            .arg("-c")
-            .arg("sudo -n lab-agent root-exec -- ufw status 2>/dev/null | grep -q 'Status: active'")
-            .status()
-            .is_ok_and(|s| s.success());
+        let unit = format!("lpoco-share@{usb}--{uplink}.service");
+        let o = Command::new("systemctl").args(["start", &unit]).output()?;
+        if !o.status.success() {
+            bail!(
+                "could not start {unit}: {} (it is installed by `sudo lpoco-host prepare now`, typed by the author)",
+                String::from_utf8_lossy(&o.stderr).trim()
+            );
+        }
         let s = Share {
             phone,
-            usb,
-            uplink,
-            pc,
-            forwarding_was_on,
-            ufw,
+            unit,
+            pc: pc.clone(),
         };
-        host_root(&["sysctl", "-qw", "net.ipv4.ip_forward=1"])?;
-        if s.ufw {
-            host_root(&[
-                "ufw", "route", "allow", "in", "on", &s.usb, "out", "on", &s.uplink,
-            ])?;
-        }
-        host_root(&["nft", "add", "table", "ip", TABLE])?;
-        host_root(&[
-            "nft",
-            "add",
-            "chain",
-            "ip",
-            TABLE,
-            "out",
-            "{ type nat hook postrouting priority 100; }",
-        ])?;
-        let subnet = format!(
-            "{}.0/24",
-            phone_addr.rsplit_once('.').context("phone address")?.0
-        );
-        host_root(&[
-            "nft",
-            "add",
-            "rule",
-            "ip",
-            TABLE,
-            "out",
-            "ip",
-            "saddr",
-            &subnet,
-            "oifname",
-            &s.uplink,
-            "masquerade",
-        ])?;
         let (ok, _) = phone.root(&format!(
             "ip route add default via {pc}\ncp /etc/resolv.conf /tmp/resolv.conf.devlab\necho nameserver {gw} > /etc/resolv.conf\nping -c1 -W3 1.1.1.1 >/dev/null\n",
-            pc = s.pc
         ))?;
         if !ok {
             bail!("the phone cannot reach the internet through this machine");
@@ -153,24 +104,9 @@ impl Drop for Share<'_> {
             "ip route del default via {} 2>/dev/null\n[ -f /tmp/resolv.conf.devlab ] && cat /tmp/resolv.conf.devlab > /etc/resolv.conf && rm /tmp/resolv.conf.devlab\ntrue\n",
             self.pc
         ));
-        let _ = host_root(&["nft", "delete", "table", "ip", TABLE]);
-        if self.ufw {
-            let _ = host_root(&[
-                "ufw",
-                "route",
-                "delete",
-                "allow",
-                "in",
-                "on",
-                &self.usb,
-                "out",
-                "on",
-                &self.uplink,
-            ]);
-        }
-        if !self.forwarding_was_on {
-            let _ = host_root(&["sysctl", "-qw", "net.ipv4.ip_forward=0"]);
-        }
+        let _ = Command::new("systemctl")
+            .args(["stop", &self.unit])
+            .status();
     }
 }
 

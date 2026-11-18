@@ -176,7 +176,7 @@ mod tests {
             "scp f user@192.168.178.182:/tmp/",
             "sshpass -f ~/.config/devlab/xiaomi-surya/password ssh -o X=Y user@172.16.42.1",
             "rsync -a d/ user@172.16.42.1:/tmp/d",
-            "sudo lab-agent root-exec -- ssh 172.16.42.1",
+            "sudo ssh 172.16.42.1",
             "bash -c 'ssh 172.16.42.1'",
         ] {
             assert!(says(c).is_some(), "refused: {c}");

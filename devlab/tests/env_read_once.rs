@@ -39,18 +39,3 @@ fn no_declared_variable_is_read_by_std_env() {
         found.join("\n")
     );
 }
-
-#[test]
-fn an_empty_root_program_exits_2_with_the_usage() {
-    let o = Command::new(env!("CARGO_BIN_EXE_lpoco-lab"))
-        .args(["phone", "find"])
-        .env("DEVLAB_ROOT", "")
-        .output()
-        .unwrap();
-    assert_eq!(o.status.code(), Some(2), "{o:?}");
-    let err = String::from_utf8_lossy(&o.stderr);
-    assert!(
-        err.contains("DEVLAB_ROOT") && err.contains("Usage:"),
-        "{err}"
-    );
-}

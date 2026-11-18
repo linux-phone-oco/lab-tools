@@ -68,14 +68,6 @@ contract! {
         ..Input::EMPTY
     };
 
-    DEVLAB_ROOT: String = Input {
-        key: "devlab_root",
-        ty: Type::String,
-        env: Some(Env::new("DEVLAB_ROOT")),
-        summary: "The root prefix devlab already uses; read when LPOCO_ROOT is not set.",
-        ..Input::EMPTY
-    };
-
     FS_ROOT: String = Input {
         key: "fs_root",
         ty: Type::String,

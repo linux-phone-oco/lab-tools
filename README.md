@@ -279,7 +279,7 @@ without it no watcher is enabled for it, and an instance already enabled for a d
                              reload and trigger udev, modprobe, install the tools - only where they differ
     lpoco host check         the lab user opens each declared node that is present; each tool is at its pin
 
-Root is one prefix, `LPOCO_ROOT`, then `DEVLAB_ROOT`, then `sudo -n lab-agent root-exec --`; the commands are a fixed
+Root is one prefix, `LPOCO_ROOT`, then the lab declaration's `root`, then `sudo` (the author's typed password: no standing grant, decision of 2026-11-18); the commands are a fixed
 list the plan prints. `lab.toml` tools: `lpoco = "0.2.0"` installs the family from its release tags with cargo into
 `~/.local`; `[tools.NAME]` with `git`, `path`, `rev`, `version` installs a script of another repository at a commit (`version` is a label only; the pin is `rev`)
 into `~/.local/bin` and stamps the rev in `~/.local/share/lpoco-host/rev-NAME`: a script is judged by that stamp (never by `--version`; on PATH without a stamp it is "rev not known"). A device whose `[tools] lpoco` the lab's pin does not meet is named and nothing is prepared for it.
