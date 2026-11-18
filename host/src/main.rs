@@ -407,6 +407,7 @@ fn plan(st: &State) {
     if Path::new(&format!("{}{KEPT_RULE}", st.fs_root)).exists() {
         println!("\nkept: {KEPT_RULE} is a wide rule; it is kept for now and prepare never removes or edits it");
     }
+    print_foreign_rules(st);
     let tools = tool_plans(st);
     let (unit, ucmds) = watchers(st, &tools);
     println!("\nwatchers (user units, no root; replaces lab-machine setup/devlab-watch.sh):");
@@ -627,6 +628,7 @@ fn check(st: &State) -> Result<i32, String> {
     if Path::new(&format!("{}{KEPT_RULE}", st.fs_root)).exists() {
         println!("kept: {KEPT_RULE} is a wide rule, kept for now");
     }
+    print_foreign_rules(st);
     for d in &st.devices {
         for g in &d.host.gadget {
             for a in &g.access {
@@ -737,4 +739,32 @@ fn kernel_log(fs_root: &str) -> Option<String> {
     o.status
         .success()
         .then(|| String::from_utf8_lossy(&o.stdout).into_owned())
+}
+
+/// Name the rule files that are not ours and could cross ours; read-only, whatever the verb. Only /etc/udev/rules.d is scanned (the admin's place; the vendors' own are not ours to judge).
+fn print_foreign_rules(st: &State) {
+    let dir = format!("{}{UDEV_DIR}", st.fs_root);
+    let mut files: Vec<(String, String)> = Vec::new();
+    if let Ok(rd) = std::fs::read_dir(&dir) {
+        for e in rd.flatten() {
+            if let (Some(n), Ok(t)) = (e.file_name().to_str(), std::fs::read_to_string(e.path())) {
+                files.push((n.to_string(), t));
+            }
+        }
+    }
+    let serials: Vec<String> = st
+        .devices
+        .iter()
+        .flat_map(|d| d.host.gadget.iter().map(|g| g.serial.clone()))
+        .collect();
+    if let Ok(rd) = std::fs::read_dir(&dir) {
+        for e in rd.flatten() {
+            if e.path().is_file() && std::fs::read_to_string(e.path()).is_err() {
+                println!("foreign: {UDEV_DIR}/{} could not be read, so it is not known whether it crosses ours", e.file_name().to_string_lossy());
+            }
+        }
+    }
+    for (name, why) in foreign_rules(&files, &serials) {
+        println!("foreign: {UDEV_DIR}/{name} is not ours and {why}; named only, prepare never edits or removes it");
+    }
 }
