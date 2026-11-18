@@ -64,6 +64,13 @@ access = ["block", "tty"]
     Lab { dir, calls }
 }
 
+/// What the stubs recorded other than the host reading its declarations through git (rev-parse, fetch, show, rev-list).
+fn changes(l: &Lab) -> Option<String> {
+    let all = fs::read_to_string(&l.calls).ok()?;
+    let kept: Vec<&str> = all.lines().filter(|c| !is_read_only_git(c)).collect();
+    (!kept.is_empty()).then(|| kept.join("\n"))
+}
+
 fn host(l: &Lab, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_lpoco-host"))
         .args(args)
@@ -109,14 +116,14 @@ fn plan_grants_gadget_serial_and_changes_nothing() {
         s.contains("udevadm trigger --action=change --attr-match=serial=walleye-first-boot"),
         "{s}"
     );
-    assert!(!l.calls.exists(), "the plan called the root prefix");
+    assert!(changes(&l).is_none(), "the plan called the root prefix");
     // the default verb is the plan
     assert_eq!(out(&host(&l, &[])), s);
     // prepare without `now` refuses and calls nothing
     let o = host(&l, &["prepare"]);
     assert!(!o.status.success());
     assert!(
-        !l.calls.exists(),
+        changes(&l).is_none(),
         "prepare without now called the root prefix"
     );
 }
@@ -171,7 +178,7 @@ version = "2.0.0"
     for p in ["lpoco-lab", "lpoco-bringup", "lpoco-health", "lpoco-host"] {
         assert!(s.contains(&format!("--tag {p}-v0.2.0 {p}")), "{p}: {s}");
     }
-    assert!(!l.calls.exists(), "the plan ran a stub");
+    assert!(changes(&l).is_none(), "the plan ran a stub");
     assert!(
         !l.dir.join("home/.local").exists(),
         "the plan wrote into ~/.local"
@@ -183,7 +190,7 @@ fn prepare_now_runs_the_printed_root_commands_and_only_them() {
     let l = lab("now", "");
     let o = host(&l, &["prepare", "now"]);
     assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
-    let calls = fs::read_to_string(&l.calls).unwrap();
+    let calls = changes(&l).unwrap();
     for want in [
         "install -D -m 0644",
         "70-lpoco-google-walleye.rules",
@@ -218,7 +225,7 @@ fn a_manifest_that_would_inject_into_root_commands_is_refused() {
         "{}",
         String::from_utf8_lossy(&o.stderr)
     );
-    assert!(!l.calls.exists());
+    assert!(changes(&l).is_none());
 }
 
 #[test]
@@ -348,4 +355,116 @@ fn a_stamp_without_its_script_is_not_a_found_tool() {
     let _ = fs::remove_file(l.dir.join("stubs/land"));
     let s = out(&host(&l, &["plan"]));
     assert!(s.contains("git clone"), "{s}");
+}
+
+/// Real git, a bare origin and a clone that is one commit behind it.
+fn git(dir: &Path, args: &[&str]) -> String {
+    let o = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args([
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "commit.gpgsign=false",
+        ])
+        .args(args)
+        .output()
+        .unwrap();
+    assert!(
+        o.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+    String::from_utf8_lossy(&o.stdout).into_owned()
+}
+
+#[test]
+fn reads_each_device_from_origin_main_and_names_how_far_behind() {
+    let l = lab("origin-main", "");
+    let devs = l.dir.join("devs");
+    fs::remove_dir_all(devs.join("google-walleye-lab")).unwrap();
+    let origin = l.dir.join("origin.git");
+    let work = l.dir.join("work");
+    for d in [&origin, &work] {
+        fs::create_dir_all(d).unwrap();
+    }
+    git(&origin, &["init", "-q", "--bare", "-b", "main"]);
+    git(&work, &["init", "-q", "-b", "main"]);
+    fs::write(
+        work.join("device.toml"),
+        "[device]\ncodename = \"google-walleye\"\n",
+    )
+    .unwrap();
+    git(&work, &["add", "."]);
+    git(&work, &["commit", "-q", "-m", "no host yet"]);
+    git(
+        &work,
+        &["remote", "add", "origin", origin.to_str().unwrap()],
+    );
+    git(&work, &["push", "-q", "origin", "main"]);
+    git(
+        &devs,
+        &[
+            "clone",
+            "-q",
+            origin.to_str().unwrap(),
+            "google-walleye-lab",
+        ],
+    );
+    fs::write(
+        work.join("device.toml"),
+        "[device]\ncodename = \"google-walleye\"\n[host]\nmodules = [\"cdc_acm\"]\n[[host.gadget]]\nserial = \"walleye-first-boot\"\naccess = [\"tty\"]\n",
+    )
+    .unwrap();
+    git(&work, &["commit", "-q", "-am", "declare host"]);
+    git(&work, &["push", "-q", "origin", "main"]);
+    fs::remove_file(l.dir.join("stubs/git")).unwrap();
+    let real_git = String::from_utf8(
+        Command::new("sh")
+            .args(["-c", "command -v git"])
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .unwrap();
+    let git_dir = Path::new(real_git.trim()).parent().unwrap().to_path_buf();
+    let o = Command::new(env!("CARGO_BIN_EXE_lpoco-host"))
+        .arg("plan")
+        .env_clear()
+        .env("HOME", l.dir.join("home"))
+        .env(
+            "PATH",
+            format!("{}:{}", l.dir.join("stubs").display(), git_dir.display()),
+        )
+        .env("LPOCO_LAB", l.dir.join("lab.toml"))
+        .env("LPOCO_ROOT", l.dir.join("stubs/root"))
+        .env("LPOCO_FS_ROOT", l.dir.join("fs"))
+        .output()
+        .unwrap();
+    let s = out(&o);
+    assert!(
+        o.status.success(),
+        "{s}{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+    assert!(s.contains("70-lpoco-google-walleye.rules"), "{s}");
+    assert!(s.contains("origin/main") && s.contains("1 behind"), "{s}");
+}
+
+/// A recorded `git -C DIR [-c K=V]... SUB ...` whose SUB only reads: the subcommand itself, not a word anywhere in the line.
+fn is_read_only_git(call: &str) -> bool {
+    let mut t = call.split_whitespace();
+    if !t.next().is_some_and(|p| p.ends_with("/git")) || t.next() != Some("-C") {
+        return false;
+    }
+    t.next(); // the directory
+    let mut t = t.peekable();
+    while t.peek() == Some(&"-c") {
+        t.nth(1);
+    }
+    t.next()
+        .is_some_and(|s| ["rev-parse", "fetch", "show", "rev-list"].contains(&s))
 }
