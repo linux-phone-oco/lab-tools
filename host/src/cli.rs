@@ -1,7 +1,7 @@
 //! lpoco-host's invocation surface, declared once with argenv: its commands, their arguments and the
 //! environment variables it reads. Run as `lpoco host ...`.
 //!
-//!   lpoco-host [plan]            what the lab host needs, as a diff per file and the exact root commands; changes nothing
+//!   lpoco-host [plan]            what the lab host needs, as a diff per file and the exact root commands; changes nothing on the host (each device clone is fetched)
 //!   lpoco-host prepare now       do it: files written, udev reloaded, modules loaded, tools installed - only where they differ
 //!   lpoco-host check             the lab user can open each declared node that is present; each tool at its pin
 //!   lpoco-host --version         this program's version (the lpoco family's one version)

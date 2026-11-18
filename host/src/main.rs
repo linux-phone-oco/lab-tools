@@ -20,7 +20,7 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 fn main() {
     let r = Contract::parse_and_lint(OnProblems::FailOnError);
     if Contract::HELP.get_from(&r).unwrap_or(false) {
-        print!("{}", cli::usage("lpoco-host", "The lab host prepared from declarations (run as lpoco host). Commands: plan (the default; changes nothing), prepare now (changes only what differs), check (reads)."));
+        print!("{}", cli::usage("lpoco-host", "The lab host prepared from declarations (run as lpoco host). Commands: plan (the default; changes nothing on the host, only fetches each device clone), prepare now (changes only what differs), check (reads)."));
         return;
     }
     if Contract::VERSION.get_from(&r).unwrap_or(false) {
@@ -44,6 +44,7 @@ struct State {
     root: Vec<String>,
     devices: Vec<Device>,
     missed: Vec<String>,
+    reads: Vec<String>,
     lab: Lab,
     fs_root: String,
 }
@@ -65,8 +66,11 @@ fn load(r: &Resolution) -> Result<State, String> {
         .map(Devices::patterns)
         .unwrap_or_else(|| vec![DEFAULT_DEVICES.to_string()]);
     let mut devices = Vec::new();
+    let mut reads = Vec::new();
     for p in find_devices(&patterns, &home)? {
-        devices.push(read_device(&p)?);
+        let (text, how) = device_text(&p)?;
+        reads.extend(how);
+        devices.push(parse_device(&p, &text)?);
     }
     let (devices, mut notes) = one_per_codename(devices);
     let mut devices = devices;
@@ -82,8 +86,91 @@ fn load(r: &Resolution) -> Result<State, String> {
         root: root.split_whitespace().map(String::from).collect(),
         devices,
         missed,
+        reads,
         lab,
     })
+}
+
+/// A device declaration as its repository says it: a clone is fetched (never prompting, bounded) and `device.toml` is
+/// read from `origin/main`, so a stale checkout cannot hide a `[host]` table. The second part names what was read: the
+/// commit, how far the checkout is behind it, whether the working file differs; or why the file as it lies was read.
+/// A plain file outside any clone has nothing to say.
+fn device_text(p: &Path) -> Result<(String, Option<String>), String> {
+    let file = || fs::read_to_string(p).map_err(|e| format!("cannot read {}: {e}", p.display()));
+    let lie = |why: &str| -> Result<(String, Option<String>), String> {
+        Ok((
+            file()?,
+            Some(format!("{}: the file as it lies ({why})", p.display())),
+        ))
+    };
+    let Some(dir) = p.parent() else {
+        return Ok((file()?, None));
+    };
+    let git = |args: &[&str]| -> Result<String, String> {
+        let o = Proc::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args([
+                "-c",
+                "http.lowSpeedLimit=1000",
+                "-c",
+                "http.lowSpeedTime=15",
+            ])
+            .args(args)
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .env(
+                "GIT_SSH_COMMAND",
+                "ssh -o BatchMode=yes -o ConnectTimeout=10",
+            )
+            .output()
+            .map_err(|e| e.to_string())?;
+        if o.status.success() {
+            Ok(String::from_utf8_lossy(&o.stdout).into_owned())
+        } else {
+            Err(String::from_utf8_lossy(&o.stderr).trim().to_string())
+        }
+    };
+    let top = match git(&["rev-parse", "--show-toplevel"]) {
+        Ok(t) if !t.trim().is_empty() => PathBuf::from(t.trim()),
+        Ok(_) => return Ok((file()?, None)),
+        Err(e) if e.contains("not a git repository") => return Ok((file()?, None)),
+        Err(e) => return lie(&format!("git refused: {e}")),
+    };
+    let Some(rel) = p
+        .canonicalize()
+        .ok()
+        .and_then(|c| c.strip_prefix(&top).ok().map(Path::to_path_buf))
+    else {
+        return lie("it lies outside its clone");
+    };
+    let fetch = git(&["fetch", "--quiet", "origin"]);
+    let stale = match &fetch {
+        Ok(_) => String::new(),
+        Err(e) => format!("; fetch failed, origin/main as last fetched: {e}"),
+    };
+    if git(&["rev-parse", "--verify", "--quiet", "origin/main"]).is_err() {
+        return lie(&format!("no origin/main{stale}"));
+    }
+    let Ok(text) = git(&["show", &format!("origin/main:{}", rel.display())]) else {
+        return lie(&format!("not in origin/main{stale}"));
+    };
+    let sha = git(&["rev-parse", "--short", "origin/main"]).unwrap_or_default();
+    let behind = match git(&["rev-list", "--count", "HEAD..origin/main"]) {
+        Ok(n) if !n.trim().is_empty() => n.trim().to_string(),
+        _ => "unknown".to_string(),
+    };
+    let differs = match fs::read_to_string(p) {
+        Ok(w) if w != text => "; the working file differs and is ignored",
+        _ => "",
+    };
+    Ok((
+        text,
+        Some(format!(
+            "{} from origin/main {}, checkout {behind} behind{differs}{stale}",
+            p.display(),
+            sha.trim()
+        )),
+    ))
 }
 
 fn on_path(path: &str, name: &str) -> Option<PathBuf> {
@@ -226,7 +313,10 @@ fn plan(st: &State) {
     let files = files_for(&st.devices, &|p| read_file(&st.fs_root, p));
     let modules = modules_of(&st.devices);
     let stage = stage_dir(&st.home);
-    println!("lpoco host plan (nothing is changed)");
+    println!("lpoco host plan (nothing on the host is changed; each device clone is fetched)");
+    for r in &st.reads {
+        println!("read: {r}");
+    }
     for m in &st.missed {
         println!("not prepared: {m}");
     }
@@ -318,6 +408,9 @@ fn run_root(st: &State, cmd: &[String]) -> Result<(), String> {
 }
 
 fn prepare(st: &State) -> Result<i32, String> {
+    for r in &st.reads {
+        println!("read: {r}");
+    }
     let files = files_for(&st.devices, &|p| read_file(&st.fs_root, p));
     let modules = modules_of(&st.devices);
     let stage = stage_dir(&st.home);
@@ -413,6 +506,9 @@ fn nodes_with_serial(class: &str, serial: &str) -> Vec<String> {
 }
 
 fn check(st: &State) -> Result<i32, String> {
+    for r in &st.reads {
+        println!("read: {r}");
+    }
     let mut bad = 0;
     if Path::new(&format!("{}{KEPT_RULE}", st.fs_root)).exists() {
         println!("kept: {KEPT_RULE} is a wide rule, kept for now");

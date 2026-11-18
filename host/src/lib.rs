@@ -30,7 +30,8 @@ pub const MODULES_FILE: &str = "/etc/modules-load.d/lpoco.conf";
 pub enum ToolPin {
     /// `lpoco = "0.2.0"`: the family, installed with cargo from its release tags.
     Version(String),
-    /// A script of another repository at a commit.
+    /// A script of another repository at a commit. `version` is a label for the reader only: a script is judged by its
+    /// `rev` stamp, never by `--version`.
     Script {
         git: String,
         path: String,
@@ -118,7 +119,12 @@ pub fn read_lab(path: &Path) -> Result<Lab, String> {
 pub fn read_device(path: &Path) -> Result<Device, String> {
     let text = std::fs::read_to_string(path)
         .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
-    let v: toml::Value = toml::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+    parse_device(path, &text)
+}
+
+/// A device manifest already read: `path` names it, `text` is what it says (the working file, or origin/main's).
+pub fn parse_device(path: &Path, text: &str) -> Result<Device, String> {
+    let v: toml::Value = toml::from_str(text).map_err(|e| format!("{}: {e}", path.display()))?;
     let str_at = |t: &str, k: &str| {
         v.get(t)
             .and_then(|t| t.get(k))
