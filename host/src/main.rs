@@ -575,7 +575,7 @@ fn prepare(st: &State) -> Result<i32, String> {
                         fs::create_dir_all(d)
                             .map_err(|e| format!("cannot make {}: {e}", d.display()))?;
                     }
-                    fs::write(to, format!("{rev}\n"))
+                    replace_file(to, format!("{rev}\n").as_bytes(), 0o644)
                         .map_err(|e| format!("cannot write {to}: {e}"))?;
                 }
                 Step::Copy { from, to } => {
@@ -583,9 +583,9 @@ fn prepare(st: &State) -> Result<i32, String> {
                         fs::create_dir_all(d)
                             .map_err(|e| format!("cannot make {}: {e}", d.display()))?;
                     }
-                    fs::copy(from, to).map_err(|e| format!("cannot copy {from} to {to}: {e}"))?;
-                    fs::set_permissions(to, fs::Permissions::from_mode(0o755))
-                        .map_err(|e| format!("{to}: {e}"))?;
+                    let bytes = fs::read(from).map_err(|e| format!("cannot read {from}: {e}"))?;
+                    replace_file(to, &bytes, 0o755)
+                        .map_err(|e| format!("cannot copy {from} to {to}: {e}"))?;
                 }
             }
         }
@@ -594,7 +594,7 @@ fn prepare(st: &State) -> Result<i32, String> {
         if let Some(d) = Path::new(&unit.dst).parent() {
             fs::create_dir_all(d).map_err(|e| format!("cannot make {}: {e}", d.display()))?;
         }
-        fs::write(&unit.dst, &unit.content)
+        replace_file(&unit.dst, unit.content.as_bytes(), 0o644)
             .map_err(|e| format!("cannot write {}: {e}", unit.dst))?;
     }
     for c in &ucmds {
@@ -953,4 +953,35 @@ fn print_targets(st: &State, judge: bool) -> usize {
         }
     }
     missing
+}
+
+/// Puts `bytes` at `to` by writing a new file beside it and renaming it over the old one, so a program running
+/// or reading the old file keeps the old inode and finishes with its old text.
+fn replace_file(to: &str, bytes: &[u8], mode: u32) -> std::io::Result<()> {
+    use std::io::Write;
+    let path = Path::new(to);
+    let dir = path.parent().unwrap_or(Path::new("."));
+    let base = path
+        .file_name()
+        .map(|b| b.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let tmp = dir.join(format!(".{base}.new-{}", std::process::id()));
+    let _ = fs::remove_file(&tmp);
+    let written = (|| {
+        let mut f = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(mode)
+            .open(&tmp)?;
+        f.write_all(bytes)?;
+        f.set_permissions(fs::Permissions::from_mode(mode))?;
+        f.sync_all()?;
+        fs::rename(&tmp, path)?;
+        // the rename itself reaches the disk
+        fs::File::open(dir)?.sync_all()
+    })();
+    if written.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    written
 }

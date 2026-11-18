@@ -1259,3 +1259,69 @@ fn an_enabled_but_stopped_watcher_is_started_and_a_running_one_is_left() {
     let s = out(&host(&l, &["plan"]));
     assert!(!s.contains("systemctl --user"), "{s}");
 }
+
+#[test]
+fn a_script_running_while_prepare_replaces_it_finishes_with_its_old_text() {
+    let l = lab("atomic", SCRIPT_TOOLS);
+    exe(
+        &l.dir.join("stubs/git"),
+        &format!(
+            "echo \"$0 $@\" >> {}\ncase \"$1\" in clone) /bin/mkdir -p \"$4/bin\"; printf '#!/bin/sh\\necho new\\n' > \"$4/bin/land\";; esac",
+            l.calls.display()
+        ),
+    );
+    // an installed script a shell reads as it goes: it waits, then prints its last line
+    let bin = l.dir.join("home/.local/bin");
+    fs::create_dir_all(&bin).unwrap();
+    let started = l.dir.join("started");
+    let done = l.dir.join("done");
+    exe(
+        &bin.join("land"),
+        &format!(
+            "/bin/touch {s}\nwhile [ ! -e {d} ]; do /bin/sleep 0.05; done\necho old-finished",
+            s = started.display(),
+            d = done.display()
+        ),
+    );
+    // bash reads a script as it runs (and not exec of a file just written: that can be busy)
+    let mut running = Command::new("/bin/bash")
+        .arg(bin.join("land"))
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while !started.exists() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the old script never started"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    let _guard = Kill(done.clone());
+    let o = host(&l, &["prepare", "now"]);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    // the new text is in place, the running one has not been written under
+    assert!(fs::read_to_string(bin.join("land"))
+        .unwrap()
+        .contains("echo new"));
+    fs::write(&done, "").unwrap();
+    let mut text = String::new();
+    std::io::Read::read_to_string(running.stdout.as_mut().unwrap(), &mut text).unwrap();
+    running.wait().unwrap();
+    assert_eq!(text.trim(), "old-finished");
+    // no temp file is left beside the tool
+    let left: Vec<_> = fs::read_dir(&bin)
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name())
+        .collect();
+    assert_eq!(left.len(), 1, "{left:?}");
+}
+
+/// Lets a waiting old script end if the test fails before it does.
+struct Kill(PathBuf);
+impl Drop for Kill {
+    fn drop(&mut self) {
+        let _ = fs::write(&self.0, "");
+    }
+}
