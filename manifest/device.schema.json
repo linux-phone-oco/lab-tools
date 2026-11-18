@@ -719,6 +719,11 @@
           "description": "a second configuration, RNDIS + ACM, for Windows hosts",
           "type": "boolean",
           "default": true
+        },
+        "window": {
+          "description": "a read-only mass-storage LUN the host can read: the init keeps the phone's kernel log and uptime written into it (a log window when the phone has no network yet)",
+          "type": "boolean",
+          "default": false
         }
       },
       "additionalProperties": false,

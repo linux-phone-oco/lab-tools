@@ -227,3 +227,58 @@ fn at_the_default_net_the_files_are_the_shipped_text() {
     let st = fs::read_to_string(out.join("selftest.sh")).unwrap();
     assert!(st.contains("inet 172.16.42.2/"), "{st}");
 }
+
+#[test]
+fn a_window_adds_a_read_only_mass_storage_lun_the_init_keeps_written() {
+    let d = tmp("window");
+    let g = format!("{GADGET}window = true\n");
+    let o = init(&["--device", &manifest(&d, &g)]);
+    assert!(o.status.success(), "{}", text(&o.stderr));
+    let s = text(&o.stdout);
+    for part in [
+        "functions/mass_storage.0",
+        "echo $WIN > $L/file",
+        "ln -s $G/functions/mass_storage.0 $G/configs/c.1/",
+        "/proc/uptime",
+        "dmesg | tail",
+        "window: lun file failed",
+    ] {
+        assert!(s.contains(part), "missing {part}: {s}");
+    }
+    assert!(s.contains("echo 1 > $L/ro"), "{s}");
+}
+
+#[test]
+fn without_a_window_the_init_has_no_mass_storage() {
+    let d = tmp("nowindow");
+    let o = init(&["--device", &manifest(&d, GADGET)]);
+    assert!(o.status.success(), "{}", text(&o.stderr));
+    assert!(!text(&o.stdout).contains("mass_storage"));
+}
+
+#[test]
+fn the_window_is_ready_before_the_bind_and_the_script_is_valid_shell() {
+    let d = tmp("windoworder");
+    let g = format!("{GADGET}window = true\n");
+    let o = init(&["--device", &manifest(&d, &g)]);
+    let s = text(&o.stdout);
+    let at = |p: &str| s.find(p).unwrap_or_else(|| panic!("missing {p}: {s}"));
+    assert!(at("echo 1 > $L/ro") < at("echo $WIN > $L/file"));
+    assert!(at("ln -s $G/functions/mass_storage.0") < at("> $G/UDC"));
+    assert!(
+        at("dmesg | tail") < at("> $G/UDC"),
+        "first image written before the bind"
+    );
+    assert!(
+        s.contains("conv=notrunc,sync"),
+        "a shorter snapshot must not leave an older tail"
+    );
+    let f = d.join("init");
+    fs::write(&f, &s).unwrap();
+    assert!(Command::new("sh")
+        .arg("-n")
+        .arg(&f)
+        .status()
+        .unwrap()
+        .success());
+}
