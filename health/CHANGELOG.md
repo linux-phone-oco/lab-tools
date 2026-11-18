@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-health-v0.18.0...lpoco-health-v0.18.1) - 2026-11-18
+
+### Other
+
+- *(health)* mark the keep-awake as a workaround for sxmo-autosuspend-backoff ([#181](https://github.com/linux-phone-oco/lab-tools/pull/181))
+
 ## [0.18.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-health-v0.17.1...lpoco-health-v0.18.0) - 2026-11-18
 
 ### Added
