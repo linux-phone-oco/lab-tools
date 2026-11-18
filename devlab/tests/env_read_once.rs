@@ -3,7 +3,6 @@
 //! declared variable itself, and a value the contract refuses exits 2 with the usage.
 
 use std::path::Path;
-use std::process::Command;
 
 fn sources(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
     for e in std::fs::read_dir(dir).unwrap() {
