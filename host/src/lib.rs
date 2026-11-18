@@ -89,6 +89,9 @@ impl Access {
 pub struct Gadget {
     pub serial: String,
     pub access: Vec<Access>,
+    /// A stable name for the gadget's USB network interface (CDC-NCM and friends), set by udev at plug-in: the kernel's own name follows the port.
+    #[serde(default)]
+    pub net_name: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Default, Clone, PartialEq)]
@@ -154,6 +157,14 @@ pub fn parse_device(path: &Path, text: &str) -> Result<Device, String> {
     safe_word("codename", &codename).map_err(at)?;
     for g in &host.gadget {
         safe_word("gadget serial", &g.serial).map_err(at)?;
+        if let Some(n) = &g.net_name {
+            safe_word("gadget net_name", n).map_err(at)?;
+            if n.len() > 15 {
+                return Err(at(format!(
+                    "gadget net_name {n:?} is longer than 15 characters, an interface name's limit"
+                )));
+            }
+        }
     }
     for m in &host.modules {
         safe_word("module", m).map_err(at)?;
@@ -222,6 +233,12 @@ pub fn rules_text(d: &Device, group: Option<&str>) -> String {
                 a.subsystem(),
                 g.serial,
                 group_part(group)
+            );
+        }
+        if let Some(n) = &g.net_name {
+            s += &format!(
+                "ACTION==\"add\", SUBSYSTEM==\"net\", ATTRS{{serial}}==\"{}\", NAME=\"{n}\"\n",
+                g.serial
             );
         }
     }
@@ -629,6 +646,7 @@ mod one_per_codename_tests {
         let gadget = serial.map(|s| Gadget {
             serial: s.into(),
             access: vec![Access::Block],
+            net_name: None,
         });
         Device {
             path: path.into(),
