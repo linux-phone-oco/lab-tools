@@ -1,0 +1,1 @@
+^(feat|fix|docs|chore|refactor|perf|test|ci|build)(\([A-Za-z0-9._/-]+\))?!?: .+
