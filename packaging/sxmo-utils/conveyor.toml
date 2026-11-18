@@ -1,0 +1,18 @@
+# How the sxmo-utils lab apk is delivered: read by the package conveyor
+# (https://github.com/linux-package-distribution-oco/conveyor), as the second package of the same
+# repository (packaging/conveyor.toml is the first). The APKBUILD and every file beside it stay here;
+# the conveyor copies the whole folder, builds, signs with the one key of this repository, and
+# merges this package into the pages beside lpoco-health.
+[package]
+name = "sxmo-utils"
+tag-prefix = "sxmo-utils-v"     # the tag sxmo-utils-v1.18.1_p20261118 is the APKBUILD's pkgver
+
+[alpine]
+apkbuild = "packaging/sxmo-utils/APKBUILD"
+key = "packaging/alpine/linux-phone-oco-lab-tools-20261117.rsa.pub"
+release = "3.24"        # postmarketOS v26.06, as surya runs it
+repo = "lab-tools"      # the same repository as lpoco-health: one index, every package
+archs = ["aarch64"]
+
+[site]
+title = "lab-tools packages"

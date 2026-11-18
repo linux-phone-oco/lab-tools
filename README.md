@@ -97,6 +97,9 @@ marks) to `lpoco-health` and leaves `devlab-health` as another name of the progr
 The package is released by release-plz (a `lpoco-health-vX.Y.Z` tag) and published by the package
 conveyor (`packaging/`, `.github/workflows/packages.yml`) at https://linux-phone-oco.github.io/lab-tools/,
 for postmarketOS v26.06 (Alpine 3.24): any postmarketOS phone can take it with the lines on that page.
+The same page holds `sxmo-utils`, our fork's lab build of the phone's shell (`packaging/sxmo-utils/`): it is
+published when a tag `sxmo-utils-v<pkgver>` (the APKBUILD's `pkgver`, made by hand once per lab tag of
+grenudi/sxmo-utils; release-plz does not make it) is pushed, and each package is kept when the other is rebuilt.
 
 `lpoco lab kernel install NAME VMLINUZ DTB MODULES.tgz | try NAME | log | remove NAME` - the safe test-kernel boot (one try by boot
 counting, a stalled boot saves its log and falls back to stock), proven on surya.
