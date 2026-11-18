@@ -10,6 +10,8 @@
 //!   lpoco-bringup image swap CONTROL --out IMG [--ramdisk R] [--kernel K] [--dtb DTB] [--cmdline TEXT]
 //!                                                the control with those parts replaced, its AVB hash footer rebuilt (avbtool),
 //!                                                and what differs said
+//!   lpoco-bringup initramfs build --spec FILE --out FILE [--root DIR] [--net N] [--codec gzip|xz]
+//!                                                a reproducible newc cpio from a gen_init_cpio spec, compressed (replaces build-initramfs.sh)
 //!   lpoco-bringup --version                      this program's version (the lpoco family's one version)
 
 use argenv_resolve::*;
@@ -18,16 +20,18 @@ use argenv_resolve::*;
 #[serde(rename_all = "snake_case")]
 pub enum Command {
     Image,
+    Initramfs,
 }
 
 impl Command {
-    pub const TOKENS: &'static [&'static str] = &["image"];
+    pub const TOKENS: &'static [&'static str] = &["image", "initramfs"];
 }
 
 impl FromRaw for Command {
     fn from_raw(s: &str) -> Option<Command> {
         Some(match s.trim() {
             "image" => Command::Image,
+            "initramfs" => Command::Initramfs,
             _ => return None,
         })
     }
@@ -41,10 +45,12 @@ pub enum Verb {
     Pack,
     Check,
     Swap,
+    Build,
 }
 
 impl Verb {
-    pub const TOKENS: &'static [&'static str] = &["info", "unpack", "pack", "check", "swap"];
+    pub const TOKENS: &'static [&'static str] =
+        &["info", "unpack", "pack", "check", "swap", "build"];
 }
 
 impl FromRaw for Verb {
@@ -55,6 +61,7 @@ impl FromRaw for Verb {
             "pack" => Verb::Pack,
             "check" => Verb::Check,
             "swap" => Verb::Swap,
+            "build" => Verb::Build,
             _ => return None,
         })
     }
@@ -66,7 +73,7 @@ contract! {
         ty: Type::Enum,
         allowed: Command::TOKENS,
         arg: Some(Arg::positional(0)),
-        summary: "What to work on (image: boot images).",
+        summary: "What to work on (image: boot images; initramfs: the cpio the phone boots).",
         ..Input::EMPTY
     };
 
@@ -74,9 +81,9 @@ contract! {
         key: "verb",
         ty: Type::Enum,
         allowed: Verb::TOKENS,
-        subcommands: &[Command::Image],
+        subcommands: &[Command::Image, Command::Initramfs],
         arg: Some(Arg::positional(0)),
-        summary: "What to do with the image: info, unpack, pack, check or swap.",
+        summary: "What to do: image info, unpack, pack, check or swap; initramfs build.",
         ..Input::EMPTY
     };
 
@@ -138,9 +145,46 @@ contract! {
     OUT: String, Command = Input {
         key: "out",
         ty: Type::String,
-        subcommands: &[Command::Image],
+        subcommands: &[Command::Image, Command::Initramfs],
         arg: Some(Arg { value_name: "PATH", ..Arg::long("out") }),
-        summary: "pack, swap: the image to write; unpack: the folder to write the parts to.",
+        summary: "pack, swap: the image to write; unpack: the folder to write the parts to; initramfs build: the archive to write.",
+        ..Input::EMPTY
+    };
+
+    SPEC: String, Command = Input {
+        key: "spec",
+        ty: Type::String,
+        subcommands: &[Command::Initramfs],
+        arg: Some(Arg { value_name: "FILE", ..Arg::long("spec") }),
+        summary: "initramfs build: the gen_init_cpio spec (dir, nod, file, slink lines; files named beside it).",
+        ..Input::EMPTY
+    };
+
+    ROOT: String, Command = Input {
+        key: "root",
+        ty: Type::String,
+        subcommands: &[Command::Initramfs],
+        arg: Some(Arg { value_name: "DIR", ..Arg::long("root") }),
+        summary: "initramfs build: the folder the spec's files are named in (the spec's own folder when none is given).",
+        ..Input::EMPTY
+    };
+
+    NET: String, Command = Input {
+        key: "net",
+        ty: Type::String,
+        subcommands: &[Command::Initramfs],
+        arg: Some(Arg { value_name: "N", ..Arg::long("net") }),
+        env: Some(Env::new("LPOCO_NET")),
+        summary: "initramfs build: the gadget address 172.16.N.1 and the ECM MAC byte (42 when none is given; the files are written at 42).",
+        ..Input::EMPTY
+    };
+
+    CODEC: String, Command = Input {
+        key: "codec",
+        ty: Type::String,
+        subcommands: &[Command::Initramfs],
+        arg: Some(Arg { value_name: "gzip|xz", ..Arg::long("codec") }),
+        summary: "initramfs build: the compression the device's kernel reads (xz for the 4.4 kernel; gzip when none is given).",
         ..Input::EMPTY
     };
 
