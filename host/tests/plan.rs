@@ -630,3 +630,48 @@ fn check_counts_the_primary_group_and_refuses_an_unset_user() {
     assert!(s.contains("FAIL, USER is not set"), "{s}");
     assert!(!o.status.success());
 }
+
+const BANNER_LOG: &str = "\
+Nov 18 10:06:54 lab kernel: usb 1-2: new high-speed USB device number 7 using xhci_hcd
+Nov 18 10:06:55 lab kernel: usb 1-2: New USB device found, idVendor=1d6b, idProduct=0104, bcdDevice= 4.19
+Nov 18 10:06:55 lab kernel: usb 1-2: New USB device strings: Mfr=1, Product=2, SerialNumber=3
+Nov 18 10:06:55 lab kernel: usb 1-2: SerialNumber: walleye-banner
+Nov 18 10:07:10 lab kernel: usb 1-3: New USB device found, idVendor=046d, idProduct=c077, bcdDevice= 1.00
+Nov 18 10:07:10 lab kernel: usb 1-3: SerialNumber: some-mouse
+";
+
+#[test]
+fn check_names_a_gadget_that_enumerated_with_a_serial_no_device_declares() {
+    let l = lab("undeclared-serial", "");
+    fs::create_dir_all(l.dir.join("fs")).unwrap();
+    fs::write(l.dir.join("fs/kernel.log"), BANNER_LOG).unwrap();
+    let o = host_as(&l, "mll", &["check"]);
+    let s = out(&o);
+    assert!(
+        s.contains("usb 1-2")
+            && s.contains("walleye-banner")
+            && s.contains("walleye-first-boot")
+            && s.contains("Nov 18 10:06:55")
+            && s.contains("undeclared gadget serial"),
+        "{s}"
+    );
+    assert!(
+        !s.contains("some-mouse"),
+        "only 1d6b gadgets are judged: {s}"
+    );
+    assert!(!o.status.success(), "{s}");
+}
+
+#[test]
+fn check_does_not_report_a_gadget_whose_serial_a_device_declares() {
+    let l = lab("declared-serial", "");
+    fs::create_dir_all(l.dir.join("fs")).unwrap();
+    fs::write(
+        l.dir.join("fs/kernel.log"),
+        BANNER_LOG.replace("walleye-banner", "walleye-first-boot"),
+    )
+    .unwrap();
+    let s = out(&host_as(&l, "mll", &["check"]));
+    assert!(!s.contains("undeclared gadget serial"), "{s}");
+    assert!(s.contains("kernel log: ok"), "{s}");
+}

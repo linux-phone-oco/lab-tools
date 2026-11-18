@@ -674,6 +674,100 @@ pub fn group_has_member(
     None
 }
 
+/// A USB gadget (vendor 1d6b) the kernel log says is enumerated with a serial.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SeenGadget {
+    /// the kernel's name for the USB device, e.g. `usb 1-2`
+    pub device: String,
+    pub serial: String,
+    /// the log's time stamp of the serial line, when the line has one
+    pub when: Option<String>,
+}
+
+/// The gadgets (vendor 1d6b, the Linux Foundation's) a kernel log (`journalctl -k` lines) says are enumerated
+/// with a serial now: the latest serial of each `usb B-P` device, dropped at its `USB disconnect`. A root hub
+/// (`usb usbN`, which also carries 1d6b) is not a gadget.
+pub fn gadgets_seen(log: &str) -> Vec<SeenGadget> {
+    let mut gadget: Vec<String> = Vec::new();
+    let mut now: Vec<SeenGadget> = Vec::new();
+    for line in log.lines() {
+        let (when, msg) = match line.split_once(" kernel: ") {
+            Some((h, m)) => (
+                Some(h.split_whitespace().take(3).collect::<Vec<_>>().join(" ")),
+                m,
+            ),
+            None => (None, line),
+        };
+        let Some((dev, rest)) = msg.split_once(": ") else {
+            continue;
+        };
+        if !dev.starts_with("usb ") || dev.starts_with("usb usb") {
+            continue;
+        }
+        if rest.starts_with("New USB device found") {
+            gadget.retain(|d| d != dev);
+            now.retain(|g| g.device != dev);
+            if rest.contains("idVendor=1d6b,") {
+                gadget.push(dev.to_string());
+            }
+        } else if rest.starts_with("USB disconnect") {
+            gadget.retain(|d| d != dev);
+            now.retain(|g| g.device != dev);
+        } else if let Some(serial) = rest.strip_prefix("SerialNumber: ") {
+            if gadget.iter().any(|d| d == dev) {
+                now.retain(|g| g.device != dev);
+                now.push(SeenGadget {
+                    device: dev.to_string(),
+                    serial: serial.trim().to_string(),
+                    when,
+                });
+            }
+        }
+    }
+    now
+}
+
+/// The enumerated gadgets whose serial none of `declared` names.
+pub fn undeclared_gadgets(log: &str, declared: &[String]) -> Vec<SeenGadget> {
+    gadgets_seen(log)
+        .into_iter()
+        .filter(|g| !declared.contains(&g.serial))
+        .collect()
+}
+
+#[cfg(test)]
+mod gadget_log_tests {
+    use super::*;
+
+    const HUB: &str = "Nov 18 09:00:01 lab kernel: usb usb1: New USB device found, idVendor=1d6b, idProduct=0002, bcdDevice= 7.03\nNov 18 09:00:01 lab kernel: usb usb1: SerialNumber: 0000:02:00.0\n";
+
+    #[test]
+    fn a_root_hub_is_not_a_gadget() {
+        assert!(gadgets_seen(HUB).is_empty());
+    }
+
+    #[test]
+    fn a_serial_fixed_or_unplugged_is_no_longer_seen() {
+        let log = format!(
+            "{HUB}Nov 18 10:00:00 lab kernel: usb 1-2: New USB device found, idVendor=1d6b, idProduct=0104\nNov 18 10:00:00 lab kernel: usb 1-2: SerialNumber: bad\nNov 18 10:01:00 lab kernel: usb 1-2: USB disconnect, device number 7\n"
+        );
+        assert!(gadgets_seen(&log).is_empty());
+        let log = format!(
+            "{log}Nov 18 10:02:00 lab kernel: usb 1-2: New USB device found, idVendor=1d6b, idProduct=0104\nNov 18 10:02:00 lab kernel: usb 1-2: SerialNumber: good\n"
+        );
+        let g = gadgets_seen(&log);
+        assert_eq!(g.len(), 1);
+        assert_eq!(g[0].serial, "good");
+        assert_eq!(g[0].when.as_deref(), Some("Nov 18 10:02:00"));
+    }
+
+    #[test]
+    fn a_line_without_a_stamp_has_no_time() {
+        let g = gadgets_seen("usb 1-2: New USB device found, idVendor=1d6b, idProduct=0104\nusb 1-2: SerialNumber: x\n");
+        assert_eq!(g[0].when, None);
+    }
+}
+
 #[cfg(test)]
 mod group_tests {
     use super::group_has_member as has;
