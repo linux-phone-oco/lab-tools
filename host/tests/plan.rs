@@ -826,7 +826,7 @@ fn an_enabled_watcher_of_a_device_that_does_not_ask_is_named_never_stopped() {
     fs::write(wants.join("devlab-watch@quiet-lab.service"), "").unwrap();
     let plan = out(&host(&l, &["plan"]));
     assert!(
-        plan.contains("devlab-watch@quiet-lab.service") && plan.contains("does not ask"),
+        plan.contains("devlab-watch@quiet-lab.service") && plan.contains("no device that asks"),
         "named in the plan: {plan}"
     );
     let o = host(&l, &["prepare", "now"]);

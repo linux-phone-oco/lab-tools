@@ -423,14 +423,12 @@ fn plan(st: &State) {
             "as declared"
         }
     );
-    if ucmds.is_empty() {
+    let unasked = unasked_watchers(&st.home, &st.found, &enabled_watchers(st));
+    if ucmds.is_empty() && unasked.is_empty() {
         println!("    nothing to do");
     }
-    for i in enabled_watchers(st)
-        .iter()
-        .filter(|i| unasked_watchers(&st.home, &st.found, std::slice::from_ref(i)).len() == 1)
-    {
-        println!("    devlab-watch@{i}.service is enabled but its device does not ask to be watched ([host] watch = true in its device.toml); left as it is, prepare never stops it");
+    for i in &unasked {
+        println!("    devlab-watch@{i}.service is enabled but no device that asks to be watched ([host] watch = true) maps to it; it is left as it is - prepare never stops it");
     }
     for c in &ucmds {
         println!("    {}", c.join(" "));

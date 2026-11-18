@@ -554,6 +554,20 @@ pub fn one_per_codename(devices: Vec<Device>) -> (Vec<Device>, Vec<String>) {
 mod one_per_codename_tests {
     use super::*;
 
+    #[test]
+    fn unasked_watchers_are_the_enabled_ones_no_asking_device_maps_to() {
+        let mut asks = dev("/h/Projects/linux-phone-oco/a-lab/device.toml", None);
+        asks.host.watch = true;
+        let silent = dev("/h/Projects/linux-phone-oco/b-lab/device.toml", None);
+        let enabled: Vec<String> = ["b-lab", "a-lab", "gone-lab", "b-lab"]
+            .map(String::from)
+            .to_vec();
+        assert_eq!(
+            unasked_watchers("/h", &[asks, silent], &enabled),
+            vec!["b-lab".to_string(), "gone-lab".to_string()]
+        );
+    }
+
     fn dev(path: &str, serial: Option<&str>) -> Device {
         let gadget = serial.map(|s| Gadget {
             serial: s.into(),
