@@ -6,7 +6,7 @@
 # A check that plays sound plays it quietly: at TEST_TONE_DBFS (the file's level) and TEST_VOLUME (the
 # output volume, restored afterwards), both from the manifest's [hear] - quiet by default (-40 dBFS, 25%).
 # A phone in a home must never shout.
-[ ! -r /etc/lpoco-health/health.env ] || . /etc/lpoco-health/health.env  # a missing file must not end a POSIX shell
+[ ! -r "${LPOCO_HEALTH_ROOT:-}/etc/lpoco-health/health.env" ] || . "${LPOCO_HEALTH_ROOT:-}/etc/lpoco-health/health.env"  # a missing file must not end a POSIX shell
 
 # the kernel log of this boot, whole: dmesg is a ring that verbose drivers overwrite within minutes
 klog() { journalctl -k -b 0 --no-pager -o short-monotonic 2>/dev/null || dmesg; }
