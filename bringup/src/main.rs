@@ -56,10 +56,10 @@ fn run(r: &argenv_resolve::Resolution) -> Result<i32, String> {
         );
     };
     let command = Contract::COMMAND.get_from(r);
-    if (verb == Verb::Build) != (command == Some(Command::Initramfs)) {
+    if matches!(verb, Verb::Build | Verb::Init) != (command == Some(Command::Initramfs)) {
         return Err(match verb {
-            Verb::Build => {
-                "build is for the initramfs: lpoco-bringup initramfs build --spec FILE --out FILE"
+            Verb::Build | Verb::Init => {
+                "build and init are for the initramfs: lpoco-bringup initramfs build --spec FILE --out FILE | initramfs init [--device FILE]"
                     .into()
             }
             _ => "image verbs go with image: lpoco-bringup image info|unpack|pack|check|swap|bisect ..."
@@ -158,13 +158,7 @@ fn run(r: &argenv_resolve::Resolution) -> Result<i32, String> {
         Verb::Build => {
             let spec = need(Contract::SPEC.get_from(r), "--spec FILE")?;
             let out = need(Contract::OUT.get_from(r), "--out FILE")?;
-            let net = match Contract::NET.get_from(r) {
-                None => initramfs::DEFAULT_NET,
-                Some(n) => n
-                    .trim()
-                    .parse::<u8>()
-                    .map_err(|_| format!("--net {n}: a number from 0 to 255"))?,
-            };
+            let net = net_of(r)?;
             let codec = initramfs::Codec::parse(
                 &Contract::CODEC.get_from(r).unwrap_or_else(|| "gzip".into()),
             )?;
@@ -173,6 +167,25 @@ fn run(r: &argenv_resolve::Resolution) -> Result<i32, String> {
                 initramfs::build(Path::new(&spec), root.as_deref().map(Path::new), net, codec)?;
             fs::write(&out, &img).map_err(|e| format!("cannot write {out}: {e}"))?;
             println!("{out}: {} bytes ({codec:?}, net {net})", img.len());
+            Ok(0)
+        }
+        Verb::Init => {
+            let net = net_of(r)?;
+            let boot = Boot::read(Path::new(&device))?;
+            let gadget = boot.gadget.ok_or_else(|| {
+                format!("{device}: no [boot.gadget] table (serial and product say how the phone names itself on the cable)")
+            })?;
+            let text = lpoco_bringup::init::make(&gadget, net)?;
+            match Contract::OUT.get_from(r) {
+                None => print!("{text}"),
+                Some(out) => {
+                    fs::write(&out, &text).map_err(|e| format!("cannot write {out}: {e}"))?;
+                    use std::os::unix::fs::PermissionsExt;
+                    fs::set_permissions(&out, fs::Permissions::from_mode(0o755))
+                        .map_err(|e| format!("cannot make {out} executable: {e}"))?;
+                    println!("{out}: {} bytes (net {net})", text.len());
+                }
+            }
             Ok(0)
         }
         Verb::Check => {
@@ -219,4 +232,15 @@ fn hook_parts(
     })();
     let _ = fs::remove_dir_all(&dir);
     result
+}
+
+/// `--net N`: the gadget address 172.16.N.1; the default when none is given.
+fn net_of(r: &argenv_resolve::Resolution) -> Result<u8, String> {
+    match Contract::NET.get_from(r) {
+        None => Ok(initramfs::DEFAULT_NET),
+        Some(n) => n
+            .trim()
+            .parse::<u8>()
+            .map_err(|_| format!("--net {n}: a number from 0 to 255")),
+    }
 }

@@ -35,6 +35,38 @@ pub struct Boot {
     pub avb_footer: Option<bool>,
     /// step name to executable (relative to the manifest): `parts` runs on kernel and ramdisk before packing
     pub hooks: Option<std::collections::BTreeMap<String, String>>,
+    /// the USB gadget the bring-up init (`lpoco-bringup initramfs init`) raises: how the phone names itself on the cable
+    pub gadget: Option<BootGadget>,
+}
+
+/// `[boot.gadget]`: what the bring-up init says of the phone on the USB cable. The functions (ACM serial
+/// console, ECM network, RNDIS for Windows hosts) and the address (`--net`) are the init's; the names are the device's.
+#[derive(Debug, Clone, Deserialize, PartialEq, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BootGadget {
+    /// the gadget's USB serial number string (the lab finds the phone by it)
+    pub serial: String,
+    /// the USB manufacturer string
+    #[serde(default = "default_manufacturer")]
+    pub manufacturer: String,
+    /// the USB product string
+    pub product: String,
+    /// the word the init's log lines start with (`LABEL: up, kernel ...`)
+    #[serde(default = "default_label")]
+    pub label: String,
+    /// a second configuration, RNDIS + ACM, for Windows hosts
+    #[serde(default = "yes")]
+    pub rndis: bool,
+}
+
+fn default_manufacturer() -> String {
+    "linux-phone-oco".into()
+}
+fn default_label() -> String {
+    "bringup-init".into()
+}
+fn yes() -> bool {
+    true
 }
 
 impl Boot {
