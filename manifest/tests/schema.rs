@@ -53,3 +53,28 @@ fn every_lab_manifest_validates() {
         }
     }
 }
+
+#[test]
+fn a_gadget_word_that_would_break_the_inits_quotes_is_refused_when_the_manifest_is_read() {
+    let boot = "[boot]\nkernel_offset = 0x8000\nramdisk_offset = 0x1000000\ntags_offset = 0x100\npagesize = 4096\ncmdline = \"x\"\n";
+    for field in ["serial", "manufacturer", "product", "label"] {
+        for bad in ["a\\\"b", "a$b", "a`b", "a@b", "a\\\\b", "a\\nb", ""] {
+            let mut gadget = String::from("[boot.gadget]\n");
+            for k in ["serial", "product"] {
+                if k != field {
+                    gadget.push_str(&format!("{k} = \"ok\"\n"));
+                }
+            }
+            gadget.push_str(&format!("{field} = \"{bad}\"\n"));
+            let e = Manifest::parse(&format!("{HEAD}{boot}{gadget}")).unwrap_err();
+            assert!(
+                e.contains(field),
+                "the refusal names {field} for {bad:?}: {e}"
+            );
+        }
+    }
+    assert!(Manifest::parse(&format!(
+        "{HEAD}{boot}[boot.gadget]\nserial = \"pixel-1\"\nproduct = \"Pixel 2 (mainline)\"\n"
+    ))
+    .is_ok());
+}

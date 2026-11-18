@@ -59,6 +59,35 @@ pub struct BootGadget {
     pub rndis: bool,
 }
 
+impl BootGadget {
+    /// Every word the init puts inside double quotes must be one it can carry: refused here, when the
+    /// manifest is read, not only when the init is made.
+    pub fn check(&self) -> Result<(), String> {
+        for (what, v) in [
+            ("serial", &self.serial),
+            ("manufacturer", &self.manufacturer),
+            ("product", &self.product),
+            ("label", &self.label),
+        ] {
+            shell_word(what, v)?;
+        }
+        Ok(())
+    }
+}
+
+/// A value that goes inside double quotes in a script: not empty, nothing that would end or expand them.
+pub fn shell_word<'a>(what: &str, v: &'a str) -> Result<&'a str, String> {
+    if v.is_empty()
+        || v.chars()
+            .any(|c| matches!(c, '"' | '$' | '`' | '\\' | '\n' | '@'))
+    {
+        return Err(format!(
+            "[boot.gadget] {what} = {v:?}: not empty, and none of \" $ ` \\ @ or a line break"
+        ));
+    }
+    Ok(v)
+}
+
 fn default_manufacturer() -> String {
     "linux-phone-oco".into()
 }
