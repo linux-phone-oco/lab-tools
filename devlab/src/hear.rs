@@ -31,13 +31,13 @@ pub fn placed_or_refuse(placed: bool) -> Result<()> {
 
 /// The lab's microphone, as PipeWire names it.
 pub fn microphone() -> Result<String> {
-    if let Ok(m) = std::env::var("DEVLAB_MICROPHONE") {
-        if !m.trim().is_empty() {
-            return Ok(m.trim().to_string());
-        }
+    if let Some(m) = crate::cli::env().microphone.clone() {
+        return Ok(m);
     }
-    let path = std::env::var("HOME")
-        .map(|h| Path::new(&h).join(".config/devlab/microphone"))
+    let path = crate::cli::env()
+        .home
+        .as_ref()
+        .map(|h| Path::new(h).join(".config/devlab/microphone"))
         .context("no HOME")?;
     let name = std::fs::read_to_string(&path)
         .with_context(|| format!("the lab has no microphone named: put a PipeWire source name (pactl list sources short) in {}", path.display()))?;

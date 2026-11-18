@@ -19,7 +19,7 @@ pub fn alert_text(codename: &str, well: bool, verdict: &str) -> Option<String> {
 }
 
 fn board(args: &[&str]) {
-    let lab = std::env::var("LAB_AGENT").unwrap_or_else(|_| "lab-agent".into());
+    let lab = crate::cli::env().lab_agent.clone();
     let _ = Command::new(lab).arg("board").args(args).status();
 }
 

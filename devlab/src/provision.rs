@@ -53,10 +53,9 @@ pub fn fill(template: &str, compatible: &str) -> String {
 
 /// A command as root on this machine: $DEVLAB_ROOT (default: lab-agent's root-exec).
 fn host_root(args: &[&str]) -> Result<bool> {
-    let prefix =
-        std::env::var("DEVLAB_ROOT").unwrap_or_else(|_| "sudo -n lab-agent root-exec --".into());
+    let prefix = crate::cli::env().devlab_root.clone();
     let mut p = prefix.split_whitespace();
-    let mut c = Command::new(p.next().context("DEVLAB_ROOT is empty")?);
+    let mut c = Command::new(p.next().context("no root program")?);
     c.args(p).args(args);
     Ok(c.status()?.success())
 }
