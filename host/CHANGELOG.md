@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-host-v0.20.0...lpoco-host-v0.20.1) - 2026-11-18
+
+### Added
+
+- *(ffs-acm)* the FunctionFS ACM console helper joins the family ([#192](https://github.com/linux-phone-oco/lab-tools/pull/192))
+
 ## [0.20.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-host-v0.19.0...lpoco-host-v0.20.0) - 2026-11-18
 
 ### Other
