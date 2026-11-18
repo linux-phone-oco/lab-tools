@@ -85,7 +85,31 @@ pub fn settle(phone: &Phone) {
     }
 }
 
-pub fn run_checks(device: &Device, manifest_dir: &Path, phone: &Phone) -> Result<Vec<Check>> {
+/// Says, after a health run, which phone-side piece the report it just read back holds off
+/// origin/main of the device's repository (lpoco-host's judgement, the one `lpoco host check` makes). It
+/// never fails the run: a manifest or a report it cannot judge is "not measured".
+pub fn name_stale_pieces(device: &Device, manifest: &Path, report: &str) {
+    let path = manifest;
+    // the phone's stdout may carry noise besides the rows: judge only the rows
+    let rows: String = report
+        .lines()
+        .filter(|l| {
+            serde_json::from_str::<serde_json::Value>(l).is_ok_and(|v| v["test"].is_string())
+        })
+        .map(|l| format!("{l}\n"))
+        .collect();
+    let judged = std::fs::read_to_string(path)
+        .map_err(|e| format!("{}: {e}", path.display()))
+        .and_then(|text| lpoco_host::parse_device(path, &text))
+        .and_then(|d| lpoco_host::stale_lines(&d, &rows, "this run"));
+    match judged {
+        Ok(lines) => lines.iter().for_each(|l| println!("{l}")),
+        Err(e) => println!("{} phone pieces: not measured, {e}", device.device.codename),
+    }
+}
+
+/// The checks' raw report, kept in the state directory.
+pub fn run_report(device: &Device, manifest_dir: &Path, phone: &Phone) -> Result<String> {
     settle(phone);
     let script_path = manifest_dir.join(&device.tests.checks);
     let script = std::fs::read_to_string(&script_path)
@@ -98,7 +122,7 @@ pub fn run_checks(device: &Device, manifest_dir: &Path, phone: &Phone) -> Result
         .map(|d| d.as_secs())
         .unwrap_or(0);
     std::fs::write(dir.join(format!("{stamp}.jsonl")), &out)?;
-    Ok(parse(&out))
+    Ok(out)
 }
 
 fn baseline_path(device: &Device) -> std::path::PathBuf {
@@ -148,10 +172,12 @@ pub fn in_scope(
 pub fn health(
     device: &Device,
     manifest_dir: &Path,
+    manifest: &Path,
     phone: &Phone,
     listen: bool,
 ) -> Result<Vec<String>> {
-    let mut now = run_checks(device, manifest_dir, phone)?;
+    let report = run_report(device, manifest_dir, phone)?;
+    let mut now = parse(&report);
     if listen {
         let heard = crate::hear::hear(device, phone)?;
         let dir = device.state_dir().join("results");
@@ -178,6 +204,7 @@ pub fn health(
         .collect();
     let r = regressions(&in_scope(&base, &heard_keys, listen), &now);
     save_baseline(device, &grown(&base, &now))?;
+    name_stale_pieces(device, manifest, &report);
     Ok(r)
 }
 

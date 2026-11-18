@@ -70,12 +70,6 @@ source="
 
 builddir="$srcdir/$pkgname-lab-${pkgver#*_p}.1"
 
-# The code is built here, in the conveyor's build container (which has the makedepends and never the
-# signing key), not by `make install` in package(), which runs in the container that signs.
-build() {
-	make
-}
-
 package() {
 	mkdir -p "$pkgdir/usr/lib/modules-load.d/"
 	printf %b "snd-aloop" > "$pkgdir/usr/lib/modules-load.d/sxmo.conf"

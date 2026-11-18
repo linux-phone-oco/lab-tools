@@ -10,6 +10,7 @@ license = "MIT OR Apache-2.0"
 ideal-agent = { git = "https://github.com/grenudi/ideal-agent", rev = "5967ea8101f9b502ec2c2dd3bf47b64a5ba90c8d" }
 hound = "3"
 tone = { package = "lpoco-tone", path = "../tone" }
+lpoco-host = { path = "../host" }
 anyhow = "1"
 argenv-resolve = "0.4"
 serde = { version = "1", features = ["derive"] }
