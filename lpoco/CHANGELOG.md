@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-v0.14.1...lpoco-v0.15.0) - 2026-11-18
+
+### Added
+
+- *(host)* check names a stale phone-side piece from the phone's last gathered report ([#165](https://github.com/linux-phone-oco/lab-tools/pull/165))
+
 ## [0.14.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-v0.14.0...lpoco-v0.14.1) - 2026-11-18
 
 ### Fixed
