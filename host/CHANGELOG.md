@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-host-v0.17.0...lpoco-host-v0.17.1) - 2026-11-18
+
+### Fixed
+
+- *(host)* restore the per-device phone share ([#164](https://github.com/linux-phone-oco/lab-tools/pull/164)) and the 0.14.2 changelogs that #165 reverted ([#177](https://github.com/linux-phone-oco/lab-tools/pull/177))
+
 ## [0.17.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-host-v0.16.0...lpoco-host-v0.17.0) - 2026-11-18
 
 ### Added
