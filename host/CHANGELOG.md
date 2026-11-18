@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.4](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-host-v0.3.3...lpoco-host-v0.3.4) - 2026-11-18
+
+### Added
+
+- lpoco host reads each device from origin/main and names the commit and its lag ([#108](https://github.com/linux-phone-oco/lab-tools/pull/108))
+
 ## [0.3.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-host-v0.2.2...lpoco-host-v0.3.0) - 2026-11-18
 
 ### Added
