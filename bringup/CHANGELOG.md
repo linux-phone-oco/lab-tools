@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.3](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.18.2...lpoco-bringup-v0.18.3) - 2026-11-18
+
+### Added
+
+- *(bringup)* initramfs files - the init's DHCP and selftest files shipped with it ([#186](https://github.com/linux-phone-oco/lab-tools/pull/186))
+
 ## [0.18.2](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.18.1...lpoco-bringup-v0.18.2) - 2026-11-18
 
 ### Added
