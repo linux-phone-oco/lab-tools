@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.4.1...lpoco-bringup-v0.5.0) - 2026-11-18
+
+### Fixed
+
+- *(host)* lpoco host reads lab.toml from origin/main, naming the rev ([#127](https://github.com/linux-phone-oco/lab-tools/pull/127))
+
 ## [0.4.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.4.0...lpoco-bringup-v0.4.1) - 2026-11-18
 
 ### Added
