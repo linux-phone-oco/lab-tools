@@ -1325,3 +1325,75 @@ impl Drop for Kill {
         let _ = fs::write(&self.0, "");
     }
 }
+
+/// Makes the udev rules directory of the lab's fake root unreadable, as /etc/polkit-1/rules.d and NetworkManager's
+/// directory are to the lab user; gives it back when dropped so the temp folder can be removed.
+struct Closed(PathBuf);
+
+impl Closed {
+    fn new(l: &Lab) -> Closed {
+        let d = l.dir.join("fs/etc/udev/rules.d");
+        fs::create_dir_all(&d).unwrap();
+        fs::set_permissions(&d, fs::Permissions::from_mode(0o000)).unwrap();
+        Closed(d)
+    }
+}
+
+impl Drop for Closed {
+    fn drop(&mut self) {
+        let _ = fs::set_permissions(&self.0, fs::Permissions::from_mode(0o755));
+    }
+}
+
+#[test]
+fn a_root_file_the_lab_user_cannot_read_is_judged_by_the_hash_recorded_at_its_last_install() {
+    // (3) no record: named unreadable and not known, never new
+    let l = lab("unreadable-unknown", "");
+    let _closed = Closed::new(&l);
+    let s = out(&host(&l, &["plan"]));
+    let rule = s
+        .lines()
+        .find(|x| x.contains("70-lpoco-google-walleye.rules"))
+        .unwrap_or_else(|| panic!("{s}"));
+    assert!(
+        rule.contains("unreadable") && rule.contains("not known yet") && !rule.contains("(new)"),
+        "{s}"
+    );
+
+    // (4) prepare records the hash after the root install it runs (the folder is readable at that time)
+    let l = lab("unreadable-recorded", "");
+    let o = host(&l, &["prepare", "now"]);
+    assert!(
+        o.status.success(),
+        "{}{}",
+        out(&o),
+        String::from_utf8_lossy(&o.stderr)
+    );
+    let c = changes(&l).unwrap();
+    assert!(c.contains("70-lpoco-google-walleye.rules"), "{c}");
+    let closed = Closed::new(&l);
+
+    // (1) the same declaration, the folder now closed: up to date, 0 root commands
+    let s = out(&host(&l, &["plan"]));
+    assert!(
+        s.contains("70-lpoco-google-walleye.rules (as declared, unreadable: recorded at install)"),
+        "{s}"
+    );
+    assert_eq!(
+        s.matches("70-lpoco-google-walleye.rules").count(),
+        1,
+        "no root command names it: {s}"
+    );
+    assert!(!s.contains("udevadm control --reload"), "{s}");
+
+    // (2) the declaration changes: a root install again
+    let dev = l.dir.join("devs/google-walleye-lab/device.toml");
+    let t = fs::read_to_string(&dev).unwrap();
+    fs::write(&dev, t.replace("walleye-first-boot", "walleye-second-boot")).unwrap();
+    let s = out(&host(&l, &["plan"]));
+    assert!(
+        s.contains("install -D -m 0644") && s.contains("70-lpoco-google-walleye.rules"),
+        "{s}"
+    );
+    drop(closed);
+}

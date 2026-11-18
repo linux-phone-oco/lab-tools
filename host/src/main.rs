@@ -318,8 +318,52 @@ fn run(r: &Resolution) -> Result<i32, String> {
     }
 }
 
-fn read_file(fs_root: &str, p: &str) -> Option<String> {
+/// Where the host keeps the hash of each root file it installed: a folder that hides a file from the lab user
+/// (polkit rules, NetworkManager keyfiles) cannot be read back, so the record stands for it.
+fn record_path(home: &str) -> String {
+    format!("{home}/.local/state/lpoco-host/installed")
+}
+
+/// The record: one `HASH DST` a line.
+fn records(home: &str) -> Vec<(String, String)> {
+    fs::read_to_string(record_path(home))
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|l| l.split_once(' '))
+        .map(|(h, d)| (h.to_string(), d.to_string()))
+        .collect()
+}
+
+fn record_installed(home: &str, files: &[FileChange]) -> Result<(), String> {
+    let mut all = records(home);
+    for f in files.iter().filter(|f| f.changed()) {
+        all.retain(|(_, d)| *d != f.dst);
+        all.push((content_hash(&f.content), f.dst.clone()));
+    }
+    let path = record_path(home);
+    if let Some(d) = Path::new(&path).parent() {
+        fs::create_dir_all(d).map_err(|e| format!("cannot make {}: {e}", d.display()))?;
+    }
+    let text: String = all.iter().map(|(h, d)| format!("{h} {d}\n")).collect();
+    replace_file(&path, text.as_bytes(), 0o644).map_err(|e| format!("cannot write {path}: {e}"))
+}
+
+/// A file of the host as plain text, None when it cannot be read.
+fn read_text(fs_root: &str, p: &str) -> Option<String> {
     fs::read_to_string(format!("{fs_root}{p}")).ok()
+}
+
+fn read_file(st: &State, p: &str) -> Seen {
+    match fs::read_to_string(format!("{}{p}", st.fs_root)) {
+        Ok(t) => Seen::Text(t),
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => Seen::Unreadable {
+            recorded: records(&st.home)
+                .into_iter()
+                .find(|(_, d)| d == p)
+                .map(|(h, _)| h),
+        },
+        Err(_) => Seen::Absent,
+    }
 }
 
 fn tool_plans(st: &State) -> Vec<ToolPlan> {
@@ -381,7 +425,7 @@ fn plan(st: &State) {
         st.lab.gadget_group.as_deref(),
         LinkManager::detect(&st.fs_root),
         st.user.as_deref(),
-        &|p| read_file(&st.fs_root, p),
+        &|p| read_file(st, p),
     );
     let modules = modules_of(&st.devices);
     let stage = stage_dir(&st.home);
@@ -407,21 +451,9 @@ fn plan(st: &State) {
         }
     );
     for f in &files {
-        if f.changed() {
-            println!(
-                "\n{} ({})",
-                f.dst,
-                if f.existing.is_some() {
-                    "changes"
-                } else {
-                    "new"
-                }
-            );
-            for l in f.diff() {
-                println!("    {l}");
-            }
-        } else {
-            println!("\n{} (as declared)", f.dst);
+        println!("\n{} ({})", f.dst, f.state());
+        for l in f.diff() {
+            println!("    {l}");
         }
     }
     if modules.iter().any(|m| !module_loaded(&st.fs_root, m))
@@ -455,19 +487,7 @@ fn plan(st: &State) {
     let tools = tool_plans(st);
     let (unit, ucmds) = watchers(st, &tools);
     println!("\nwatchers (user units, no root; replaces lab-machine setup/devlab-watch.sh):");
-    println!(
-        "    {} ({})",
-        unit.dst,
-        if unit.changed() {
-            if unit.existing.is_some() {
-                "changes"
-            } else {
-                "new"
-            }
-        } else {
-            "as declared"
-        }
-    );
+    println!("    {} ({})", unit.dst, unit.state());
     let unasked = unasked_watchers(&st.home, &st.found, &enabled_watchers(st));
     if ucmds.is_empty() && unasked.is_empty() {
         println!("    nothing to do");
@@ -528,7 +548,7 @@ fn prepare(st: &State) -> Result<i32, String> {
         st.lab.gadget_group.as_deref(),
         LinkManager::detect(&st.fs_root),
         st.user.as_deref(),
-        &|p| read_file(&st.fs_root, p),
+        &|p| read_file(st, p),
     );
     let modules = modules_of(&st.devices);
     let stage = stage_dir(&st.home);
@@ -547,6 +567,7 @@ fn prepare(st: &State) -> Result<i32, String> {
         println!("root: {}", c.join(" "));
         run_root(st, c)?;
     }
+    record_installed(&st.home, &files)?;
     let _ = fs::remove_dir_all(&stage);
     // worked out before the tools change: a replaced binary restarts the watchers that run it
     let tools = tool_plans(st);
@@ -717,8 +738,8 @@ fn check(st: &State) -> Result<i32, String> {
     if let Some(g) = &st.lab.gadget_group {
         let user = st.user.as_deref().unwrap_or("");
         match group_has_member(
-            &read_file(&st.fs_root, "/etc/group").unwrap_or_default(),
-            &read_file(&st.fs_root, "/etc/passwd").unwrap_or_default(),
+            &read_text(&st.fs_root, "/etc/group").unwrap_or_default(),
+            &read_text(&st.fs_root, "/etc/passwd").unwrap_or_default(),
             g,
             user,
         ) {
@@ -848,7 +869,7 @@ fn check(st: &State) -> Result<i32, String> {
 /// The kernel log since boot: `kernel.log` under the test root when there is one, else `journalctl -k -b`.
 fn kernel_log(fs_root: &str) -> Option<String> {
     if !fs_root.is_empty() {
-        return read_file(fs_root, "/kernel.log");
+        return read_text(fs_root, "/kernel.log");
     }
     let o = Proc::new("journalctl")
         .args(["-k", "-b", "--no-pager"])

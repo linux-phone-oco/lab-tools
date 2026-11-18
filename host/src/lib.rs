@@ -552,24 +552,72 @@ pub fn modules_text(modules: &[String]) -> String {
     s
 }
 
+/// What the host holds at a path, as far as the lab user can tell.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Seen {
+    Absent,
+    Text(String),
+    /// a root-only folder hides it; `recorded` is the hash of the content the last install put there, if known
+    Unreadable {
+        recorded: Option<String>,
+    },
+}
+
+impl From<Option<String>> for Seen {
+    fn from(o: Option<String>) -> Seen {
+        o.map_or(Seen::Absent, Seen::Text)
+    }
+}
+
+/// The hash a record of an installed file keeps: git's blob id of its content.
+pub fn content_hash(s: &str) -> String {
+    blob_id(s.as_bytes())
+}
+
 /// A file the host should hold, what it holds now, and what changes with it.
 #[derive(Debug, Clone)]
 pub struct FileChange {
     pub dst: String,
     pub content: String,
-    pub existing: Option<String>,
+    pub seen: Seen,
     /// gadget serials whose udev rule this file carries (to trigger them once written)
     pub serials: Vec<String>,
 }
 
 impl FileChange {
     pub fn changed(&self) -> bool {
-        self.existing.as_deref() != Some(self.content.as_str())
+        match &self.seen {
+            Seen::Absent => true,
+            Seen::Text(t) => *t != self.content,
+            Seen::Unreadable { recorded } => {
+                recorded.as_deref() != Some(content_hash(&self.content).as_str())
+            }
+        }
+    }
+
+    /// How the plan words this file: changes, new, or - for one it cannot read - what it knows of it.
+    pub fn state(&self) -> &'static str {
+        match (&self.seen, self.changed()) {
+            (Seen::Absent, _) => "new",
+            (Seen::Text(_), true) => "changes",
+            (Seen::Text(_), false) => "as declared",
+            (Seen::Unreadable { .. }, true) => {
+                "unreadable, not known yet: no record of an install of this content"
+            }
+            (Seen::Unreadable { .. }, false) => "as declared, unreadable: recorded at install",
+        }
     }
 
     /// A line diff: `+` a line the file will gain, `-` one it will lose.
     pub fn diff(&self) -> Vec<String> {
-        let old: Vec<&str> = self.existing.as_deref().unwrap_or("").lines().collect();
+        if !self.changed() {
+            return vec![];
+        }
+        let old: Vec<&str> = match &self.seen {
+            Seen::Text(t) => t.lines().collect(),
+            Seen::Unreadable { .. } => return vec![],
+            Seen::Absent => vec![],
+        };
         let new: Vec<&str> = self.content.lines().collect();
         let mut d: Vec<String> = old
             .iter()
@@ -590,7 +638,7 @@ pub fn files_for(
     group: Option<&str>,
     manager: Option<LinkManager>,
     share_user: Option<&str>,
-    read: &dyn Fn(&str) -> Option<String>,
+    read: &dyn Fn(&str) -> Seen,
 ) -> Vec<FileChange> {
     let mut files = Vec::new();
     let mut modules: Vec<String> = Vec::new();
@@ -598,7 +646,7 @@ pub fn files_for(
         if !d.host.gadget.is_empty() {
             let dst = format!("{UDEV_DIR}/70-lpoco-{}.rules", d.codename);
             files.push(FileChange {
-                existing: read(&dst),
+                seen: read(&dst),
                 content: rules_text(d, group),
                 serials: d.host.gadget.iter().map(|g| g.serial.clone()).collect(),
                 dst,
@@ -614,7 +662,7 @@ pub fn files_for(
         for (name, address) in net_links(devices) {
             let dst = m.file_for(&name);
             files.push(FileChange {
-                existing: read(&dst),
+                seen: read(&dst),
                 content: m.text(&name, &address),
                 serials: vec![],
                 dst,
@@ -628,7 +676,7 @@ pub fn files_for(
             (share::POLKIT_DST, share::polkit_text(user)),
         ] {
             files.push(FileChange {
-                existing: read(dst),
+                seen: read(dst),
                 content,
                 serials: vec![],
                 dst: dst.into(),
@@ -640,7 +688,7 @@ pub fn files_for(
         files.push(FileChange {
             dst: MODULES_FILE.into(),
             content: modules_text(&modules),
-            existing: read(MODULES_FILE),
+            seen: read(MODULES_FILE),
             serials: vec![],
         });
     }
@@ -897,7 +945,7 @@ mod tests {
         let f = FileChange {
             dst: "x".into(),
             content: "a\nb\n".into(),
-            existing: Some("a\nb\n".into()),
+            seen: Seen::Text("a\nb\n".into()),
             serials: vec![],
         };
         assert!(!f.changed() && f.diff().is_empty());
@@ -1256,7 +1304,7 @@ pub fn watch_plan(
 ) -> (FileChange, Vec<Vec<String>>) {
     let dst = format!("{home}/.config/systemd/user/{WATCH_UNIT}");
     let template = FileChange {
-        existing: read(&dst),
+        seen: read(&dst).into(),
         content: watch_unit_text(),
         serials: vec![],
         dst,
