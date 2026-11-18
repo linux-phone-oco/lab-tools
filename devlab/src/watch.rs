@@ -1,6 +1,6 @@
 //! Watching the phone from the lab machine. After every new boot the phone measures its own health
-//! (lpoco-health.timer); the watch waits for that report, says the phone's own verdict on the board -
-//! silent while all is well, one task naming what is unhealthy when not, closed again once well - and
+//! (lpoco-health.timer); the watch waits for that report and says the phone's own verdict in its journal -
+//! silent while all is well, one line naming what is unhealthy when not, one when well again - and
 //! gathers, once the phone has gone QUIET without a new boot: the reports brought to the lab and filed
 //! into the picture's database through tad, both
 //! landed, so the face is drawn again. Nobody asks for any of it.
@@ -10,22 +10,15 @@ use crate::phone::Phone;
 use crate::{gather, suite};
 use anyhow::Result;
 use std::path::Path;
-use std::process::Command;
 use std::time::{Duration, Instant};
 
-/// What the board task says: the phone's verdict when it is unhealthy, or nothing when all is well.
+/// What the journal says about a boot: the phone's verdict when it is unhealthy, or nothing when all is well.
 pub fn alert_text(codename: &str, well: bool, verdict: &str) -> Option<String> {
     (!well).then(|| format!("{codename}: {verdict}"))
 }
 
-fn board(args: &[&str]) {
-    let lab = crate::cli::env().lab_agent.clone();
-    let _ = Command::new(lab).arg("board").args(args).status();
-}
-
 pub fn watch(device: &Device, manifest_dir: &Path) -> Result<()> {
     let codename = &device.device.codename;
-    let task = format!("health-{codename}");
     let mut last_boot: Option<String> = None;
     let mut alerting: Option<String> = None;
     let mut due: Option<Instant> = None;
@@ -42,11 +35,9 @@ pub fn watch(device: &Device, manifest_dir: &Path) -> Result<()> {
                         match (&text, &alerting) {
                             (Some(t), a) if a.as_ref() != Some(t) => {
                                 println!("lpoco-lab watch: {t}");
-                                board(&["set", &task, t, "--project", "linux-phone-oco"]);
                             }
                             (None, Some(_)) => {
                                 println!("lpoco-lab watch: all is well again");
-                                board(&["done", &task]);
                             }
                             _ => {}
                         }
