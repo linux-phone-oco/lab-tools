@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.2](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-v0.12.1...lpoco-v0.12.2) - 2026-11-18
+
+### Added
+
+- *(health)* lab-pieces check reports each declared file's blob id and package version ([#150](https://github.com/linux-phone-oco/lab-tools/pull/150))
+- lpoco-lab job: a long job is its own user unit that holds the lab awake while it runs ([#153](https://github.com/linux-phone-oco/lab-tools/pull/153))
+
+### Fixed
+
+- devlab watch no longer files a board task: the verdict is a journal line ([#152](https://github.com/linux-phone-oco/lab-tools/pull/152))
+
 ## [0.12.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-v0.12.0...lpoco-v0.12.1) - 2026-11-18
 
 ### Added
