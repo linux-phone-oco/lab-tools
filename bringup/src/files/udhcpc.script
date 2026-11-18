@@ -1,0 +1,2 @@
+#!/bin/sh
+case $1 in bound|renew) /opt/ip/ip addr add "$ip/24" dev "$interface" ;; esac

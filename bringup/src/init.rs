@@ -7,6 +7,12 @@ use lpoco_manifest::{shell_word, BootGadget};
 
 const TEMPLATE: &str = include_str!("init.sh");
 
+const FILES: &[(&str, &str, u32)] = &[
+    ("udhcpd.conf", include_str!("files/udhcpd.conf"), 0o644),
+    ("udhcpc.script", include_str!("files/udhcpc.script"), 0o755),
+    ("selftest.sh", include_str!("files/selftest.sh"), 0o755),
+];
+
 const RNDIS: &str = "mkdir -p $G/functions/rndis.usb0 $G/configs/c.2/strings/0x409
 echo \"RNDIS + ACM\" > $G/configs/c.2/strings/0x409/configuration
 ln -s $G/functions/rndis.usb0 $G/configs/c.2/
@@ -32,6 +38,27 @@ pub fn make(g: &BootGadget, net: u8) -> Result<String, String> {
             shell_word("manufacturer", &g.manufacturer)?,
         )
         .replace("@PRODUCT@", shell_word("product", &g.product)?))
+}
+
+/// The files the init reads beside itself: the DHCP server's one lease, the client script and the self-test,
+/// each at 172.16.`net`.x. Written into `dir` (made when missing); the scripts are executable.
+pub fn write_files(dir: &std::path::Path, net: u8) -> Result<Vec<&'static str>, String> {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::create_dir_all(dir).map_err(|e| format!("cannot make {}: {e}", dir.display()))?;
+    let mut names = Vec::new();
+    for (name, text, mode) in FILES {
+        let bytes = if net == DEFAULT_NET {
+            text.as_bytes().to_vec()
+        } else {
+            rewrite_net(text.as_bytes().to_vec(), net, name)?
+        };
+        let p = dir.join(name);
+        std::fs::write(&p, bytes).map_err(|e| format!("cannot write {}: {e}", p.display()))?;
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(*mode))
+            .map_err(|e| format!("cannot set the mode of {}: {e}", p.display()))?;
+        names.push(*name);
+    }
+    Ok(names)
 }
 
 #[cfg(test)]

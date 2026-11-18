@@ -154,3 +154,76 @@ fn a_failed_bind_or_interface_is_said_not_skipped() {
         "{s}"
     );
 }
+
+fn files(args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_lpoco-bringup"))
+        .args(["initramfs", "files"])
+        .args(args)
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn the_init_ships_its_dhcp_and_selftest_files_at_the_chosen_address() {
+    let d = tmp("files");
+    let out = d.join("out");
+    let o = files(&["--out", out.to_str().unwrap(), "--net", "43"]);
+    assert!(o.status.success(), "{}", text(&o.stderr));
+    let conf = fs::read_to_string(out.join("udhcpd.conf")).unwrap();
+    assert!(
+        conf.contains("start 172.16.43.2") && !conf.contains("172.16.42"),
+        "{conf}"
+    );
+    let script = fs::read_to_string(out.join("udhcpc.script")).unwrap();
+    assert!(script.contains("$ip/24"), "{script}");
+    assert!(
+        conf.contains("end 172.16.43.2") && conf.contains("interface usb0"),
+        "{conf}"
+    );
+    let st = fs::read_to_string(out.join("selftest.sh")).unwrap();
+    assert!(st.contains("inet 172.16.43.2/"), "{st}");
+    assert!(
+        st.contains("172.16.43.1") && !st.contains("172.16.42"),
+        "{st}"
+    );
+    use std::os::unix::fs::PermissionsExt;
+    for (f, want) in [
+        ("udhcpd.conf", 0o644),
+        ("udhcpc.script", 0o755),
+        ("selftest.sh", 0o755),
+    ] {
+        let m = fs::metadata(out.join(f)).unwrap().permissions().mode() & 0o777;
+        assert_eq!(m, want, "{f}");
+        if f == "udhcpd.conf" {
+            continue;
+        }
+        let sh = Command::new("sh")
+            .arg("-n")
+            .arg(out.join(f))
+            .output()
+            .unwrap();
+        assert!(sh.status.success(), "{f}: {}", text(&sh.stderr));
+    }
+}
+
+#[test]
+fn files_without_an_out_folder_is_refused_in_words() {
+    let o = files(&[]);
+    assert!(!o.status.success());
+    assert!(text(&o.stderr).contains("--out"), "{}", text(&o.stderr));
+}
+
+#[test]
+fn at_the_default_net_the_files_are_the_shipped_text() {
+    let d = tmp("files-default");
+    let out = d.join("out");
+    let o = files(&["--out", out.to_str().unwrap()]);
+    assert!(o.status.success(), "{}", text(&o.stderr));
+    let conf = fs::read_to_string(out.join("udhcpd.conf")).unwrap();
+    assert!(
+        conf.contains("start 172.16.42.2") && conf.contains("end 172.16.42.2"),
+        "{conf}"
+    );
+    let st = fs::read_to_string(out.join("selftest.sh")).unwrap();
+    assert!(st.contains("inet 172.16.42.2/"), "{st}");
+}

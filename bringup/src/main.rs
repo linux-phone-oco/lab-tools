@@ -56,10 +56,12 @@ fn run(r: &argenv_resolve::Resolution) -> Result<i32, String> {
         );
     };
     let command = Contract::COMMAND.get_from(r);
-    if matches!(verb, Verb::Build | Verb::Init) != (command == Some(Command::Initramfs)) {
+    if matches!(verb, Verb::Build | Verb::Init | Verb::Files)
+        != (command == Some(Command::Initramfs))
+    {
         return Err(match verb {
-            Verb::Build | Verb::Init => {
-                "build and init are for the initramfs: lpoco-bringup initramfs build --spec FILE --out FILE | initramfs init [--device FILE]"
+            Verb::Build | Verb::Init | Verb::Files => {
+                "build, init and files are for the initramfs: lpoco-bringup initramfs build --spec FILE --out FILE | initramfs init [--device FILE] | initramfs files --out DIR"
                     .into()
             }
             _ => "image verbs go with image: lpoco-bringup image info|unpack|pack|check|swap|bisect ..."
@@ -186,6 +188,13 @@ fn run(r: &argenv_resolve::Resolution) -> Result<i32, String> {
                     println!("{out}: {} bytes (net {net})", text.len());
                 }
             }
+            Ok(0)
+        }
+        Verb::Files => {
+            let out = need(Contract::OUT.get_from(r), "--out DIR")?;
+            let net = net_of(r)?;
+            let names = lpoco_bringup::init::write_files(Path::new(&out), net)?;
+            println!("{out}: {} (net {net})", names.join(", "));
             Ok(0)
         }
         Verb::Check => {
