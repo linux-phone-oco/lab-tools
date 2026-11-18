@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-tone-v0.9.0...lpoco-tone-v0.10.0) - 2026-11-18
+
+### Added
+
+- *(host)* gadget net_name - a stable interface name by serial ([#142](https://github.com/linux-phone-oco/lab-tools/pull/142))
+
 ## [0.9.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-tone-v0.8.0...lpoco-tone-v0.9.0) - 2026-11-18
 
 ### Added
