@@ -8,7 +8,7 @@ pub mod boot;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-pub use boot::{Boot, BootGadget};
+pub use boot::{shell_word, Boot, BootGadget};
 
 /// The whole manifest. A program asks for the tables it needs; a table nobody declared is an error.
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, JsonSchema)]
@@ -45,7 +45,11 @@ pub struct Manifest {
 
 impl Manifest {
     pub fn parse(text: &str) -> Result<Manifest, String> {
-        toml::from_str(text).map_err(|e| e.to_string())
+        let m: Manifest = toml::from_str(text).map_err(|e| e.to_string())?;
+        if let Some(g) = m.boot.as_ref().and_then(|b| b.gadget.as_ref()) {
+            g.check()?;
+        }
+        Ok(m)
     }
 }
 
