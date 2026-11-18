@@ -31,6 +31,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - *(host)* check names a stale phone-side piece from the phone's last gathered report ([#165](https://github.com/linux-phone-oco/lab-tools/pull/165))
 
+## [0.14.2](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-tone-v0.14.1...lpoco-tone-v0.14.2) - 2026-11-18
+
+### Fixed
+
+- the phone share is per device: own nft table, forwarding kept until the last stops ([#164](https://github.com/linux-phone-oco/lab-tools/pull/164))
+
 ## [0.14.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-tone-v0.14.0...lpoco-tone-v0.14.1) - 2026-11-18
 
 ### Fixed
