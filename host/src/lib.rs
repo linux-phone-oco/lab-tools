@@ -1028,13 +1028,15 @@ pub fn watch_instances(home: &str, devices: &[Device]) -> Vec<String> {
 }
 
 /// The watchers, worked out without touching anything: the template file, and the user-level commands (no root) that
-/// bring each instance up. `enabled` says whether an instance already has its wants link; `binary_replaced` that this
+/// bring each instance up. `enabled` says whether an instance already has its wants link, `active` whether it runs
+/// (an enabled one that does not is started); `binary_replaced` that this
 /// run replaces the binary the units run, so each enabled one is restarted after the tools.
 pub fn watch_plan(
     home: &str,
     devices: &[Device],
     read: &dyn Fn(&str) -> Option<String>,
     enabled: &dyn Fn(&str) -> bool,
+    active: &dyn Fn(&str) -> bool,
     binary_replaced: bool,
 ) -> (FileChange, Vec<Vec<String>>) {
     let dst = format!("{home}/.config/systemd/user/{WATCH_UNIT}");
@@ -1056,6 +1058,9 @@ pub fn watch_plan(
             cmds.push(s(&["systemctl", "--user", "enable", "--now", &unit]));
         } else if binary_replaced || template.changed() {
             cmds.push(s(&["systemctl", "--user", "restart", &unit]));
+        } else if !active(i) {
+            // linked but stopped (failed, or stopped by hand): enabled alone would leave it down until the next login
+            cmds.push(s(&["systemctl", "--user", "start", &unit]));
         }
     }
     (template, cmds)

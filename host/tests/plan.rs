@@ -1219,3 +1219,43 @@ fn one_net_name_declared_twice_by_a_device_is_refused() {
     assert_eq!(o.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&o.stderr).contains("declared twice"));
 }
+
+#[test]
+fn an_enabled_but_stopped_watcher_is_started_and_a_running_one_is_left() {
+    let l = lab("watch-stopped", "");
+    let user = l.dir.join("home/.config/systemd/user");
+    fs::create_dir_all(user.join("default.target.wants")).unwrap();
+    // as declared: the template is what prepare would write, the instance has its wants link
+    fs::write(
+        user.join("devlab-watch@.service"),
+        lpoco_host::watch_unit_text(),
+    )
+    .unwrap();
+    fs::write(
+        user.join("default.target.wants/devlab-watch@google-walleye-lab.service"),
+        "",
+    )
+    .unwrap();
+    // systemctl says the instance is not active (is-active exits 3); other calls are recorded
+    exe(
+        &l.dir.join("stubs/systemctl"),
+        &format!(
+            "case \"$*\" in *is-active*) exit 3;; esac; echo \"$0 $@\" >> {}",
+            l.calls.display()
+        ),
+    );
+    let s = out(&host(&l, &["plan"]));
+    assert!(
+        s.contains("systemctl --user start devlab-watch@google-walleye-lab.service"),
+        "{s}"
+    );
+    assert!(
+        changes(&l).is_none(),
+        "plan changed something: {:?}",
+        changes(&l)
+    );
+    // running: nothing to do
+    exe(&l.dir.join("stubs/systemctl"), "exit 0");
+    let s = out(&host(&l, &["plan"]));
+    assert!(!s.contains("systemctl --user"), "{s}");
+}
