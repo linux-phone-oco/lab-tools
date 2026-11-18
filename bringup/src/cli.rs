@@ -7,6 +7,9 @@
 //!                                                a header-v0 image, byte for byte as mkbootimg writes it
 //!   lpoco-bringup image check IMG [--device device.toml]
 //!                                                count the image against the manifest's [boot]; exit 1 on a miss
+//!   lpoco-bringup image swap CONTROL --out IMG [--ramdisk R] [--kernel K] [--dtb DTB] [--cmdline TEXT]
+//!                                                the control with those parts replaced, its AVB hash footer rebuilt (avbtool),
+//!                                                and what differs said
 //!   lpoco-bringup --version                      this program's version (the lpoco family's one version)
 
 use argenv_resolve::*;
@@ -37,10 +40,11 @@ pub enum Verb {
     Unpack,
     Pack,
     Check,
+    Swap,
 }
 
 impl Verb {
-    pub const TOKENS: &'static [&'static str] = &["info", "unpack", "pack", "check"];
+    pub const TOKENS: &'static [&'static str] = &["info", "unpack", "pack", "check", "swap"];
 }
 
 impl FromRaw for Verb {
@@ -50,6 +54,7 @@ impl FromRaw for Verb {
             "unpack" => Verb::Unpack,
             "pack" => Verb::Pack,
             "check" => Verb::Check,
+            "swap" => Verb::Swap,
             _ => return None,
         })
     }
@@ -71,7 +76,7 @@ contract! {
         allowed: Verb::TOKENS,
         subcommands: &[Command::Image],
         arg: Some(Arg::positional(0)),
-        summary: "What to do with the image: info, unpack, pack or check.",
+        summary: "What to do with the image: info, unpack, pack, check or swap.",
         ..Input::EMPTY
     };
 
@@ -80,7 +85,7 @@ contract! {
         ty: Type::String,
         subcommands: &[Command::Image],
         arg: Some(Arg { value_name: "IMG", ..Arg::positional(1) }),
-        summary: "The boot image to read (info, unpack, check).",
+        summary: "The boot image to read (info, unpack, check, swap: the control).",
         ..Input::EMPTY
     };
 
@@ -99,7 +104,7 @@ contract! {
         ty: Type::String,
         subcommands: &[Command::Image],
         arg: Some(Arg { value_name: "FILE", ..Arg::long("kernel") }),
-        summary: "pack: the kernel.",
+        summary: "pack, swap: the kernel.",
         ..Input::EMPTY
     };
 
@@ -108,7 +113,7 @@ contract! {
         ty: Type::String,
         subcommands: &[Command::Image],
         arg: Some(Arg { value_name: "FILE", ..Arg::long("dtb") }),
-        summary: "pack: a device tree appended to the kernel.",
+        summary: "pack, swap: a device tree appended to the kernel.",
         ..Input::EMPTY
     };
 
@@ -117,7 +122,16 @@ contract! {
         ty: Type::String,
         subcommands: &[Command::Image],
         arg: Some(Arg { value_name: "FILE", ..Arg::long("ramdisk") }),
-        summary: "pack: the ramdisk.",
+        summary: "pack, swap: the ramdisk.",
+        ..Input::EMPTY
+    };
+
+    CMDLINE: String, Command = Input {
+        key: "cmdline",
+        ty: Type::String,
+        subcommands: &[Command::Image],
+        arg: Some(Arg { value_name: "TEXT", ..Arg::long("cmdline") }),
+        summary: "swap: the kernel command line to put in the header.",
         ..Input::EMPTY
     };
 
@@ -126,7 +140,7 @@ contract! {
         ty: Type::String,
         subcommands: &[Command::Image],
         arg: Some(Arg { value_name: "PATH", ..Arg::long("out") }),
-        summary: "pack: the image to write; unpack: the folder to write the parts to.",
+        summary: "pack, swap: the image to write; unpack: the folder to write the parts to.",
         ..Input::EMPTY
     };
 

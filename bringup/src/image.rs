@@ -15,7 +15,7 @@ use std::io::Cursor;
 pub const MAGIC: &[u8; 8] = b"ANDROID!";
 const CMDLINE_MAX: usize = 1535;
 
-fn pad_to(out: &mut Vec<u8>, page: usize) {
+pub(crate) fn pad_to(out: &mut Vec<u8>, page: usize) {
     let r = out.len() % page;
     if r != 0 {
         out.resize(out.len() + page - r, 0);
@@ -49,13 +49,7 @@ pub fn pack(boot: &Boot, kernel: &[u8], ramdisk: &[u8]) -> Result<Vec<u8>, Strin
     };
     let mut cmdline = Box::new([0u8; 1536]);
     cmdline[..boot.cmdline.len()].copy_from_slice(boot.cmdline.as_bytes());
-    let mut sha = Sha1::new();
-    for part in [kernel, ramdisk, &[][..]] {
-        sha.update(part);
-        sha.update((part.len() as u32).to_le_bytes());
-    }
-    let mut id = [0u8; 32];
-    id[..20].copy_from_slice(&sha.finalize());
+    let id = v0_id(kernel, ramdisk, &[]);
     let header = HeaderV0 {
         kernel_size: kernel.len() as u32,
         kernel_addr: addr(boot.kernel_offset, "kernel_offset")?,
@@ -342,4 +336,17 @@ pub fn check(bytes: &[u8], boot: &Boot) -> Vec<Finding> {
         }),
     }
     out
+}
+
+/// mkbootimg's v0 id: a SHA-1 over kernel, ramdisk and second, each followed by its size, in the header's
+/// 32 bytes.
+pub(crate) fn v0_id(kernel: &[u8], ramdisk: &[u8], second: &[u8]) -> [u8; 32] {
+    let mut sha = Sha1::new();
+    for part in [kernel, ramdisk, second] {
+        sha.update(part);
+        sha.update((part.len() as u32).to_le_bytes());
+    }
+    let mut id = [0u8; 32];
+    id[..20].copy_from_slice(&sha.finalize());
+    id
 }

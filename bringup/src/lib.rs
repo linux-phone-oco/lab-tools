@@ -14,3 +14,4 @@ pub mod fdt;
 pub mod hooks;
 pub mod image;
 pub mod pin;
+pub mod swap;
