@@ -158,7 +158,10 @@ version = "2.0.0"
             .to_string()
     };
     let land = line("land");
-    assert!(land.contains("0.3.0") && land.contains("0.1.0"), "{s}");
+    assert!(
+        land.contains("abc123") && land.contains("on PATH"),
+        "a script is pinned by rev: {s}"
+    );
     assert!(s.contains("git clone"), "{s}");
     assert!(s.contains("oco-work") && s.contains("agent-env"), "{s}");
     assert!(
@@ -236,4 +239,113 @@ fn the_wide_rule_is_named_and_never_touched_and_an_old_devlab_is_off_the_pin() {
         !s.contains("rm ") && !s.contains("51-android.rules ("),
         "{s}"
     );
+}
+
+const SCRIPT_TOOLS: &str = r#"[tools.land]
+git = "https://github.com/grenudi/lab-machine"
+path = "bin/land"
+rev = "abc123"
+version = "0.1.0"
+"#;
+
+#[test]
+fn a_script_tool_is_judged_by_its_rev_stamp_not_by_version() {
+    // a script prints no --version of its own: `land` here prints nothing useful
+    let l = lab("rev", SCRIPT_TOOLS);
+    exe(&l.dir.join("stubs/land"), "echo usage: land BRANCH");
+    let s = out(&host(&l, &["plan"]));
+    let land = s
+        .lines()
+        .find(|x| x.trim_start().starts_with("land"))
+        .unwrap_or("");
+    assert!(
+        land.contains("on PATH") && land.contains("rev not known"),
+        "a script on PATH without a stamp is named as found: {s}"
+    );
+    assert!(!land.contains("not found"), "{s}");
+    // the install wrote its stamp: at the pinned rev there is nothing to do
+    let stamps = l.dir.join("home/.local/share/lpoco-host");
+    fs::create_dir_all(&stamps).unwrap();
+    fs::write(stamps.join("rev-land"), "abc123\n").unwrap();
+    let s = out(&host(&l, &["plan"]));
+    let land = s
+        .lines()
+        .find(|x| x.trim_start().starts_with("land"))
+        .unwrap_or("");
+    assert!(
+        land.contains("abc123") && land.contains("nothing to do"),
+        "{s}"
+    );
+    // at another rev it is off the pin and the clone and copy are printed
+    fs::write(stamps.join("rev-land"), "old999\n").unwrap();
+    let s = out(&host(&l, &["plan"]));
+    assert!(s.contains("old999") && s.contains("git clone"), "{s}");
+}
+
+#[test]
+fn prepare_now_stamps_the_rev_of_an_installed_script() {
+    let l = lab("stamp", SCRIPT_TOOLS);
+    // the git stub makes the clone folder, with the script in it
+    exe(
+        &l.dir.join("stubs/git"),
+        &format!(
+            "echo \"$0 $@\" >> {}\ncase \"$1\" in clone) /bin/mkdir -p \"$4/bin\"; echo x > \"$4/bin/land\";; esac",
+            l.calls.display()
+        ),
+    );
+    let o = host(&l, &["prepare", "now"]);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    let stamp = fs::read_to_string(l.dir.join("home/.local/share/lpoco-host/rev-land")).unwrap();
+    assert_eq!(stamp.trim(), "abc123");
+}
+
+#[test]
+fn devices_accepts_a_list_of_globs() {
+    let l = lab("list", "");
+    let dev = l.dir.join("devs/other-lab");
+    fs::create_dir_all(&dev).unwrap();
+    fs::write(
+        dev.join("device.toml"),
+        "[device]\ncodename = \"other\"\n[host]\nmodules = [\"loop\"]\n",
+    )
+    .unwrap();
+    fs::write(
+        l.dir.join("lab.toml"),
+        format!(
+            "devices = [\"{d}/devs/g*-lab/device.toml\", \"{d}/devs/o*-lab/device.toml\"]\n",
+            d = l.dir.display()
+        ),
+    )
+    .unwrap();
+    let o = host(&l, &["plan"]);
+    let s = out(&o);
+    assert!(
+        o.status.success(),
+        "{s}{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+    assert!(s.contains("google-walleye") && s.contains("other"), "{s}");
+}
+
+#[test]
+fn the_off_the_pin_advice_says_reinstall_into_local() {
+    let l = lab("advice", "[tools]\nlpoco = \"0.2.0\"\n");
+    exe(&l.dir.join("stubs/devlab"), "echo devlab 0.1.0");
+    let s = out(&host(&l, &["plan"]));
+    assert!(
+        s.contains("~/.local") && s.contains("remove any copy that shadows"),
+        "{s}"
+    );
+    assert!(!s.contains("~/.cargo/bin before"), "{s}");
+}
+
+#[test]
+fn a_stamp_without_its_script_is_not_a_found_tool() {
+    let l = lab("orphan", SCRIPT_TOOLS);
+    let stamps = l.dir.join("home/.local/share/lpoco-host");
+    fs::create_dir_all(&stamps).unwrap();
+    fs::write(stamps.join("rev-land"), "abc123\n").unwrap();
+    let _ = fs::remove_file(l.dir.join("stubs/land"));
+    let s = out(&host(&l, &["plan"]));
+    assert!(s.contains("git clone"), "{s}");
 }

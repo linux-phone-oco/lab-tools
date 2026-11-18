@@ -39,10 +39,27 @@ pub enum ToolPin {
     },
 }
 
+/// `devices = "glob"` or `devices = ["glob", ...]`: where the device manifests are.
+#[derive(Deserialize, Debug, Clone)]
+#[serde(untagged)]
+pub enum Devices {
+    One(String),
+    Many(Vec<String>),
+}
+
+impl Devices {
+    pub fn patterns(&self) -> Vec<String> {
+        match self {
+            Devices::One(s) => vec![s.clone()],
+            Devices::Many(v) => v.clone(),
+        }
+    }
+}
+
 #[derive(Deserialize, Debug, Default)]
 #[serde(deny_unknown_fields)]
 pub struct Lab {
-    pub devices: Option<String>,
+    pub devices: Option<Devices>,
     pub root: Option<String>,
     #[serde(default)]
     pub tools: BTreeMap<String, ToolPin>,
@@ -141,12 +158,16 @@ pub fn expand_home(s: &str, home: &str) -> String {
     }
 }
 
-pub fn find_devices(pattern: &str, home: &str) -> Result<Vec<PathBuf>, String> {
-    let mut v: Vec<PathBuf> = glob::glob(&expand_home(pattern, home))
-        .map_err(|e| format!("devices {pattern}: {e}"))?
-        .flatten()
-        .collect();
+pub fn find_devices(patterns: &[String], home: &str) -> Result<Vec<PathBuf>, String> {
+    let mut v: Vec<PathBuf> = Vec::new();
+    for pattern in patterns {
+        let found = glob::glob(&expand_home(pattern, home))
+            .map_err(|e| format!("devices {pattern}: {e}"))?
+            .flatten();
+        v.extend(found);
+    }
     v.sort();
+    v.dedup();
     Ok(v)
 }
 
@@ -269,6 +290,11 @@ pub enum Step {
         from: String,
         to: String,
     },
+    /// record the rev a script tool was installed at, so a later plan judges it by that and not by `--version`
+    Stamp {
+        to: String,
+        rev: String,
+    },
 }
 
 impl Step {
@@ -276,6 +302,7 @@ impl Step {
         match self {
             Step::Run(a) => a.join(" "),
             Step::Copy { from, to } => format!("install -m 0755 {from} {to}"),
+            Step::Stamp { to, rev } => format!("echo {rev} > {to}"),
         }
     }
 }
@@ -288,6 +315,10 @@ pub struct ToolPlan {
     pub steps: Vec<Step>,
     /// the program that installs this one (an old name), when it has no step of its own
     pub installed_by: Option<String>,
+    /// a script tool is pinned by its rev and judged by the rev its install stamped, never by `--version`
+    pub by_rev: bool,
+    /// a script tool is on PATH though no stamp says which rev
+    pub on_path: bool,
 }
 
 pub const NOT_KNOWN: &str = "not known yet";
@@ -302,10 +333,27 @@ impl ToolPlan {
         if self.unpinned() {
             return true;
         }
+        if self.by_rev {
+            return self.found.as_deref() == Some(self.pinned.as_str());
+        }
         self.found
             .as_deref()
             .is_some_and(|f| pin_matches(&self.pinned, f))
     }
+
+    /// What was found, in words.
+    pub fn found_text(&self) -> String {
+        match (&self.found, self.by_rev && self.on_path) {
+            (Some(f), _) => f.clone(),
+            (None, true) => "on PATH, rev not known (no stamp)".into(),
+            (None, false) => "not found".into(),
+        }
+    }
+}
+
+/// Where a script tool's install records its rev.
+pub fn stamp_path(home: &str, name: &str) -> String {
+    format!("{home}/.local/share/lpoco-host/rev-{name}")
 }
 
 /// The git tag a family program is released under: `lpoco` as `lpoco-vX`, the others as `NAME-vX`.
@@ -313,7 +361,14 @@ pub fn family_tag(program: &str, version: &str) -> String {
     format!("{program}-v{version}")
 }
 
-pub fn tools_for(lab: &Lab, home: &str, found: &dyn Fn(&str) -> Option<String>) -> Vec<ToolPlan> {
+/// `found` is the version a program reports, `stamp` the rev a script tool's install recorded, `on_path` whether a program is on PATH.
+pub fn tools_for(
+    lab: &Lab,
+    home: &str,
+    found: &dyn Fn(&str) -> Option<String>,
+    stamp: &dyn Fn(&str) -> Option<String>,
+    on_path: &dyn Fn(&str) -> bool,
+) -> Vec<ToolPlan> {
     let mut plans = Vec::new();
     for (name, pin) in &lab.tools {
         match pin {
@@ -324,6 +379,8 @@ pub fn tools_for(lab: &Lab, home: &str, found: &dyn Fn(&str) -> Option<String>) 
                         pinned: v.clone(),
                         found: found(p),
                         installed_by: None,
+                        by_rev: false,
+                        on_path: false,
                         steps: vec![Step::Run(
                             [
                                 "cargo",
@@ -349,6 +406,8 @@ pub fn tools_for(lab: &Lab, home: &str, found: &dyn Fn(&str) -> Option<String>) 
                         found: found(old),
                         steps: vec![],
                         installed_by: Some((*from).to_string()),
+                        by_rev: false,
+                        on_path: false,
                     });
                 }
             }
@@ -358,19 +417,23 @@ pub fn tools_for(lab: &Lab, home: &str, found: &dyn Fn(&str) -> Option<String>) 
                 found: found(name),
                 steps: vec![],
                 installed_by: None,
+                by_rev: false,
+                on_path: false,
             }),
             ToolPin::Script {
                 git,
                 path,
                 rev,
-                version,
+                version: _,
             } => {
                 let dir = format!("{home}/.cache/lpoco-host/src-{name}");
                 plans.push(ToolPlan {
                     name: name.clone(),
-                    pinned: version.clone(),
+                    pinned: rev.clone(),
                     installed_by: None,
-                    found: found(name),
+                    by_rev: true,
+                    on_path: on_path(name),
+                    found: if on_path(name) { stamp(name) } else { None },
                     steps: vec![
                         Step::Run(
                             ["git", "clone", "--quiet", git, &dir]
@@ -385,6 +448,10 @@ pub fn tools_for(lab: &Lab, home: &str, found: &dyn Fn(&str) -> Option<String>) 
                         Step::Copy {
                             from: format!("{dir}/{path}"),
                             to: format!("{home}/.local/bin/{name}"),
+                        },
+                        Step::Stamp {
+                            to: stamp_path(home, name),
+                            rev: rev.clone(),
                         },
                     ],
                 });
@@ -541,7 +608,10 @@ fn validate_lab(lab: &Lab) -> Result<(), String> {
                 version,
             } => {
                 for (w, s) in [("git", git), ("rev", rev), ("version", version)] {
-                    if s.starts_with('-') || s.is_empty() {
+                    if s.chars().any(|c| c.is_whitespace() || c.is_control())
+                        || s.starts_with('-')
+                        || s.is_empty()
+                    {
                         return Err(format!("[tools.{name}] {w} {s:?} is not usable"));
                     }
                 }
