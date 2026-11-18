@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.8](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-lab-v0.3.7...lpoco-lab-v0.3.8) - 2026-11-18
+
+### Fixed
+
+- *(release)* every member lists the others in changelog_include, one PR writes all changelogs ([#121](https://github.com/linux-phone-oco/lab-tools/pull/121))
+
+### Other
+
+- release v0.3.7 ([#120](https://github.com/linux-phone-oco/lab-tools/pull/120))
+
 ## [0.3.7](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-lab-v0.3.6...lpoco-lab-v0.3.7) - 2026-11-18
 
 ### Other
