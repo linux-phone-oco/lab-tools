@@ -1064,3 +1064,47 @@ fn a_target_is_found_once_for_two_devices_and_dot_or_an_empty_libdir_or_a_broken
     assert!(!o.status.success());
     assert!(changes(&l).is_none(), "check changed something");
 }
+
+#[test]
+fn a_gadgets_usb_network_gets_a_stable_name_by_its_serial_and_nothing_changes_without_the_verb() {
+    let l = lab("ncm", "");
+    declare(
+        &l,
+        "google-walleye-lab",
+        "[host]\n[[host.gadget]]\nserial = \"walleye-first-boot\"\naccess = [\"tty\"]\nnet_name = \"lpoco-walleye\"\n",
+    );
+    // a second gadget that does not name its network gets no net line
+    declare(
+        &l,
+        "xiaomi-surya-lab",
+        "[host]\n[[host.gadget]]\nserial = \"surya-gadget\"\naccess = [\"tty\"]\n",
+    );
+    let o = host(&l, &["plan"]);
+    let s = out(&o);
+    assert!(
+        o.status.success(),
+        "{s}{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+    assert!(
+        s.contains("ACTION==\"add\", SUBSYSTEM==\"net\", ATTRS{serial}==\"walleye-first-boot\", NAME=\"lpoco-walleye\""),
+        "{s}"
+    );
+    assert_eq!(s.matches("SUBSYSTEM==\"net\"").count(), 1, "{s}");
+    assert!(changes(&l).is_none(), "the plan called the root prefix");
+    // a name that would inject into a rule is refused
+    declare(
+        &l,
+        "google-walleye-lab",
+        "[host]\n[[host.gadget]]\nserial = \"w\"\naccess = [\"tty\"]\nnet_name = \"x\\\", RUN+=\\\"y\"\n",
+    );
+    let o = host(&l, &["plan"]);
+    assert_eq!(o.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&o.stderr).contains("net_name"));
+    declare(
+        &l,
+        "google-walleye-lab",
+        "[host]\n[[host.gadget]]\nserial = \"w\"\naccess = [\"tty\"]\nnet_name = \".\"\n",
+    );
+    assert_eq!(host(&l, &["plan"]).status.code(), Some(2));
+}
