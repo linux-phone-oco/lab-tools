@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-tone-v0.7.0...lpoco-tone-v0.7.1) - 2026-11-18
+
+### Added
+
+- *(host)* plan and check name foreign udev rules that could cross ours ([#136](https://github.com/linux-phone-oco/lab-tools/pull/136))
+
 ## [0.7.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-tone-v0.6.1...lpoco-tone-v0.7.0) - 2026-11-18
 
 ### Added
