@@ -595,6 +595,34 @@ fn check(st: &State) -> Result<i32, String> {
             }
         }
     }
+    let declared: Vec<String> = st
+        .devices
+        .iter()
+        .flat_map(|d| d.host.gadget.iter().map(|g| g.serial.clone()))
+        .collect();
+    if declared.is_empty() {
+        println!("kernel log: not measured, no gadget is declared");
+    } else {
+        match kernel_log(&st.fs_root) {
+            None => println!("kernel log: not measured, it cannot be read (journalctl -k)"),
+            Some(log) => {
+                let bad_ones = undeclared_gadgets(&log, &declared);
+                if bad_ones.is_empty() {
+                    println!("kernel log: ok, every gadget enumerated since boot and not unplugged has a declared serial");
+                }
+                for g in bad_ones {
+                    bad += 1;
+                    println!(
+                        "kernel log: FAIL, undeclared gadget serial: {} enumerated with serial {} at {}; declared: {}",
+                        g.device,
+                        g.serial,
+                        g.when.as_deref().unwrap_or("time not known"),
+                        declared.join(", ")
+                    );
+                }
+            }
+        }
+    }
     for t in tool_plans(st) {
         if t.unpinned() {
             println!("tool {}: not measured, its pin is not known yet", t.name);
@@ -615,4 +643,18 @@ fn check(st: &State) -> Result<i32, String> {
         println!("FAIL {m}");
     }
     Ok(if bad == 0 { 0 } else { 1 })
+}
+
+/// The kernel log since boot: `kernel.log` under the test root when there is one, else `journalctl -k -b`.
+fn kernel_log(fs_root: &str) -> Option<String> {
+    if !fs_root.is_empty() {
+        return read_file(fs_root, "/kernel.log");
+    }
+    let o = Proc::new("journalctl")
+        .args(["-k", "-b", "--no-pager"])
+        .output()
+        .ok()?;
+    o.status
+        .success()
+        .then(|| String::from_utf8_lossy(&o.stdout).into_owned())
 }
