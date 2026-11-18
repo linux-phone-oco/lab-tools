@@ -332,6 +332,15 @@ fn watchers(st: &State, tools: &[ToolPlan]) -> (FileChange, Vec<Vec<String>>) {
         &st.found,
         &|p| fs::read_to_string(p).ok(),
         &|i| Path::new(&format!("{wants}/devlab-watch@{i}.service")).exists(),
+        &|i| {
+            Proc::new("systemctl")
+                .args(["--user", "is-active", "--quiet"])
+                .arg(format!("devlab-watch@{i}.service"))
+                .status()
+                // is-active exits 3 for a unit that is not running; any other answer (or no systemctl) proposes nothing
+                .map(|s| s.code() != Some(3))
+                .unwrap_or(true)
+        },
         replaced,
     )
 }
