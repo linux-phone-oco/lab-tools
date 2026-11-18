@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-health-v0.12.2...lpoco-health-v0.13.0) - 2026-11-18
+
+### Added
+
+- root is asked only by prepare behind sudo; the phone share is a polkit-started unit ([#159](https://github.com/linux-phone-oco/lab-tools/pull/159))
+- lpoco-lab flash bakes the image without root or a mount (debugfs and mtools) ([#156](https://github.com/linux-phone-oco/lab-tools/pull/156))
+
 ## [0.12.2](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-health-v0.12.1...lpoco-health-v0.12.2) - 2026-11-18
 
 ### Added
