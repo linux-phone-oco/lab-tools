@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-v0.18.3...lpoco-v0.19.0) - 2026-11-18
+
+### Added
+
+- *(bringup)* [boot.gadget] window - a read-only log LUN in the init ([#188](https://github.com/linux-phone-oco/lab-tools/pull/188))
+
 ## [0.18.3](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-v0.18.2...lpoco-v0.18.3) - 2026-11-18
 
 ### Added
