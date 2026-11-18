@@ -785,3 +785,68 @@ mod group_tests {
         assert_eq!(has(G, P, "nope", "mll"), None);
     }
 }
+
+/// The user unit that replaces lab-machine's `setup/devlab-watch.sh`: one `devlab watch` per device found, the instance
+/// named by the folder of the device's lab repository (as `%i`).
+pub const WATCH_UNIT: &str = "devlab-watch@.service";
+/// The tool whose binary the watcher units run (its second name is devlab): replaced, the units are restarted.
+pub const WATCH_TOOL: &str = "lpoco-lab";
+
+pub fn watch_unit_text() -> String {
+    "[Unit]\nDescription=devlab watch: the health of the device whose lab repository is %i\nAfter=network-online.target\n\n[Service]\nExecStart=%h/.local/bin/devlab --device %h/Projects/linux-phone-oco/%i/device.toml watch\nEnvironment=LAB_AGENT=/usr/bin/lab-agent\nRestart=on-failure\nRestartSec=30\n\n[Install]\nWantedBy=default.target\n".to_string()
+}
+
+/// The instance each device is watched by: its lab repository's folder name, for a device whose manifest lies at
+/// `HOME/Projects/linux-phone-oco/NAME-lab/device.toml` (the path the unit template names). A worktree (`NAME-lab-wt`,
+/// `wt-...`) or a template repository is not watched: it goes away or is no device.
+pub fn watch_instances(home: &str, devices: &[Device]) -> Vec<String> {
+    let base = format!("{home}/Projects/linux-phone-oco");
+    let mut v: Vec<String> = devices
+        .iter()
+        .filter_map(|d| {
+            let dir = d.path.parent()?;
+            if dir.parent()? != Path::new(&base) {
+                return None;
+            }
+            let n = dir.file_name()?.to_string_lossy().into_owned();
+            n.ends_with("-lab").then_some(n)
+        })
+        .collect();
+    v.sort();
+    v.dedup();
+    v
+}
+
+/// The watchers, worked out without touching anything: the template file, and the user-level commands (no root) that
+/// bring each instance up. `enabled` says whether an instance already has its wants link; `binary_replaced` that this
+/// run replaces the binary the units run, so each enabled one is restarted after the tools.
+pub fn watch_plan(
+    home: &str,
+    devices: &[Device],
+    read: &dyn Fn(&str) -> Option<String>,
+    enabled: &dyn Fn(&str) -> bool,
+    binary_replaced: bool,
+) -> (FileChange, Vec<Vec<String>>) {
+    let dst = format!("{home}/.config/systemd/user/{WATCH_UNIT}");
+    let template = FileChange {
+        existing: read(&dst),
+        content: watch_unit_text(),
+        serials: vec![],
+        dst,
+    };
+    let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+    let mut cmds = Vec::new();
+    let instances = watch_instances(home, devices);
+    if template.changed() && !instances.is_empty() {
+        cmds.push(s(&["systemctl", "--user", "daemon-reload"]));
+    }
+    for i in &instances {
+        let unit = format!("devlab-watch@{i}.service");
+        if !enabled(i) {
+            cmds.push(s(&["systemctl", "--user", "enable", "--now", &unit]));
+        } else if binary_replaced || template.changed() {
+            cmds.push(s(&["systemctl", "--user", "restart", &unit]));
+        }
+    }
+    (template, cmds)
+}

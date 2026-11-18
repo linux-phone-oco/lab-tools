@@ -44,6 +44,8 @@ struct State {
     path: String,
     root: Vec<String>,
     devices: Vec<Device>,
+    /// every manifest found, before one-per-codename: the watchers go by lab repository folder
+    found: Vec<Device>,
     missed: Vec<String>,
     reads: Vec<String>,
     lab: Lab,
@@ -74,6 +76,7 @@ fn load(r: &Resolution) -> Result<State, String> {
         reads.extend(how);
         devices.push(parse_device(&p, &text)?);
     }
+    let found = devices.clone();
     let (devices, mut notes) = one_per_codename(devices);
     let mut devices = devices;
     let misses = pin_misses(&lab, &devices);
@@ -88,6 +91,7 @@ fn load(r: &Resolution) -> Result<State, String> {
         home,
         root: root.split_whitespace().map(String::from).collect(),
         devices,
+        found,
         missed,
         reads,
         lab,
@@ -312,6 +316,18 @@ fn tool_plans(st: &State) -> Vec<ToolPlan> {
     )
 }
 
+fn watchers(st: &State, tools: &[ToolPlan]) -> (FileChange, Vec<Vec<String>>) {
+    let replaced = tools.iter().any(|t| t.name == WATCH_TOOL && !t.ok());
+    let wants = format!("{}/.config/systemd/user/default.target.wants", st.home);
+    watch_plan(
+        &st.home,
+        &st.found,
+        &|p| fs::read_to_string(p).ok(),
+        &|i| Path::new(&format!("{wants}/devlab-watch@{i}.service")).exists(),
+        replaced,
+    )
+}
+
 fn plan(st: &State) {
     let files = files_for(&st.devices, st.lab.gadget_group.as_deref(), &|p| {
         read_file(&st.fs_root, p)
@@ -373,8 +389,30 @@ fn plan(st: &State) {
     if Path::new(&format!("{}{KEPT_RULE}", st.fs_root)).exists() {
         println!("\nkept: {KEPT_RULE} is a wide rule; it is kept for now and prepare never removes or edits it");
     }
+    let tools = tool_plans(st);
+    let (unit, ucmds) = watchers(st, &tools);
+    println!("\nwatchers (user units, no root; replaces lab-machine setup/devlab-watch.sh):");
+    println!(
+        "    {} ({})",
+        unit.dst,
+        if unit.changed() {
+            if unit.existing.is_some() {
+                "changes"
+            } else {
+                "new"
+            }
+        } else {
+            "as declared"
+        }
+    );
+    if ucmds.is_empty() {
+        println!("    nothing to do");
+    }
+    for c in &ucmds {
+        println!("    {}", c.join(" "));
+    }
     println!("\ntools:");
-    for t in tool_plans(st) {
+    for t in tools {
         let found = t.found_text();
         if t.unpinned() {
             println!(
@@ -439,7 +477,10 @@ fn prepare(st: &State) -> Result<i32, String> {
         run_root(st, c)?;
     }
     let _ = fs::remove_dir_all(&stage);
-    for t in tool_plans(st).into_iter().filter(|t| !t.ok()) {
+    // worked out before the tools change: a replaced binary restarts the watchers that run it
+    let tools = tool_plans(st);
+    let (unit, ucmds) = watchers(st, &tools);
+    for t in tools.into_iter().filter(|t| !t.ok()) {
         println!("tool {}: pinned {}", t.name, t.pinned);
         for s in &t.steps {
             match s {
@@ -476,6 +517,23 @@ fn prepare(st: &State) -> Result<i32, String> {
                         .map_err(|e| format!("{to}: {e}"))?;
                 }
             }
+        }
+    }
+    if unit.changed() {
+        if let Some(d) = Path::new(&unit.dst).parent() {
+            fs::create_dir_all(d).map_err(|e| format!("cannot make {}: {e}", d.display()))?;
+        }
+        fs::write(&unit.dst, &unit.content)
+            .map_err(|e| format!("cannot write {}: {e}", unit.dst))?;
+    }
+    for c in &ucmds {
+        println!("user: {}", c.join(" "));
+        let status = Proc::new(&c[0])
+            .args(&c[1..])
+            .status()
+            .map_err(|e| format!("cannot run {}: {e}", c[0]))?;
+        if !status.success() {
+            return Err(format!("{} failed ({status})", c.join(" ")));
         }
     }
     println!("prepared: {} root command(s)", cmds.len());

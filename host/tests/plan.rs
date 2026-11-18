@@ -47,7 +47,7 @@ access = ["block", "tty"]
     fs::write(
         dir.join("lab.toml"),
         format!(
-            "devices = \"{}/devs/*/device.toml\"\n{lab_toml_tools}",
+            "devices = \"{}/home/Projects/linux-phone-oco/*/device.toml\"\n{lab_toml_tools}",
             dir.display()
         ),
     )
@@ -59,8 +59,12 @@ access = ["block", "tty"]
     exe(&bin.join("root"), &rec);
     exe(&bin.join("cargo"), &rec);
     exe(&bin.join("git"), &rec);
+    exe(&bin.join("systemctl"), &rec);
     exe(&bin.join("land"), "echo land 0.1.0");
-    fs::create_dir_all(dir.join("home")).unwrap();
+    fs::create_dir_all(dir.join("home/Projects")).unwrap();
+    // the watcher units name devices at HOME/Projects/linux-phone-oco/NAME-lab
+    std::os::unix::fs::symlink(dir.join("devs"), dir.join("home/Projects/linux-phone-oco"))
+        .unwrap();
     Lab { dir, calls }
 }
 
@@ -201,7 +205,10 @@ fn prepare_now_runs_the_printed_root_commands_and_only_them() {
     }
     // what the plan printed is what ran
     let plan = out(&host(&l, &["plan"]));
-    for line in calls.lines().filter(|c| !c.contains("modprobe")) {
+    for line in calls
+        .lines()
+        .filter(|c| !c.contains("modprobe") && !c.contains("daemon-reload"))
+    {
         let cmd = line.split_once(' ').unwrap().1;
         assert!(
             plan.contains(cmd),
@@ -674,4 +681,105 @@ fn check_does_not_report_a_gadget_whose_serial_a_device_declares() {
     let s = out(&host_as(&l, "mll", &["check"]));
     assert!(!s.contains("undeclared gadget serial"), "{s}");
     assert!(s.contains("kernel log: ok"), "{s}");
+}
+
+/// Watcher units (lpoco-host part 2): one `devlab-watch@` user unit per device found, no root, replacing
+/// lab-machine's setup/devlab-watch.sh.
+#[test]
+fn plan_lists_a_watcher_unit_per_device_and_changes_nothing() {
+    let l = lab("watch-plan", "");
+    let o = host(&l, &["plan"]);
+    let s = out(&o);
+    assert!(
+        o.status.success(),
+        "{s}{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+    assert!(s.contains("watchers"), "{s}");
+    assert!(s.contains("devlab-watch@.service"), "{s}");
+    assert!(
+        s.contains("systemctl --user enable --now devlab-watch@google-walleye-lab.service"),
+        "{s}"
+    );
+    assert!(
+        s.contains("setup/devlab-watch.sh"),
+        "names what it replaces: {s}"
+    );
+    assert!(changes(&l).is_none(), "the plan ran a stub");
+    assert!(
+        !l.dir.join("home/.config").exists(),
+        "the plan wrote the unit"
+    );
+}
+
+#[test]
+fn prepare_now_installs_the_unit_and_enables_each_watcher_without_root() {
+    let l = lab("watch-now", "");
+    let o = host(&l, &["prepare", "now"]);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    let unit = l
+        .dir
+        .join("home/.config/systemd/user/devlab-watch@.service");
+    let text = fs::read_to_string(&unit).unwrap();
+    assert!(
+        text.contains("devlab --device %h/Projects/linux-phone-oco/%i/device.toml watch"),
+        "{text}"
+    );
+    let calls = changes(&l).unwrap();
+    for want in [
+        "systemctl --user daemon-reload",
+        "systemctl --user enable --now devlab-watch@google-walleye-lab.service",
+    ] {
+        assert!(calls.contains(want), "{want}: {calls}");
+    }
+    assert!(
+        !calls
+            .lines()
+            .any(|c| c.contains("/root") && c.contains("systemctl")),
+        "a user unit needs no root: {calls}"
+    );
+    // already enabled and as declared: nothing more to do
+    let wants = l.dir.join("home/.config/systemd/user/default.target.wants");
+    fs::create_dir_all(&wants).unwrap();
+    fs::write(wants.join("devlab-watch@google-walleye-lab.service"), "").unwrap();
+    fs::remove_file(&l.calls).unwrap();
+    let p = out(&host(&l, &["plan"]));
+    assert!(!p.contains("systemctl --user"), "{p}");
+}
+
+#[test]
+fn a_replaced_binary_restarts_the_enabled_watchers() {
+    let l = lab("watch-restart", "[tools]\nlpoco = \"0.2.0\"\n");
+    let user = l.dir.join("home/.config/systemd/user");
+    fs::create_dir_all(user.join("default.target.wants")).unwrap();
+    fs::write(user.join("devlab-watch@.service"), "").unwrap();
+    fs::write(
+        user.join("default.target.wants/devlab-watch@google-walleye-lab.service"),
+        "",
+    )
+    .unwrap();
+    let s = out(&host(&l, &["plan"]));
+    assert!(
+        s.contains("systemctl --user restart devlab-watch@google-walleye-lab.service"),
+        "{s}"
+    );
+}
+
+#[test]
+fn worktrees_and_templates_are_not_watched() {
+    let l = lab("watch-skip", "");
+    for n in ["google-walleye-lab-pr-wt", "device-template"] {
+        let d = l.dir.join("devs").join(n);
+        fs::create_dir_all(&d).unwrap();
+        fs::write(
+            d.join("device.toml"),
+            format!("[device]\ncodename = \"{n}\"\n"),
+        )
+        .unwrap();
+    }
+    let s = out(&host(&l, &["plan"]));
+    assert!(s.contains("devlab-watch@google-walleye-lab.service"), "{s}");
+    for n in ["google-walleye-lab-pr-wt", "device-template"] {
+        assert!(!s.contains(&format!("devlab-watch@{n}")), "{n}: {s}");
+    }
 }
