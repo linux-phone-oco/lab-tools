@@ -50,6 +50,24 @@ in the shape of the device base's `test_results` (docs' when the lab has no base
 phone never had working is a `gap` in the manifest: still measured, not ill health; a gap that starts
 to pass is said.
 
+### One controlled suspend: `lpoco-health suspend`
+
+    lpoco-health suspend plan             what a cycle would do, or why it would refuse - changes nothing
+    lpoco-health suspend cycle [--seconds 15] [--settle 2]
+                                          one suspend (s2idle) ended by an RTC wake alarm, counted
+
+The device declares in its manifest's `[health]` its **way back** - `suspend_guard`, a command that succeeds while
+the phone's watchdog is armed (surya: the kept-armed watchdog) - and the wake sources to quiet for the cycle,
+`suspend_quiet` (wakeup files, e.g. a UART's `power/wakeup`, put to `disabled` and put back after, however the cycle
+ends). **Without a way back, or with one that is not armed, the cycle is refused** (exit 2, nothing suspended). It
+reads before and after the SoC's own counters (qcom_stats), the suspend counter, the cpu idle states (cluster states
+among them, summed over the cpus) and the wakeup sources, prints one JSON report and keeps it as this boot's cycle
+(`/var/lib/lpoco-health/suspend/cycle.json`); exit 0 when the SoC slept, 1 when it did not. The check `soc-sleeps`
+`--seconds` is at least 5 (the RTC counts whole seconds); a wake long before the alarm is reported `woke_early`, not slept; a declared source that cannot be quieted is named in `not_quieted`; sources left quiet by a cut-off cycle are put back by the next. `plan` always exits 0: read `would_cycle`. The check `soc-sleeps`
+reads that cycle - of this boot, no other - and says pass or fail where it used to skip. The cycle is never part of
+a scheduled run: somebody (a keeper) asks for it. Every path lies under `LPOCO_HEALTH_ROOT` (empty on the phone), which
+is how the fixture tests run it on a made-up phone.
+
 ### Detected conditions and chosen switches
 
 What the phone finds out by itself is a **condition**, worked out at the start of every run by

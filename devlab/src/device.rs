@@ -223,6 +223,10 @@ pub struct Health {
     /// suspends only if it does; unsaid, it never suspends
     #[serde(default)]
     pub suspend_guard: Option<String>,
+    /// Wakeup files (sysfs, e.g. a UART's power/wakeup) put to "disabled" for the controlled suspend cycle
+    /// (lpoco-health suspend cycle) and put back after: the wake sources that would end s2idle at once
+    #[serde(default)]
+    pub suspend_quiet: Vec<String>,
 }
 
 impl Health {
@@ -237,7 +241,7 @@ impl Health {
         format!(
             "# written by devlab from the device's manifest ([health]) - do not edit here\n\
              DEVICE={}\nSOUND_CARDS={}\nREMOTEPROCS={}\nKNOWN_WARNINGS={}\nKNOWN_FAILED_UNITS={}\n\
-             ABSENT={}\nGAPS={}\nDATA_BUDGET_MB={}\nSUSPEND_IRQ_MAX={}\nSUSPEND_GUARD={}\n",
+             ABSENT={}\nGAPS={}\nDATA_BUDGET_MB={}\nSUSPEND_IRQ_MAX={}\nSUSPEND_GUARD={}\nSUSPEND_QUIET={}\n",
             q(codename),
             q(&self.sound_cards.join(";")),
             q(&procs.join(" ")),
@@ -251,6 +255,7 @@ impl Health {
                 .map(|n| n.to_string())
                 .unwrap_or_default()),
             q(self.suspend_guard.as_deref().unwrap_or("")),
+            q(&self.suspend_quiet.join(" ")),
         )
     }
 }
@@ -428,6 +433,12 @@ mod tests {
         let qe = q.env("p");
         assert!(qe.contains("SUSPEND_IRQ_MAX='40'\n"));
         assert!(qe.contains("SUSPEND_GUARD='way-back.sh check'\n"));
+        let sq: Health =
+            toml::from_str("suspend_quiet = [\"/a/power/wakeup\", \"/b/power/wakeup\"]").unwrap();
+        assert!(sq
+            .env("p")
+            .contains("SUSPEND_QUIET='/a/power/wakeup /b/power/wakeup'\n"));
+        assert!(e.contains("SUSPEND_QUIET=''\n"));
         let tight: Health = toml::from_str("data_budget_mb = 1").unwrap();
         assert!(tight.env("p").contains("DATA_BUDGET_MB='1'\n"));
         assert!(

@@ -8,6 +8,7 @@
 //!   lpoco-health conditions                  what this phone finds out about itself right now
 //!   lpoco-health off TEST --reason WORDS     switch a test off, with a reason (--by WHO, or LPOCO_HEALTH_BY)
 //!   lpoco-health on TEST                     switch it on again
+//!   lpoco-health suspend plan|cycle         one controlled suspend and wake, counted (--seconds N, --settle N; the way back is the manifest's)
 
 use argenv_resolve::*;
 
@@ -20,11 +21,19 @@ pub enum Command {
     Conditions,
     Off,
     On,
+    Suspend,
 }
 
 impl Command {
-    pub const TOKENS: &'static [&'static str] =
-        &["run", "latest", "list", "conditions", "off", "on"];
+    pub const TOKENS: &'static [&'static str] = &[
+        "run",
+        "latest",
+        "list",
+        "conditions",
+        "off",
+        "on",
+        "suspend",
+    ];
 }
 
 impl FromRaw for Command {
@@ -36,6 +45,7 @@ impl FromRaw for Command {
             "conditions" => Command::Conditions,
             "off" => Command::Off,
             "on" => Command::On,
+            "suspend" => Command::Suspend,
             _ => return None,
         })
     }
@@ -76,6 +86,43 @@ contract! {
         arg: Some(Arg { value_name: "WHO", ..Arg::long("by") }),
         env: Some(Env::new("LPOCO_HEALTH_BY")),
         summary: "Who switches it (the login by default).",
+        ..Input::EMPTY
+    };
+
+    VERB: String, Command = Input {
+        key: "verb",
+        ty: Type::String,
+        subcommands: &[Command::Suspend],
+        arg: Some(Arg::positional(0)),
+        summary: "suspend: plan (what a cycle would do, changing nothing) or cycle (one suspend and wake, counted).",
+        ..Input::EMPTY
+    };
+
+    SECONDS: u64, Command = Input {
+        key: "seconds",
+        ty: Type::Uint,
+        subcommands: &[Command::Suspend],
+        default: Some(15),
+        arg: Some(Arg { value_name: "N", ..Arg::long("seconds") }),
+        summary: "suspend: how long the phone sleeps before the RTC wakes it (default 15; the way back must outlast it).",
+        ..Input::EMPTY
+    };
+
+    SETTLE: u64, Command = Input {
+        key: "settle",
+        ty: Type::Uint,
+        subcommands: &[Command::Suspend],
+        default: Some(2),
+        arg: Some(Arg { value_name: "N", ..Arg::long("settle") }),
+        summary: "suspend: seconds to let the phone settle after waking before it is counted again (default 2).",
+        ..Input::EMPTY
+    };
+
+    ROOT: String = Input {
+        key: "root",
+        ty: Type::String,
+        env: Some(Env::new("LPOCO_HEALTH_ROOT")),
+        summary: "The phone's root, empty on the phone itself; a test points it at a made-up one.",
         ..Input::EMPTY
     };
 
