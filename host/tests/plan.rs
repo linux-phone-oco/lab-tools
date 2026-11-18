@@ -960,3 +960,107 @@ fn check_passes_with_only_found_commands_and_a_second_device_is_named_too() {
         "{c}"
     );
 }
+
+/// Cross targets (lpoco-host part 3): a device names the Rust targets its tools are built for; the plan and check
+/// say which have a standard library on the host (the PATH rustc's, or the lab's own devlab-cross toolchain), a
+/// missing one fails check, and nothing is installed for it.
+#[test]
+fn a_missing_cross_target_is_named_by_plan_and_fails_check_and_nothing_is_installed() {
+    let l = lab("targets", "");
+    declare(
+        &l,
+        "tgt-lab",
+        "[host]\ntargets = [\"have-musl\", \"gone-musl\", \"kept-musl\"]\n",
+    );
+    let libs = l.dir.join("libs");
+    fs::create_dir_all(libs.join("have-musl")).unwrap();
+    fs::write(libs.join("have-musl/libstd-abc.rlib"), "").unwrap();
+    fs::create_dir_all(libs.join("none")).unwrap();
+    exe(
+        &l.dir.join("stubs/rustc"),
+        &format!(
+            "case \"$*\" in *have-musl*) echo {}/have-musl;; *) echo {}/none;; esac",
+            libs.display(),
+            libs.display()
+        ),
+    );
+    // the lab's own toolchain beside the system's holds kept-musl
+    fs::create_dir_all(
+        l.dir.join(
+            "home/.local/share/devlab-cross/rustup/toolchains/stable/lib/rustlib/kept-musl/lib",
+        ),
+    )
+    .unwrap();
+    fs::write(
+        l.dir.join("home/.local/share/devlab-cross/rustup/toolchains/stable/lib/rustlib/kept-musl/lib/libstd-x.rlib"),
+        "",
+    )
+    .unwrap();
+    let s = out(&host(&l, &["plan"]));
+    let line = |t: &str| {
+        s.lines()
+            .find(|x| x.contains(&format!("target {t}")))
+            .map(str::to_string)
+    };
+    assert!(line("have-musl").is_some_and(|x| x.contains("ok")), "{s}");
+    assert!(line("kept-musl").is_some_and(|x| x.contains("ok")), "{s}");
+    let gone = line("gone-musl").expect(&s);
+    assert!(gone.contains("missing") && gone.contains("tgt-lab"), "{s}");
+    assert!(changes(&l).is_none(), "the plan changed something");
+    let o = host_as(&l, "mll", &["check"]);
+    let c = out(&o);
+    assert!(
+        c.lines()
+            .any(|x| x.contains("target gone-musl") && x.contains("FAIL")),
+        "{c}"
+    );
+    assert!(
+        !c.lines()
+            .any(|x| x.contains("target have-musl") && x.contains("FAIL")),
+        "{c}"
+    );
+    assert!(!o.status.success(), "{c}");
+    // a target that would inject into a line is refused when the device is read
+    declare(&l, "bad-lab", "[host]\ntargets = [\"a b;rm\"]\n");
+    let bad = host(&l, &["plan"]);
+    assert!(!bad.status.success());
+    assert!(
+        String::from_utf8_lossy(&bad.stderr).contains("target \"a b;rm\""),
+        "{}",
+        String::from_utf8_lossy(&bad.stderr)
+    );
+}
+
+#[test]
+fn a_target_is_found_once_for_two_devices_and_dot_or_an_empty_libdir_or_a_broken_rustc_is_not_a_library(
+) {
+    let l = lab("targets-more", "");
+    declare(
+        &l,
+        "one-lab",
+        "[host]\ntargets = [\"t-musl\", \"t-musl\", \".\"]\n",
+    );
+    declare(&l, "two-lab", "[host]\ntargets = [\"t-musl\"]\n");
+    // a libdir that exists but holds no standard library, and a rustc that cannot run
+    fs::create_dir_all(l.dir.join("libs/t-musl")).unwrap();
+    exe(
+        &l.dir.join("stubs/rustc"),
+        &format!("echo {}/libs/t-musl", l.dir.display()),
+    );
+    let s = out(&host(&l, &["plan"]));
+    assert_eq!(s.matches("target t-musl").count(), 1, "{s}");
+    let t = s.lines().find(|x| x.contains("target t-musl")).unwrap();
+    assert!(
+        t.contains("missing") && t.contains("one-lab") && t.contains("two-lab"),
+        "{s}"
+    );
+    assert!(
+        s.lines()
+            .any(|x| x.contains("target .") && x.contains("missing")),
+        "{s}"
+    );
+    exe(&l.dir.join("stubs/rustc"), "exit 1");
+    let o = host_as(&l, "mll", &["check"]);
+    assert!(!o.status.success());
+    assert!(changes(&l).is_none(), "check changed something");
+}

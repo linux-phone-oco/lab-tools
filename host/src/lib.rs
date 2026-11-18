@@ -102,6 +102,9 @@ pub struct HostTable {
     /// Programs the device needs on the host's PATH: named by plan, judged by check, never installed (installing is a root pacman the author grants).
     #[serde(default)]
     pub commands: Vec<String>,
+    /// Rust targets the device's tools are built for: named by plan, judged by check (a standard library on the host), never installed.
+    #[serde(default)]
+    pub targets: Vec<String>,
     #[serde(default)]
     pub gadget: Vec<Gadget>,
 }
@@ -157,6 +160,9 @@ pub fn parse_device(path: &Path, text: &str) -> Result<Device, String> {
     }
     for c in &host.commands {
         safe_word("command", c).map_err(at)?;
+    }
+    for t in &host.targets {
+        safe_word("target", t).map_err(at)?;
     }
     Ok(Device {
         path: path.to_path_buf(),
@@ -315,6 +321,20 @@ pub fn commands_of(devices: &[Device]) -> Vec<(String, Vec<String>)> {
     for d in devices {
         for c in &d.host.commands {
             let w = m.entry(c.clone()).or_default();
+            if !w.contains(&d.codename) {
+                w.push(d.codename.clone());
+            }
+        }
+    }
+    m.into_iter().collect()
+}
+
+/// Each declared cross target once, with every device that wants it, sorted by target.
+pub fn targets_of(devices: &[Device]) -> Vec<(String, Vec<String>)> {
+    let mut m: std::collections::BTreeMap<String, Vec<String>> = Default::default();
+    for d in devices {
+        for t in &d.host.targets {
+            let w = m.entry(t.clone()).or_default();
             if !w.contains(&d.codename) {
                 w.push(d.codename.clone());
             }
@@ -617,6 +637,7 @@ mod one_per_codename_tests {
                 watch: false,
                 modules: vec![],
                 commands: vec![],
+                targets: vec![],
                 gadget: gadget.into_iter().collect(),
             },
             lpoco_pin: None,

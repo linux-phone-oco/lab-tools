@@ -408,6 +408,7 @@ fn plan(st: &State) {
         println!("\nkept: {KEPT_RULE} is a wide rule; it is kept for now and prepare never removes or edits it");
     }
     let _ = print_commands(st, false);
+    let _ = print_targets(st, false);
     print_foreign_rules(st);
     let tools = tool_plans(st);
     let (unit, ucmds) = watchers(st, &tools);
@@ -630,6 +631,7 @@ fn check(st: &State) -> Result<i32, String> {
         println!("kept: {KEPT_RULE} is a wide rule, kept for now");
     }
     bad += print_commands(st, true) as i32;
+    bad += print_targets(st, true) as i32;
     print_foreign_rules(st);
     for d in &st.devices {
         for g in &d.host.gadget {
@@ -782,6 +784,58 @@ fn print_commands(st: &State, judge: bool) -> usize {
                 missing += 1;
                 let word = if judge { "FAIL, missing" } else { "missing" };
                 println!("command {c}: {word} from PATH (wanted by {by}); named only, the tool installs nothing for it");
+            }
+        }
+    }
+    missing
+}
+
+/// A libdir that holds a standard library: a `libstd-*` file (a bare or leftover directory is not one).
+fn has_std(dir: &Path) -> bool {
+    fs::read_dir(dir).is_ok_and(|rd| {
+        rd.flatten()
+            .any(|e| e.file_name().to_string_lossy().starts_with("libstd-"))
+    })
+}
+
+/// Does the host have a standard library for `target`: the PATH rustc's own, or the lab's separate toolchain in
+/// ~/.local/share/devlab-cross (what health/build.sh falls back to)? Returns where it is.
+fn target_found(st: &State, target: &str) -> Option<PathBuf> {
+    if target == "." {
+        return None;
+    }
+    if let Some(rustc) = on_path(&st.path, "rustc") {
+        // from a neutral directory and with no auto-install: asking must never fetch a toolchain
+        if let Ok(o) = Proc::new(rustc)
+            .args(["--print", "target-libdir", "--target", target])
+            .current_dir("/")
+            .env("RUSTUP_AUTO_INSTALL", "0")
+            .output()
+        {
+            let dir = PathBuf::from(String::from_utf8_lossy(&o.stdout).trim());
+            if o.status.success() && has_std(&dir) {
+                return Some(dir);
+            }
+        }
+    }
+    let tc = format!("{}/.local/share/devlab-cross/rustup/toolchains", st.home);
+    fs::read_dir(tc).ok()?.flatten().find_map(|e| {
+        let d = e.path().join("lib/rustlib").join(target).join("lib");
+        has_std(&d).then_some(d)
+    })
+}
+
+/// Each declared cross target, once, with every device that wants it. Read-only; returns how many are missing.
+fn print_targets(st: &State, judge: bool) -> usize {
+    let mut missing = 0;
+    for (t, wanted) in targets_of(&st.devices) {
+        let by = wanted.join(", ");
+        match target_found(st, &t) {
+            Some(p) => println!("target {t}: ok, {} (wanted by {by})", p.display()),
+            None => {
+                missing += 1;
+                let word = if judge { "FAIL, missing" } else { "missing" };
+                println!("target {t}: {word} a standard library (wanted by {by}); named only, the tool installs nothing for it");
             }
         }
     }
