@@ -2,6 +2,8 @@
 //! Two declarations: the lab's own (`lab.toml`: its devices, its root prefix, its tools at pins) and each
 //! device's `[host]` table in its `device.toml` (decision 2026-11-17-lpoco-host).
 
+pub mod share;
+
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -20,7 +22,8 @@ pub const FAMILY: &[&str] = &[
 pub const OLD_NAMES: &[(&str, &str)] = &[("devlab", "lpoco-lab"), ("tone", "lpoco-tone")];
 /// A wide rule the author keeps for now: named by plan and check, never removed or edited by prepare.
 pub const KEPT_RULE: &str = "/etc/udev/rules.d/51-android.rules";
-pub const DEFAULT_ROOT: &str = "sudo -n lab-agent root-exec --";
+/// Root is asked for only by `prepare now`, behind sudo with the author's typed password: no standing grant.
+pub const DEFAULT_ROOT: &str = "sudo";
 pub const DEFAULT_DEVICES: &str = "~/Projects/linux-phone-oco/*/device.toml";
 pub const UDEV_DIR: &str = "/etc/udev/rules.d";
 pub const MODULES_FILE: &str = "/etc/modules-load.d/lpoco.conf";
@@ -326,6 +329,9 @@ impl LinkManager {
 
 /// NetworkManager refuses a keyfile that is not root's and private; every other file we write is world-readable.
 pub fn file_mode(dst: &str) -> &'static str {
+    if dst == share::SHARE_HELPER_DST {
+        return "0755";
+    }
     if dst.starts_with(NM_DIR) {
         "0600"
     } else {
@@ -391,6 +397,7 @@ pub fn files_for(
     devices: &[Device],
     group: Option<&str>,
     manager: Option<LinkManager>,
+    share_user: Option<&str>,
     read: &dyn Fn(&str) -> Option<String>,
 ) -> Vec<FileChange> {
     let mut files = Vec::new();
@@ -419,6 +426,20 @@ pub fn files_for(
                 content: m.text(&name, &address),
                 serials: vec![],
                 dst,
+            });
+        }
+    }
+    if let Some(user) = share_user.filter(|u| share::valid_user(u)) {
+        for (dst, content) in [
+            (share::SHARE_HELPER_DST, share::helper_text()),
+            (share::SHARE_UNIT_DST, share::unit_text()),
+            (share::POLKIT_DST, share::polkit_text(user)),
+        ] {
+            files.push(FileChange {
+                existing: read(dst),
+                content,
+                serials: vec![],
+                dst: dst.into(),
             });
         }
     }
@@ -1001,7 +1022,7 @@ pub const WATCH_UNIT: &str = "devlab-watch@.service";
 pub const WATCH_TOOL: &str = "lpoco-lab";
 
 pub fn watch_unit_text() -> String {
-    "[Unit]\nDescription=devlab watch: the health of the device whose lab repository is %i\nAfter=network-online.target\n\n[Service]\nExecStart=%h/.local/bin/devlab --device %h/Projects/linux-phone-oco/%i/device.toml watch\nEnvironment=LAB_AGENT=/usr/bin/lab-agent\nRestart=on-failure\nRestartSec=30\n\n[Install]\nWantedBy=default.target\n".to_string()
+    "[Unit]\nDescription=devlab watch: the health of the device whose lab repository is %i\nAfter=network-online.target\n\n[Service]\nExecStart=%h/.local/bin/devlab --device %h/Projects/linux-phone-oco/%i/device.toml watch\nRestart=on-failure\nRestartSec=30\n\n[Install]\nWantedBy=default.target\n".to_string()
 }
 
 /// The instance each device is watched by: its lab repository's folder name, for a device whose manifest lies at

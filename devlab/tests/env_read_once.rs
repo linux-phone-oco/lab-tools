@@ -3,7 +3,6 @@
 //! declared variable itself, and a value the contract refuses exits 2 with the usage.
 
 use std::path::Path;
-use std::process::Command;
 
 fn sources(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
     for e in std::fs::read_dir(dir).unwrap() {
@@ -37,20 +36,5 @@ fn no_declared_variable_is_read_by_std_env() {
         found.is_empty(),
         "read through the contract instead:\n{}",
         found.join("\n")
-    );
-}
-
-#[test]
-fn an_empty_root_program_exits_2_with_the_usage() {
-    let o = Command::new(env!("CARGO_BIN_EXE_lpoco-lab"))
-        .args(["phone", "find"])
-        .env("DEVLAB_ROOT", "")
-        .output()
-        .unwrap();
-    assert_eq!(o.status.code(), Some(2), "{o:?}");
-    let err = String::from_utf8_lossy(&o.stderr);
-    assert!(
-        err.contains("DEVLAB_ROOT") && err.contains("Usage:"),
-        "{err}"
     );
 }

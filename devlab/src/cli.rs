@@ -382,14 +382,6 @@ contract! {
 
     // --- the environment it reads (the readers are in flash.rs, provision.rs, watch.rs, phone.rs, hear.rs, device.rs) ---
 
-    DEVLAB_ROOT: String = Input {
-        key: "devlab_root",
-        ty: Type::String,
-        env: Some(Env::new("DEVLAB_ROOT")),
-        summary: "The program that runs a root command on this machine, given the command as its arguments (default: sudo -n lab-agent root-exec --).",
-        ..Input::EMPTY
-    };
-
     PHONE_PASS: String = Input {
         key: "phone_pass",
         ty: Type::String,
@@ -417,24 +409,14 @@ contract! {
 
 /// The declared environment, read once through the contract (the readers call `env()`, never std::env).
 pub struct EnvIn {
-    pub devlab_root: String,
     pub phone_pass: Option<String>,
     pub microphone: Option<String>,
     pub home: Option<String>,
 }
 
-pub const DEFAULT_ROOT: &str = "sudo -n lab-agent root-exec --";
-
 /// Read the declared variables from a resolved command line; a value the contract refuses is said.
 pub fn env_in(r: &argenv_resolve::Resolution) -> Result<EnvIn, String> {
-    let root = Contract::DEVLAB_ROOT.get_from(r);
-    if root.as_deref().is_some_and(|v| v.trim().is_empty()) {
-        return Err(
-            "DEVLAB_ROOT is empty: name the program that runs a root command, or unset it".into(),
-        );
-    }
     Ok(EnvIn {
-        devlab_root: root.unwrap_or_else(|| DEFAULT_ROOT.into()),
         phone_pass: Contract::PHONE_PASS.get_from(r),
         microphone: Contract::DEVLAB_MICROPHONE
             .get_from(r)

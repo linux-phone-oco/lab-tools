@@ -61,7 +61,6 @@ fn load(r: &Resolution) -> Result<State, String> {
     let lab = parse_lab(Path::new(&lab_path), &lab_text)?;
     let root = Contract::ROOT
         .get_from(r)
-        .or_else(|| Contract::DEVLAB_ROOT.get_from(r))
         .or_else(|| lab.root.clone())
         .unwrap_or_else(|| DEFAULT_ROOT.to_string());
     let patterns = lab
@@ -229,6 +228,7 @@ fn root_commands(
     let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
     let mut cmds = Vec::new();
     let mut rules_changed = false;
+    let mut unit_changed = false;
     let mut link_reload: Option<Vec<String>> = None;
     let mut serials = Vec::new();
     for f in files.iter().filter(|f| f.changed()) {
@@ -241,6 +241,9 @@ fn root_commands(
             &format!("{stage}/{base}"),
             &f.dst,
         ]));
+        if f.dst == share::SHARE_UNIT_DST {
+            unit_changed = true;
+        }
         if f.dst.starts_with(NM_DIR) {
             link_reload = Some(LinkManager::NetworkManager.reload());
         } else if f.dst.starts_with(NETWORKD_DIR) {
@@ -269,6 +272,9 @@ fn root_commands(
             "--subsystem-match=block",
             "--subsystem-match=tty",
         ]));
+    }
+    if unit_changed {
+        cmds.push(s(&["systemctl", "daemon-reload"]));
     }
     // the name is set by udev at the next plug-in; the manager reads its new file now
     cmds.extend(link_reload);
@@ -368,6 +374,7 @@ fn plan(st: &State) {
         &st.devices,
         st.lab.gadget_group.as_deref(),
         LinkManager::detect(&st.fs_root),
+        st.user.as_deref(),
         &|p| read_file(&st.fs_root, p),
     );
     let modules = modules_of(&st.devices);
@@ -417,6 +424,12 @@ fn plan(st: &State) {
         println!("\nreboot: the running kernel has no modules (/lib/modules for it is gone), so {} cannot be loaded until the host boots its installed kernel", modules.join(", "));
     }
     let cmds = root_commands(&files, &modules, &stage, &st.fs_root);
+    println!(
+        "\nwhat root is for (RootNeed; no standing grant, prepare asks sudo for your password):"
+    );
+    for n in share::RootNeed::ALL {
+        println!("    {:<32} {}", n.name(), n.when());
+    }
     println!("\nroot commands, through `{}`:", st.root.join(" "));
     if cmds.is_empty() {
         println!("    none");
@@ -508,6 +521,7 @@ fn prepare(st: &State) -> Result<i32, String> {
         &st.devices,
         st.lab.gadget_group.as_deref(),
         LinkManager::detect(&st.fs_root),
+        st.user.as_deref(),
         &|p| read_file(&st.fs_root, p),
     );
     let modules = modules_of(&st.devices);
