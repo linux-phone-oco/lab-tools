@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-tone-v0.19.0...lpoco-tone-v0.20.0) - 2026-11-18
+
+### Other
+
+- *(manifest)* ShellWord - a gadget word the init cannot carry cannot be held ([#190](https://github.com/linux-phone-oco/lab-tools/pull/190))
+
 ## [0.19.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-tone-v0.18.3...lpoco-tone-v0.19.0) - 2026-11-18
 
 ### Added
