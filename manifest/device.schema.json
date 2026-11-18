@@ -1,0 +1,700 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Manifest",
+  "description": "The whole manifest. A program asks for the tables it needs; a table nobody declared is an error.",
+  "type": "object",
+  "properties": {
+    "device": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Identity"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "connection": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Connection"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "tests": {
+      "$ref": "#/definitions/Tests"
+    },
+    "provision": {
+      "$ref": "#/definitions/Provision"
+    },
+    "flash": {
+      "$ref": "#/definitions/Flash"
+    },
+    "fastboot": {
+      "description": "How the lab reaches the phone over fastboot, and whether it may write to it there",
+      "allOf": [
+        {
+          "$ref": "#/definitions/Fastboot"
+        }
+      ]
+    },
+    "hear": {
+      "description": "what the lab's ear listens for",
+      "allOf": [
+        {
+          "$ref": "#/definitions/Hear"
+        }
+      ]
+    },
+    "health": {
+      "description": "what the phone's own health suite expects of it",
+      "allOf": [
+        {
+          "$ref": "#/definitions/Health"
+        }
+      ]
+    },
+    "hazard": {
+      "description": "What must never be touched on this phone, whoever asks",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Hazard"
+      }
+    },
+    "host": {
+      "description": "What the lab host needs for this device",
+      "allOf": [
+        {
+          "$ref": "#/definitions/HostTable"
+        }
+      ]
+    },
+    "boot": {
+      "description": "The header facts of the phone's boot image",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Boot"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "tools": {
+      "description": "The tools this device's lab pins",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Tools"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "Identity": {
+      "type": "object",
+      "properties": {
+        "codename": {
+          "description": "The postmarketOS-style codename, e.g. \"xiaomi-surya\"",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "codename"
+      ]
+    },
+    "Connection": {
+      "type": "object",
+      "properties": {
+        "user": {
+          "type": "string"
+        },
+        "addresses": {
+          "description": "Addresses to try, in order (USB networking first, as a rule)",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "user",
+        "addresses"
+      ]
+    },
+    "Tests": {
+      "type": "object",
+      "properties": {
+        "checks": {
+          "description": "The checks script, relative to the manifest; run on the phone as root, one JSON line per check",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "checks"
+      ]
+    },
+    "Provision": {
+      "description": "What a freshly flashed phone gets.",
+      "type": "object",
+      "properties": {
+        "packages": {
+          "description": "The package list, relative to the manifest",
+          "type": "string",
+          "default": "provision/packages.txt"
+        },
+        "install": {
+          "description": "Files to install - `{compatible}` is the phone's device-tree name",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Install"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "Install": {
+      "type": "object",
+      "properties": {
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        },
+        "mode": {
+          "type": "string",
+          "default": "644"
+        },
+        "when": {
+          "description": "A command on the phone that must succeed for the file to go on (empty: always)",
+          "type": "string",
+          "default": ""
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to"
+      ]
+    },
+    "Flash": {
+      "description": "How an image goes onto the phone, and what is baked into it.",
+      "type": "object",
+      "properties": {
+        "sector_size": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 512
+        },
+        "esp_partition": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 1
+        },
+        "root_partition": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 2
+        },
+        "bootloader_partition": {
+          "type": "string",
+          "default": "boot"
+        },
+        "image_partition": {
+          "type": "string",
+          "default": "userdata"
+        },
+        "dtb": {
+          "description": "Where the device tree lives in the image (esp:/... or root:/...), for --dtb and the fingerprint",
+          "type": "string",
+          "default": ""
+        },
+        "overlay": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Overlay"
+          }
+        },
+        "mask": {
+          "description": "Services masked in the image",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "enable": {
+          "description": "Services enabled on first boot - always, even --as-is (the lab must reach the phone)",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      },
+      "additionalProperties": false
+    },
+    "Overlay": {
+      "description": "A file baked into the image: from the lab repository, to esp:/... or root:/...; skipped unless\n`if_exists` (also esp:/... or root:/...) exists in the image.",
+      "type": "object",
+      "properties": {
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        },
+        "mode": {
+          "type": "string",
+          "default": "644"
+        },
+        "if_exists": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to"
+      ]
+    },
+    "Fastboot": {
+      "description": "The phone as fastboot knows it. Every fastboot call devlab makes names this serial, so a lab with two\nphones in fastboot never reaches the wrong one; and nothing is written over fastboot (flash) unless the\nmanifest says `writes = true` - a phone whose slots must stay as they are says nothing, or false\n(google-walleye: decision 2026-11-17-walleye-fastboot-first).",
+      "type": "object",
+      "properties": {
+        "serial": {
+          "description": "As `fastboot devices` lists it",
+          "type": "string",
+          "default": ""
+        },
+        "writes": {
+          "description": "Whether devlab may write partitions over fastboot (devlab flash); false unless said",
+          "type": "boolean",
+          "default": false
+        },
+        "slot_switch": {
+          "description": "Whether devlab may change the active slot (devlab fastboot set-active: the bootloader's metadata, no\npartition written); false unless a recorded decision says so",
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "Hear": {
+      "description": "The tones the lab's ear listens for (`devlab hear`); none named means one on each side. How loud\nany test sound may be is said here too, quiet by default: a phone in a home must never shout - a\nfull-scale tone at night once woke the author. Every check that plays sound reads the same two\nvalues (TEST_TONE_DBFS, TEST_VOLUME in the phone's health.env).",
+      "type": "object",
+      "properties": {
+        "tone": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/HearTone"
+          }
+        },
+        "level_dbfs": {
+          "description": "the tone's level in the file, dBFS (at most 0)",
+          "type": "number",
+          "format": "double",
+          "default": -40.0
+        },
+        "volume": {
+          "description": "the phone's output volume while a test sound plays, percent (at most 100)",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 25
+        }
+      },
+      "additionalProperties": false
+    },
+    "HearTone": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "the check's name",
+          "type": "string"
+        },
+        "channel": {
+          "description": "left, right or both",
+          "type": "string"
+        },
+        "freq": {
+          "type": "number",
+          "format": "double",
+          "default": 1000.0
+        },
+        "component": {
+          "description": "the component it speaks for",
+          "type": "string",
+          "default": "audio-speaker"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "channel"
+      ]
+    },
+    "Health": {
+      "description": "What the phone's own health suite expects of this phone (lpoco-health, on the phone). Every\nfield is a fact about the hardware; what it says becomes /etc/devlab/health.env there.",
+      "type": "object",
+      "properties": {
+        "sound_cards": {
+          "description": "Sound cards that must be registered: names as /proc/asound/cards shows them",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "remoteprocs": {
+          "description": "Signal processors that must be running: remoteproc name -> the component that rests on it",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {}
+        },
+        "known_warnings": {
+          "description": "Kernel warnings known at boot (file:line), each with its reason beside it in the manifest",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "known_failed_units": {
+          "description": "Units known to fail on this phone, each with its reason beside it in the manifest",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "absent": {
+          "description": "Parts this phone does not have at all (wifi, modem, bluetooth, nfc, fingerprint, camera, jack,\ndisplay, touchscreen, haptics, sensors, usb-otg): skipped, never failing",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "gaps": {
+          "description": "Components this phone has never had working (docs component ids), each with its reason beside it:\nstill measured and reported, but a failure there is a known gap, not ill health",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "checks": {
+          "description": "This phone's own checks, relative to the manifest: base/*.sh and shell/*.sh beneath it",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "data_budget_mb": {
+          "description": "Mobile data the health checks may spend in a month, in MB (250 when unsaid): the telephony\nlayer's mobile-data check skips once the month has spent it (lpoco-health data)",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0,
+          "default": null
+        },
+        "suspend_irq_max": {
+          "description": "Interrupts one 15 s suspended cycle may count in all (the suite check suspend-irq-quiet); unsaid, the\ncheck says not measured: the number comes from a reading of this phone, never a guess",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0,
+          "default": null
+        },
+        "suspend_guard": {
+          "description": "A command on the phone that succeeds while its watchdog is armed (the way-back check): the suite\nsuspends only if it does; unsaid, it never suspends",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "suspend_quiet": {
+          "description": "Wakeup files (sysfs, e.g. a UART's power/wakeup) put to \"disabled\" for the controlled suspend cycle\n(lpoco-health suspend cycle) and put back after: the wake sources that would end s2idle at once",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "awake_gates": {
+          "description": "Gates that hold the keep-awake lock (lpoco-health awake) while autosleep is allowed, named by token:\nbluetooth-not-up (hci0 not UP, or an rfkill stuck in D state). The package knows the tokens; an unknown one is refused",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      },
+      "additionalProperties": false
+    },
+    "Hazard": {
+      "description": "A path on the phone that harms it to touch - each with what it did, so the refusal says why.",
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "why": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "why"
+      ]
+    },
+    "HostTable": {
+      "type": "object",
+      "properties": {
+        "watch": {
+          "description": "The device asks to be watched: prepare enables its `devlab-watch@` instance. Watching is the device's own choice, like its gadgets.",
+          "type": "boolean",
+          "default": false
+        },
+        "modules": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "commands": {
+          "description": "Programs the device needs on the host's PATH: named by plan, judged by check, never installed (installing is a root pacman the author grants).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "targets": {
+          "description": "Rust targets the device's tools are built for: named by plan, judged by check (a standard library on the host), never installed.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "gadget": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Gadget"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "Gadget": {
+      "type": "object",
+      "properties": {
+        "serial": {
+          "type": "string"
+        },
+        "access": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Access"
+          }
+        },
+        "net_name": {
+          "description": "A stable name for the gadget's USB network interface (CDC-NCM and friends), set by udev at plug-in: the kernel's own name follows the port.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "net_address": {
+          "description": "The host's address on that network, as IPv4 CIDR (`10.55.0.1/24`): written as a link config for the host's own network manager, only with the verb. Needs `net_name`.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "serial",
+        "access"
+      ]
+    },
+    "Access": {
+      "description": "`devices = \"glob\"` is the lab's; these are the device's own `[host]` words.",
+      "type": "string",
+      "enum": [
+        "block",
+        "tty"
+      ]
+    },
+    "Boot": {
+      "type": "object",
+      "properties": {
+        "header_version": {
+          "description": "0 is the only header version this tool packs and checks so far",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 0
+        },
+        "base": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 0
+        },
+        "kernel_offset": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "ramdisk_offset": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "second_offset": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 0
+        },
+        "tags_offset": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "pagesize": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "os_version": {
+          "description": "\"A.B.C\"; none says the header holds no os words",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "os_patch_level": {
+          "description": "\"YYYY-MM\"",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cmdline": {
+          "type": "string"
+        },
+        "partition_size": {
+          "description": "the boot partition's size in bytes: an image must fit it",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "msm_id": {
+          "description": "the qcom,msm-id words the appended device tree must carry",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          }
+        },
+        "dtb": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kernel_compression": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ramdisk_compression": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "avb_footer": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "hooks": {
+          "description": "step name to executable (relative to the manifest): `parts` runs on kernel and ramdisk before packing",
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kernel_offset",
+        "ramdisk_offset",
+        "tags_offset",
+        "pagesize",
+        "cmdline"
+      ]
+    },
+    "Tools": {
+      "description": "`[tools]`: the pins of this device's lab.",
+      "type": "object",
+      "properties": {
+        "lpoco": {
+          "description": "The release of the lpoco family the phone's pieces come from",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

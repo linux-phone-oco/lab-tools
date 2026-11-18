@@ -1422,7 +1422,7 @@ fn lab_with_share(name: &str, start_works: bool) -> Lab {
     let l = lab(name, "");
     let dev = l.dir.join("devs/google-walleye-lab/device.toml");
     let mut t = fs::read_to_string(&dev).unwrap();
-    t.push_str("[connection]\naddresses = [\"172.16.42.1\"]\n");
+    t.push_str("[connection]\nuser = \"u\"\naddresses = [\"172.16.42.1\"]\n");
     fs::write(&dev, t).unwrap();
     let bin = l.dir.join("stubs");
     exe(
@@ -1506,4 +1506,14 @@ fn a_passing_share_check_does_not_vouch_for_a_rule_recorded_with_other_content()
         after.contains("stage/50-lpoco.rules"),
         "still installed: {after}"
     );
+}
+
+#[test]
+fn a_misspelled_table_in_a_device_manifest_is_refused_by_host_too() {
+    let e = lpoco_host::parse_device(
+        std::path::Path::new("device.toml"),
+        "[device]\ncodename = \"p\"\n[[flash.overlays]]\nfrom = \"a\"\nto = \"b\"\n",
+    )
+    .unwrap_err();
+    assert!(e.contains("overlays"), "{e}");
 }

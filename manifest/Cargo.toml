@@ -1,0 +1,16 @@
+[package]
+name = "lpoco-manifest"
+version = "0.17.1"
+edition = "2021"
+description = "lpoco manifest: device.toml declared once - the types every lpoco program reads, unknown fields refused, its JSON Schema projected"
+license = "MIT OR Apache-2.0"
+
+[lib]
+name = "lpoco_manifest"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+toml = "0.8"
+schemars = "1"
+argenv-resolve = "0.4"
