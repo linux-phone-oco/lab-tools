@@ -884,3 +884,55 @@ pub fn unasked_watchers(home: &str, devices: &[Device], enabled: &[String]) -> V
     v.dedup();
     v
 }
+
+/// The rule files of a host that are not this tool's, named when they could cross its own: a file in the rules
+/// directory that is not a `70-lpoco-` file and not the kept wide rule, and that either names a serial a device
+/// declares or sets MODE 0666. Each is (file name, why). Only named; prepare never edits or removes one.
+/// `files` are (file name, text) pairs.
+pub fn foreign_rules(files: &[(String, String)], serials: &[String]) -> Vec<(String, String)> {
+    let kept = KEPT_RULE.rsplit('/').next().unwrap_or(KEPT_RULE);
+    let mut out: Vec<(String, String)> = Vec::new();
+    for (name, text) in files {
+        if name == kept || name.starts_with("70-lpoco-") || !name.ends_with(".rules") {
+            continue;
+        }
+        let mut why: Vec<String> = Vec::new();
+        let live: Vec<&str> = text
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.starts_with('#'))
+            .collect();
+        for s in serials {
+            let quoted = format!("\"{s}\"");
+            if live.iter().any(|l| l.contains(&quoted)) {
+                why.push(format!("names our gadget serial {s}"));
+            }
+        }
+        if live.iter().any(|l| sets_mode_0666(l)) {
+            why.push("sets MODE 0666".to_string());
+        }
+        if !why.is_empty() {
+            out.push((name.clone(), why.join(", ")));
+        }
+    }
+    out.sort();
+    out
+}
+
+/// Whether a rule line assigns MODE 0666 (or 666), as `MODE="0666"` or `MODE:="0666"`.
+fn sets_mode_0666(line: &str) -> bool {
+    let mut rest = line;
+    while let Some(i) = rest.find("MODE") {
+        let after = rest[i + 4..].trim_start();
+        let after = after
+            .strip_prefix(":=")
+            .or_else(|| after.strip_prefix('='))
+            .unwrap_or("");
+        let v = after.trim_start().trim_start_matches('"');
+        if v.starts_with("0666") || (v.starts_with("666") && !v.starts_with("6666")) {
+            return true;
+        }
+        rest = &rest[i + 4..];
+    }
+    false
+}

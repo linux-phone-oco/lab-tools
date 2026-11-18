@@ -840,3 +840,52 @@ fn an_enabled_watcher_of_a_device_that_does_not_ask_is_named_never_stopped() {
     }
     assert!(wants.join("devlab-watch@quiet-lab.service").exists());
 }
+
+#[test]
+fn a_foreign_rule_on_our_serial_or_wide_is_named_and_never_touched() {
+    let l = lab("foreign", "[tools]\nlpoco = \"0.2.0\"\n");
+    let rules = l.dir.join("fs/etc/udev/rules.d");
+    fs::create_dir_all(&rules).unwrap();
+    fs::write(
+        rules.join("99-mine.rules"),
+        "SUBSYSTEM==\"tty\", ATTRS{serial}==\"walleye-first-boot\", MODE=\"0600\"\n",
+    )
+    .unwrap();
+    fs::write(
+        rules.join("60-wide.rules"),
+        "SUBSYSTEM==\"usb\", MODE=\"0666\"\n",
+    )
+    .unwrap();
+    fs::write(rules.join("51-android.rules"), "MODE=\"0666\"\n").unwrap();
+    fs::write(
+        rules.join("70-lpoco-google-walleye.rules"),
+        "ATTRS{serial}==\"walleye-first-boot\"\n",
+    )
+    .unwrap();
+    fs::write(
+        rules.join("55-comment.rules"),
+        "# MODE=\"0666\" walleye-first-boot\nATTR{idProduct}==\"0666\"\n",
+    )
+    .unwrap();
+    fs::write(rules.join("50-quiet.rules"), "# nothing of ours\n").unwrap();
+    let s = out(&host(&l, &["plan"]));
+    assert!(
+        s.lines().any(|x| x.contains("foreign")
+            && x.contains("99-mine.rules")
+            && x.contains("walleye-first-boot")),
+        "{s}"
+    );
+    assert!(
+        s.lines()
+            .any(|x| x.contains("foreign") && x.contains("60-wide.rules") && x.contains("0666")),
+        "{s}"
+    );
+    assert!(!s.contains("50-quiet.rules"), "{s}");
+    assert!(!s.contains("51-android.rules is not ours"), "{s}");
+    assert!(
+        !s.contains("70-lpoco-google-walleye.rules is not ours"),
+        "{s}"
+    );
+    assert!(!s.contains("55-comment.rules"), "{s}");
+    assert!(changes(&l).is_none());
+}
