@@ -402,6 +402,60 @@ contract! {
     };
 }
 
+/// The declared environment, read once through the contract (the readers call `env()`, never std::env).
+pub struct EnvIn {
+    pub devlab_root: String,
+    pub lab_agent: String,
+    pub phone_pass: Option<String>,
+    pub microphone: Option<String>,
+    pub home: Option<String>,
+}
+
+pub const DEFAULT_ROOT: &str = "sudo -n lab-agent root-exec --";
+
+/// Read the declared variables from a resolved command line; a value the contract refuses is said.
+pub fn env_in(r: &argenv_resolve::Resolution) -> Result<EnvIn, String> {
+    let root = Contract::DEVLAB_ROOT.get_from(r);
+    if root.as_deref().is_some_and(|v| v.trim().is_empty()) {
+        return Err(
+            "DEVLAB_ROOT is empty: name the program that runs a root command, or unset it".into(),
+        );
+    }
+    Ok(EnvIn {
+        devlab_root: root.unwrap_or_else(|| DEFAULT_ROOT.into()),
+        lab_agent: Contract::LAB_AGENT
+            .get_from(r)
+            .unwrap_or_else(|| "lab-agent".into()),
+        phone_pass: Contract::PHONE_PASS.get_from(r),
+        microphone: Contract::DEVLAB_MICROPHONE
+            .get_from(r)
+            .map(|m| m.trim().to_string())
+            .filter(|m| !m.is_empty()),
+        home: Contract::HOME.get_from(r),
+    })
+}
+
+static ENV: std::sync::OnceLock<EnvIn> = std::sync::OnceLock::new();
+
+/// Keep the environment the command line was resolved with.
+pub fn set_env(e: EnvIn) {
+    let _ = ENV.set(e);
+}
+
+/// The declared environment: from main's parse, else (a unit test) resolved from the process as it stands.
+pub fn env() -> &'static EnvIn {
+    #[cfg(test)]
+    let e = ENV.get_or_init(|| {
+        let r = argenv_resolve::parse(&Contract::records());
+        env_in(&r).unwrap_or_else(|e| panic!("{e}"))
+    });
+    #[cfg(not(test))]
+    let e = ENV
+        .get()
+        .expect("cli::set_env runs in parse() before any reader");
+    e
+}
+
 /// One command or action: what it says, the positionals it takes (keys, in order) and the flags it knows.
 pub struct Node {
     pub path: &'static [&'static str],

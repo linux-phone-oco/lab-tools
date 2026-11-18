@@ -38,7 +38,7 @@ pub fn tool() -> Result<()> {
 }
 
 fn state_root() -> PathBuf {
-    PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".local/state/devlab")
+    PathBuf::from(crate::cli::env().home.clone().unwrap_or_default()).join(".local/state/devlab")
 }
 
 /// Every address devlab has met for a phone, under its state root.

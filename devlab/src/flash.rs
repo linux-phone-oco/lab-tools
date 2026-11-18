@@ -8,10 +8,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn host_root(args: &[&str]) -> Result<String> {
-    let prefix =
-        std::env::var("DEVLAB_ROOT").unwrap_or_else(|_| "sudo -n lab-agent root-exec --".into());
+    let prefix = crate::cli::env().devlab_root.clone();
     let mut p = prefix.split_whitespace();
-    let out = Command::new(p.next().context("DEVLAB_ROOT is empty")?)
+    let out = Command::new(p.next().context("no root program")?)
         .args(p)
         .args(args)
         .output()?;

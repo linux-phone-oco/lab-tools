@@ -177,7 +177,7 @@ impl Phone {
 
 /// The phone's password: $PHONE_PASS, else ~/.config/devlab/CODENAME/password (keep it mode 600).
 fn password(device: &Device) -> Result<String> {
-    if let Ok(p) = std::env::var("PHONE_PASS") {
+    if let Some(p) = crate::cli::env().phone_pass.clone() {
         return Ok(p);
     }
     let f = device.config_dir().join("password");

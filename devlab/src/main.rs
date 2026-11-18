@@ -197,6 +197,10 @@ fn parse() -> Cli {
     if !errors.is_empty() {
         usage_error(&found, &errors.join("\n"));
     }
+    match cli::env_in(&r) {
+        Ok(e) => cli::set_env(e),
+        Err(said) => usage_error(&found, &said),
+    }
     let node = match &found {
         cli::Found::Leaf(n) => *n,
         cli::Found::Unknown(w) => usage_error(&found, &format!("unrecognized command '{w}'")),

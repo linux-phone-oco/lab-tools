@@ -328,7 +328,9 @@ impl Device {
 }
 
 fn home() -> PathBuf {
-    std::env::var_os("HOME")
+    crate::cli::env()
+        .home
+        .clone()
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."))
 }
