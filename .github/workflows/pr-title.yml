@@ -32,14 +32,10 @@ jobs:
           check "$TITLE"
           while IFS= read -r subject; do check "$subject"; done < <(git log --no-merges --format=%s "$BASE..$HEAD")
           if [ "$bad" = 1 ]; then exit 1; fi
-      # a release PR that rewrites a changelog but keeps every version tags nothing new
-      # (#109 after #110): refuse a changed CHANGELOG.md without a changed version
+      # a changelog never changes without a version, unless the change completes a version the package
+      # already carries (#113 after #111): the rule is .github/check-changelog.sh, tested by
+      # lpoco/tests/changelog_check.rs
       - env:
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
-        run: |
-          if git diff --name-only "$BASE...$HEAD" | grep -q 'CHANGELOG.md$' \
-            && ! git diff "$BASE...$HEAD" -- '*/Cargo.toml' | grep -Eq '^\+version = '; then
-            echo "a CHANGELOG.md changed and no version did: the release must bump the version"
-            exit 1
-          fi
+        run: sh .github/check-changelog.sh "$BASE" "$HEAD"

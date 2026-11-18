@@ -133,9 +133,9 @@ fn the_workflow_reads_the_pattern_checks_commits_and_stops() {
     assert!(flow.contains("pull_request"));
     assert!(flow.contains(".github/commit-kind.regex"));
     assert!(flow.contains("git log"), "commit titles are not checked");
-    assert!(
-        flow.contains("CHANGELOG.md"),
-        "a changelog-only release is not refused"
-    );
     assert!(flow.contains("exit 1"), "it prints and does not stop");
+    assert!(
+        flow.contains(".github/check-changelog.sh"),
+        "the changelog rule is not run"
+    );
 }
