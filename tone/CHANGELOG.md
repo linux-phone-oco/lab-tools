@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-tone-v0.8.0...lpoco-tone-v0.9.0) - 2026-11-18
+
+### Added
+
+- *(host)* [host] targets - plan names each cross target, check fails a missing one ([#140](https://github.com/linux-phone-oco/lab-tools/pull/140))
+
 ## [0.8.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-tone-v0.7.1...lpoco-tone-v0.8.0) - 2026-11-18
 
 ### Added
