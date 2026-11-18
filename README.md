@@ -205,6 +205,22 @@ NAME` takes the lease (refused while another keeper is live), `renew NAME` as th
 NAME` as it ends, `status` says who keeps the phone. A lease left unrenewed for 90 minutes has lapsed: its
 keeper ended or was cut off, and the next one may take it.
 
+## A long job: `lpoco-lab job`
+
+A build or a test that must outlive the session that starts it (a kernel build, an image, a sleep test) is a user
+unit of the lab's own, `lpoco-job-NAME.service`, made with `systemd-run --user`. The unit's own process holds an
+idle and sleep inhibitor for as long as the job runs, so the lab stays awake for the build and nothing else keeps it
+awake. systemd is the runner: its journal is the log, a name is claimed once, no daemon, no queue.
+
+    lpoco-lab job start NAME SCRIPT   run the executable SCRIPT (a name already claimed is refused)
+    lpoco-lab job status NAME         running since T | finished ok at T | failed (exit N) at T | not found
+    lpoco-lab job log NAME            the output of its current run
+    lpoco-lab job stop NAME           end it if it runs, and free the name
+    lpoco-lab job list                every job and its state
+
+It needs no device manifest. The unit gets the caller's PATH and runs in the directory `start` was called from; a
+script that needs more sources it. The user manager keeps its units after logout (lingering is on at the lab).
+
 ## lpoco: one front door
 
 `lpoco NAME args...` finds `lpoco-NAME` beside itself or on PATH and runs it, returning its exit code

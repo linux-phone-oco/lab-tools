@@ -24,6 +24,7 @@ pub enum Command {
     Watch,
     Fastboot,
     Keeper,
+    Job,
     Guard,
     Kernel,
 }
@@ -42,6 +43,7 @@ impl Command {
         "watch",
         "fastboot",
         "keeper",
+        "job",
         "guard",
         "kernel",
     ];
@@ -62,6 +64,7 @@ impl FromRaw for Command {
             "watch" => Command::Watch,
             "fastboot" => Command::Fastboot,
             "keeper" => Command::Keeper,
+            "job" => Command::Job,
             "guard" => Command::Guard,
             "kernel" => Command::Kernel,
             _ => return None,
@@ -123,6 +126,24 @@ contract! {
         subcommands: &[Command::Kernel],
         arg: Some(Arg { value_name: "NOW", ..Arg::positional(2) }),
         summary: "The word `now`: it changes which kernel the phone boots.",
+        ..Input::EMPTY
+    };
+
+    JOB_NAME: String, Command = Input {
+        key: "job_name",
+        ty: Type::String,
+        subcommands: &[Command::Job],
+        arg: Some(Arg { value_name: "NAME", ..Arg::positional(1) }),
+        summary: "The job's name: letters, digits, '.', '_' and '-'; its unit is lpoco-job-NAME.",
+        ..Input::EMPTY
+    };
+
+    JOB_SCRIPT: String, Command = Input {
+        key: "job_script",
+        ty: Type::String,
+        subcommands: &[Command::Job],
+        arg: Some(Arg { value_name: "SCRIPT", ..Arg::positional(2) }),
+        summary: "The executable the job runs; its output is the job's log.",
         ..Input::EMPTY
     };
 
@@ -605,6 +626,22 @@ pub const TREE: &[Node] = &[
     ),
     n(&["keeper", "release"], "Give it back, as the keeper ends", &["name"], &[]),
     n(&["keeper", "status"], "Who keeps the phone now; or free", &[], &[]),
+    n(
+        &["job"],
+        "A long job on the lab, as a user unit of its own that outlives the session and holds the lab awake only while it runs (needs no manifest)",
+        &[],
+        &[],
+    ),
+    n(
+        &["job", "start"],
+        "Run the executable SCRIPT as the unit lpoco-job-NAME (a name already claimed is refused until `job stop`)",
+        &["job_name", "job_script"],
+        &[],
+    ),
+    n(&["job", "status"], "How the job stands: running since T, finished ok, failed (exit N), or not found", &["job_name"], &[]),
+    n(&["job", "log"], "The output of the job's current run, from the journal", &["job_name"], &[]),
+    n(&["job", "stop"], "End the job if it runs, and free its name", &["job_name"], &[]),
+    n(&["job", "list"], "Every job and how it stands", &[], &[]),
     n(
         &["guard"],
         "The ways, held for agents: what Claude Code's hooks on the lab call (needs no manifest)",

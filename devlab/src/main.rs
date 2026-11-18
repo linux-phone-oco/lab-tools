@@ -14,8 +14,9 @@
 //!   devlab mcp                    the phone for any agent: an MCP server (stdio)
 //!   devlab fastboot state | getvar NAME | boot now IMAGE | reboot now | set-active now SLOT   by serial
 //!   devlab keeper take|renew|release NAME | status   the phone's keeper, one at a time
+//!   devlab job start NAME SCRIPT | status|log|stop NAME | list   a long job as a user unit that holds the lab awake while it runs
 //!   devlab guard tool              the phone's way, held for agents: no ssh/scp to a phone outside devlab (a hook)
-//!   devlab watch                   after every boot: health, silent when well, a board task when not
+//!   devlab watch                   after every boot: health, silent when well, a journal line when not
 //!                                  a test kernel beside stock, tried once, never stranding the phone
 
 mod cli; // the command line, declared once with argenv
@@ -27,6 +28,7 @@ mod guard;
 mod health;
 mod hear;
 mod hold;
+mod job;
 mod keeper;
 mod kernel;
 mod mcp;
@@ -80,6 +82,9 @@ enum Cmd {
     Fastboot {
         action: FastbootCmd,
     },
+    Job {
+        action: JobCmd,
+    },
     Keeper {
         action: KeeperCmd,
     },
@@ -89,6 +94,14 @@ enum Cmd {
     Kernel {
         action: KernelCmd,
     },
+}
+
+enum JobCmd {
+    Start { name: String, script: PathBuf },
+    Status { name: String },
+    Log { name: String },
+    Stop { name: String },
+    List,
 }
 
 enum KeeperCmd {
@@ -364,6 +377,30 @@ fn parse() -> Cli {
                 slot: arg!(C::SLOT, "SLOT"),
             },
         },
+        ["job", "start"] => Cmd::Job {
+            action: JobCmd::Start {
+                name: arg!(C::JOB_NAME, "NAME"),
+                script: arg!(C::JOB_SCRIPT, "SCRIPT").into(),
+            },
+        },
+        ["job", "status"] => Cmd::Job {
+            action: JobCmd::Status {
+                name: arg!(C::JOB_NAME, "NAME"),
+            },
+        },
+        ["job", "log"] => Cmd::Job {
+            action: JobCmd::Log {
+                name: arg!(C::JOB_NAME, "NAME"),
+            },
+        },
+        ["job", "stop"] => Cmd::Job {
+            action: JobCmd::Stop {
+                name: arg!(C::JOB_NAME, "NAME"),
+            },
+        },
+        ["job", "list"] => Cmd::Job {
+            action: JobCmd::List,
+        },
         ["keeper", "take"] => Cmd::Keeper {
             action: KeeperCmd::Take {
                 name: arg!(C::NAME, "NAME"),
@@ -433,6 +470,17 @@ fn main() -> Result<()> {
         return match event {
             GuardCmd::Tool => guard::tool(),
         };
+    }
+    if let Cmd::Job { action } = &cli.cmd {
+        let said = match action {
+            JobCmd::Start { name, script } => job::start(name, script)?,
+            JobCmd::Status { name } => job::status(name)?,
+            JobCmd::Log { name } => job::log(name)?,
+            JobCmd::Stop { name } => job::stop(name)?,
+            JobCmd::List => job::list()?,
+        };
+        println!("{said}");
+        return Ok(());
     }
     let (dev, file) = device::Device::load(cli.device.as_deref(), &std::env::current_dir()?)?;
     dev.remember_addresses();
@@ -599,7 +647,7 @@ fn main() -> Result<()> {
             KeeperCmd::Release { name } => println!("{}", keeper::release(&dev, &name)?),
             KeeperCmd::Status => println!("{}", keeper::status(&dev)),
         },
-        Cmd::Guard { .. } => unreachable!("answered before the manifest is read"),
+        Cmd::Guard { .. } | Cmd::Job { .. } => unreachable!("answered before the manifest is read"),
         Cmd::Kernel { action } => {
             let p = phone::Phone::find(&dev)?;
             match action {
