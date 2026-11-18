@@ -28,6 +28,7 @@ package() {
 	done
 	install -Dm644 health/suite/lpoco-health.service "$pkgdir"/usr/lib/systemd/system/lpoco-health.service
 	install -Dm644 health/suite/lpoco-health.timer "$pkgdir"/usr/lib/systemd/system/lpoco-health.timer
+	install -Dm644 health/suite/lpoco-awake.service "$pkgdir"/usr/lib/systemd/system/lpoco-awake.service
 	# the names the phone's own checks used before the rename, until they call the new ones
 	mkdir -p "$pkgdir"/usr/lib/devlab
 	ln -s ../lpoco-health "$pkgdir"/usr/lib/devlab/health

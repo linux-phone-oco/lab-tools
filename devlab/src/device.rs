@@ -227,6 +227,10 @@ pub struct Health {
     /// (lpoco-health suspend cycle) and put back after: the wake sources that would end s2idle at once
     #[serde(default)]
     pub suspend_quiet: Vec<String>,
+    /// Gates that hold the keep-awake lock (lpoco-health awake) while autosleep is allowed, named by token:
+    /// bluetooth-not-up (hci0 not UP, or an rfkill stuck in D state). The package knows the tokens; an unknown one is refused
+    #[serde(default)]
+    pub awake_gates: Vec<String>,
 }
 
 impl Health {
@@ -241,7 +245,7 @@ impl Health {
         format!(
             "# written by devlab from the device's manifest ([health]) - do not edit here\n\
              DEVICE={}\nSOUND_CARDS={}\nREMOTEPROCS={}\nKNOWN_WARNINGS={}\nKNOWN_FAILED_UNITS={}\n\
-             ABSENT={}\nGAPS={}\nDATA_BUDGET_MB={}\nSUSPEND_IRQ_MAX={}\nSUSPEND_GUARD={}\nSUSPEND_QUIET={}\n",
+             ABSENT={}\nGAPS={}\nDATA_BUDGET_MB={}\nSUSPEND_IRQ_MAX={}\nSUSPEND_GUARD={}\nSUSPEND_QUIET={}\nAWAKE_GATES={}\n",
             q(codename),
             q(&self.sound_cards.join(";")),
             q(&procs.join(" ")),
@@ -256,6 +260,7 @@ impl Health {
                 .unwrap_or_default()),
             q(self.suspend_guard.as_deref().unwrap_or("")),
             q(&self.suspend_quiet.join(" ")),
+            q(&self.awake_gates.join(" ")),
         )
     }
 }
@@ -439,6 +444,9 @@ mod tests {
             .env("p")
             .contains("SUSPEND_QUIET='/a/power/wakeup /b/power/wakeup'\n"));
         assert!(e.contains("SUSPEND_QUIET=''\n"));
+        assert!(e.contains("AWAKE_GATES=''\n"), "no gate unless named");
+        let ag: Health = toml::from_str("awake_gates = [\"bluetooth-not-up\"]").unwrap();
+        assert!(ag.env("p").contains("AWAKE_GATES='bluetooth-not-up'\n"));
         let tight: Health = toml::from_str("data_budget_mb = 1").unwrap();
         assert!(tight.env("p").contains("DATA_BUDGET_MB='1'\n"));
         assert!(

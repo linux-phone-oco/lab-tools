@@ -50,6 +50,18 @@ in the shape of the device base's `test_results` (docs' when the lab has no base
 phone never had working is a `gap` in the manifest: still measured, not ill health; a gap that starts
 to pass is said.
 
+### Keeping a lab phone awake: `lpoco-health awake`
+
+    lpoco-health awake [--once]           hold the kernel wake lock `lpoco-awake` (every 5 s; --once: one step)
+
+The package's unit `lpoco-awake.service` runs it (the device enables it; the package only carries it). The lock is
+held **always**, so sxmo's autosuspend, which blocks on it, never suspends a phone on USB (a suspend that completes
+while the port blips leaves the idle phone silent). Deliberate suspends (`suspend cycle`) write `/sys/power/state`
+themselves and are not held back. With `/etc/lpoco/allow-autosleep` (a battery test) the lock is held only while the
+UDC is `configured` or while a gate the manifest names says unsafe: `[health] awake_gates = ["bluetooth-not-up"]`
+(hci0 not UP, or an rfkill stuck in D state). A gate the package does not know is named on stderr; with autosleep allowed it is refused (exit 2, nothing held), otherwise the phone stays awake. The lock was `devlab-usb` and the allow file `/etc/devlab-allow-autosleep` before: a phone moving over drops the old file and script by hand.
+The suite's check `awake-wakelock-held` reads the lock and the unit, not an installed script.
+
 ### One controlled suspend: `lpoco-health suspend`
 
     lpoco-health suspend plan             what a cycle would do, or why it would refuse - changes nothing
