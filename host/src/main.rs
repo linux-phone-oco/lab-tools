@@ -20,7 +20,7 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 fn main() {
     let r = Contract::parse_and_lint(OnProblems::FailOnError);
     if Contract::HELP.get_from(&r).unwrap_or(false) {
-        print!("{}", cli::usage("lpoco-host", "The lab host prepared from declarations (run as lpoco host). Commands: plan (the default; changes nothing on the host, only fetches each declaration's clone), prepare now (changes only what differs), check (reads)."));
+        print!("{}", cli::usage("lpoco-host", "The lab host prepared from declarations (run as lpoco host). Commands: plan (the default; changes nothing on the host, only fetches each declaration's clone), prepare now (changes only what differs), check (reads, and exercises the share as the lab user), revoke now (removes the standing grant once the check passes)."));
         return;
     }
     if Contract::VERSION.get_from(&r).unwrap_or(false) {
@@ -309,6 +309,12 @@ fn run(r: &Resolution) -> Result<i32, String> {
             prepare(&st)
         }
         Command::Check => check(&st),
+        Command::Revoke => {
+            if Contract::NOW.get_from(r).as_deref() != Some("now") {
+                return Err("revoke removes the standing grant: say `lpoco host revoke now` (it refuses unless the check passes)".into());
+            }
+            revoke(&st)
+        }
     }
 }
 
@@ -602,7 +608,13 @@ fn prepare(st: &State) -> Result<i32, String> {
         }
     }
     println!("prepared: {} root command(s)", cmds.len());
-    Ok(if st.missed.is_empty() { 0 } else { 1 })
+    // as kubeadm runs its checks, the verb that installed the share also exercises it
+    let (share_bad, _) = share_checks(st);
+    Ok(if st.missed.is_empty() && share_bad == 0 {
+        0
+    } else {
+        1
+    })
 }
 
 /// Device nodes of `class` (block or tty) whose USB ancestor reports `serial`.
@@ -635,6 +647,66 @@ fn nodes_with_serial(class: &str, serial: &str) -> Vec<String> {
     }
     found.sort();
     found
+}
+
+/// The share, exercised for each device that declares an address: (failures, devices measured ok).
+fn share_checks(st: &State) -> (i32, i32) {
+    let (mut bad, mut ok) = (0, 0);
+    for d in &st.devices {
+        match share::probe(&d.codename, d.usb_address.as_deref()) {
+            share::Measured::Ok(m) => {
+                ok += 1;
+                println!("share {m}");
+            }
+            share::Measured::NotMeasured(m) => println!("share: not measured, {m}"),
+            share::Measured::Failed(m) => {
+                bad += 1;
+                println!("share: FAIL, {m}");
+            }
+        }
+    }
+    (bad, ok)
+}
+
+/// What `revoke now` needs: the host checked and well, the share measured at least once (not merely "not
+/// known yet"), and no root prefix that still goes through lab-agent. Then the standing grant goes, and the
+/// host is asked whether it is gone.
+fn revoke(st: &State) -> Result<i32, String> {
+    const GRANT: &str = "/etc/sudoers.d/lab-agent";
+    if st.root.iter().any(|w| w.contains("lab-agent")) {
+        return Err(format!(
+            "the root prefix still goes through lab-agent ({}): nothing is revoked",
+            st.root.join(" ")
+        ));
+    }
+    println!("revoke: checking the host first");
+    if check(st)? != 0 {
+        return Err("the check did not pass: nothing is revoked".into());
+    }
+    let (_, measured) = share_checks(st);
+    if measured == 0 {
+        return Err("the share was not measured on any device (is a phone attached?): nothing is revoked, the grant is the one way left to do it".into());
+    }
+    let (prog, pre) = st.root.split_first().ok_or("the root prefix is empty")?;
+    println!("root: {} rm -f -- {GRANT}", st.root.join(" "));
+    let status = Proc::new(prog)
+        .args(pre)
+        .args(["rm", "-f", "--", GRANT])
+        .status()
+        .map_err(|e| format!("cannot run {prog}: {e}"))?;
+    if !status.success() {
+        return Err(format!("removing {GRANT} failed ({status})"));
+    }
+    let listed = Proc::new("sudo")
+        .args(["-n", "-l"])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+        .unwrap_or_default();
+    if listed.contains("NOPASSWD: /usr/bin/lab-agent") {
+        return Err("the grant is still listed by sudo: another file may carry it".into());
+    }
+    println!("revoked: {GRANT} is gone; sudo no longer lists lab-agent as passwordless");
+    Ok(0)
 }
 
 fn check(st: &State) -> Result<i32, String> {
@@ -764,6 +836,7 @@ fn check(st: &State) -> Result<i32, String> {
             );
         }
     }
+    bad += share_checks(st).0;
     for m in &st.missed {
         bad += 1;
         println!("FAIL {m}");

@@ -14,10 +14,11 @@ pub enum Command {
     Plan,
     Prepare,
     Check,
+    Revoke,
 }
 
 impl Command {
-    pub const TOKENS: &'static [&'static str] = &["plan", "prepare", "check"];
+    pub const TOKENS: &'static [&'static str] = &["plan", "prepare", "check", "revoke"];
 }
 
 impl FromRaw for Command {
@@ -26,6 +27,7 @@ impl FromRaw for Command {
             "plan" => Command::Plan,
             "prepare" => Command::Prepare,
             "check" => Command::Check,
+            "revoke" => Command::Revoke,
             _ => return None,
         })
     }
@@ -45,7 +47,7 @@ contract! {
         key: "now",
         ty: Type::Enum,
         allowed: &["now"],
-        subcommands: &[Command::Prepare],
+        subcommands: &[Command::Prepare, Command::Revoke],
         arg: Some(Arg::positional(0)),
         summary: "prepare changes the host only when it is told `now`.",
         ..Input::EMPTY
