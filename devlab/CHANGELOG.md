@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-lab-v0.10.0...lpoco-lab-v0.11.0) - 2026-11-18
+
+### Added
+
+- *(host)* gadget net_address - the host's link config for the named USB network ([#144](https://github.com/linux-phone-oco/lab-tools/pull/144))
+
 ## [0.10.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-lab-v0.9.0...lpoco-lab-v0.10.0) - 2026-11-18
 
 ### Added
