@@ -215,6 +215,14 @@ pub struct Health {
     /// layer's mobile-data check skips once the month has spent it (lpoco-health data)
     #[serde(default)]
     pub data_budget_mb: Option<u64>,
+    /// Interrupts one 15 s suspended cycle may count in all (the suite check suspend-irq-quiet); unsaid, the
+    /// check says not measured: the number comes from a reading of this phone, never a guess
+    #[serde(default)]
+    pub suspend_irq_max: Option<u64>,
+    /// A command on the phone that succeeds while its watchdog is armed (the way-back check): the suite
+    /// suspends only if it does; unsaid, it never suspends
+    #[serde(default)]
+    pub suspend_guard: Option<String>,
 }
 
 impl Health {
@@ -229,7 +237,7 @@ impl Health {
         format!(
             "# written by devlab from the device's manifest ([health]) - do not edit here\n\
              DEVICE={}\nSOUND_CARDS={}\nREMOTEPROCS={}\nKNOWN_WARNINGS={}\nKNOWN_FAILED_UNITS={}\n\
-             ABSENT={}\nGAPS={}\nDATA_BUDGET_MB={}\n",
+             ABSENT={}\nGAPS={}\nDATA_BUDGET_MB={}\nSUSPEND_IRQ_MAX={}\nSUSPEND_GUARD={}\n",
             q(codename),
             q(&self.sound_cards.join(";")),
             q(&procs.join(" ")),
@@ -238,6 +246,11 @@ impl Health {
             q(&self.absent.join(" ")),
             q(&self.gaps.join(" ")),
             q(&self.data_budget_mb.unwrap_or(250).to_string()),
+            q(&self
+                .suspend_irq_max
+                .map(|n| n.to_string())
+                .unwrap_or_default()),
+            q(self.suspend_guard.as_deref().unwrap_or("")),
         )
     }
 }
@@ -406,6 +419,15 @@ mod tests {
             e.contains("DATA_BUDGET_MB='250'\n"),
             "250 MB a month when unsaid"
         );
+        assert!(
+            e.contains("SUSPEND_IRQ_MAX=''\n") && e.contains("SUSPEND_GUARD=''\n"),
+            "unsaid: no threshold and no guard, never a guessed number"
+        );
+        let q: Health =
+            toml::from_str("suspend_irq_max = 40\nsuspend_guard = \"way-back.sh check\"").unwrap();
+        let qe = q.env("p");
+        assert!(qe.contains("SUSPEND_IRQ_MAX='40'\n"));
+        assert!(qe.contains("SUSPEND_GUARD='way-back.sh check'\n"));
         let tight: Health = toml::from_str("data_budget_mb = 1").unwrap();
         assert!(tight.env("p").contains("DATA_BUDGET_MB='1'\n"));
         assert!(
