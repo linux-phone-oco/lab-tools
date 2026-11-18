@@ -369,14 +369,6 @@ contract! {
         ..Input::EMPTY
     };
 
-    LAB_AGENT: String = Input {
-        key: "lab_agent",
-        ty: Type::String,
-        env: Some(Env::new("LAB_AGENT")),
-        summary: "The lab-agent program watch files its board task with (default: lab-agent).",
-        ..Input::EMPTY
-    };
-
     PHONE_PASS: String = Input {
         key: "phone_pass",
         ty: Type::String,
@@ -405,7 +397,6 @@ contract! {
 /// The declared environment, read once through the contract (the readers call `env()`, never std::env).
 pub struct EnvIn {
     pub devlab_root: String,
-    pub lab_agent: String,
     pub phone_pass: Option<String>,
     pub microphone: Option<String>,
     pub home: Option<String>,
@@ -423,9 +414,6 @@ pub fn env_in(r: &argenv_resolve::Resolution) -> Result<EnvIn, String> {
     }
     Ok(EnvIn {
         devlab_root: root.unwrap_or_else(|| DEFAULT_ROOT.into()),
-        lab_agent: Contract::LAB_AGENT
-            .get_from(r)
-            .unwrap_or_else(|| "lab-agent".into()),
         phone_pass: Contract::PHONE_PASS.get_from(r),
         microphone: Contract::DEVLAB_MICROPHONE
             .get_from(r)
@@ -562,7 +550,7 @@ pub const TREE: &[Node] = &[
     ),
     n(
         &["watch"],
-        "Watch the phone: health after every boot, silent when well, a board task when not",
+        "Watch the phone: health after every boot, silent when well, a journal line when not",
         &[],
         &[],
     ),
