@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.17.1...lpoco-bringup-v0.18.0) - 2026-11-18
+
+### Added
+
+- *(manifest)* device.toml declared once in Rust, unknown fields refused, schema projected ([#179](https://github.com/linux-phone-oco/lab-tools/pull/179))
+
 ## [0.17.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.17.0...lpoco-bringup-v0.17.1) - 2026-11-18
 
 ### Fixed
