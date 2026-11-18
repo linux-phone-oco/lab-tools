@@ -1432,11 +1432,11 @@ fn lab_with_share(name: &str, start_works: bool) -> Lab {
 "route show default") echo "default via 10.0.0.1 dev eth0" ;;
 esac"#,
     );
-    let run = l.dir.join("fs/run/lpoco-share");
+    let run = l.dir.join("fs/run/lpoco-share/active");
     let start = if start_works {
         {
             fs::create_dir_all(&run).unwrap();
-            format!(": > {}/usb0--eth0.fwd", run.display())
+            format!(": > {}/usb0--eth0", run.display())
         }
     } else {
         "echo refused >&2; exit 1".to_string()
@@ -1444,7 +1444,7 @@ esac"#,
     exe(
         &bin.join("systemctl"),
         &format!(
-            "case \"$1\" in\nstart) {start} ;;\nstop) /usr/bin/rm -f {r}/usb0--eth0.fwd ;;\nesac",
+            "case \"$1\" in\nstart) {start} ;;\nis-active) test -e {r}/usb0--eth0 ;;\nstop) /usr/bin/rm -f {r}/usb0--eth0 ;;\nesac",
             r = run.display()
         ),
     );
