@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-host-v0.2.2...lpoco-host-v0.3.0) - 2026-11-18
+
+### Added
+
+- *(host)* script tools judged by a rev stamp, devices takes a list ([#95](https://github.com/linux-phone-oco/lab-tools/pull/95))
+
 ## [0.2.2](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-host-v0.2.1...lpoco-host-v0.2.2) - 2026-11-17
 
 ### Added
