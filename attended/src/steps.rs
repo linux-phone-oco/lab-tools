@@ -239,10 +239,38 @@ pub fn boot_once(name: &str) -> Step {
                 "not a test kernel name: {name:?} (lowercase letters, digits and -)"
             ));
         }
+        if phone_runs(&name) {
+            return already_running(&format!("boot {name} once"));
+        }
         let out = crate::devlab(&["kernel", "try", &name])?;
         print!("{out}");
         Ok::<(), String>(())
     })
+}
+
+/// Whether the phone's running kernel (`uname -r`, one line) is the one of this name: the release is a version
+/// (`6.1.0`), a `-`, then the kernel's own name (`6.1.0-pmicwdt`), and the name must be all of what follows. A
+/// miss costs one reboot; a wrong hit would leave the test kernel unbooted, so anything less exact is a miss.
+pub fn runs_kernel(release: &str, name: &str) -> bool {
+    let line = release.lines().next().unwrap_or("").trim();
+    let version = line
+        .find(|c: char| !(c.is_ascii_digit() || c == '.'))
+        .unwrap_or(line.len());
+    line[version..].strip_prefix('-') == Some(name) && version > 0
+}
+
+/// Say a step was skipped because the phone is already in the state it would bring about: said, logged, passed.
+fn already_running(name: &str) -> Result<(), String> {
+    println!("  already running: {name} - nothing to do");
+    crate::note("skip", name, "already running");
+    Ok(())
+}
+
+/// Whether the phone already runs the kernel `name`: false when it cannot be asked (the step then does its work).
+fn phone_runs(name: &str) -> bool {
+    crate::phone()
+        .sh("uname -r 2>/dev/null")
+        .is_ok_and(|release| runs_kernel(&release, name))
 }
 
 /// A valid test kernel name must be listed under `[kernels] test` of the device: the run ends (exit 2) naming the key
@@ -275,16 +303,19 @@ pub fn back_to_known_good() -> Step {
     let kept = crate::declared("[kernels]", "back_to_known_good", |m| {
         m.kernels.as_ref().map(|k| k.kept.clone())
     });
-    let default = kept.map_or("stock".to_string(), |k| format!("kept: {k}"));
-    Step::new(
-        Kind::Do,
-        &format!("reboot into the default kernel ({default})"),
-        || {
-            crate::phone()
-                .root("set -e\nsync\nsystemd-run --on-active=2 systemctl reboot >/dev/null\necho rebooting\n")
-                .map(|_| ())
-        },
-    )
+    let default = kept
+        .clone()
+        .map_or("stock".to_string(), |k| format!("kept: {k}"));
+    let name = format!("reboot into the default kernel ({default})");
+    Step::new(Kind::Do, &name.clone(), move || {
+        // the kept kernel already runs: a reboot would only be a risk (a stock default cannot be told by name)
+        if kept.as_deref().is_some_and(phone_runs) {
+            return already_running(&name);
+        }
+        crate::phone()
+            .root("set -e\nsync\nsystemd-run --on-active=2 systemctl reboot >/dev/null\necho rebooting\n")
+            .map(|_| ())
+    })
 }
 
 /// The `vendor:product` of every device under a sysfs USB devices folder.
@@ -316,5 +347,24 @@ mod tests {
         let log = "[1.0] boot ok\n[2.0] Unable to handle kernel NULL pointer\n[2.1] Call trace:\n[2.2] Oops: 0000\n[2.3] BUG: scheduling\n[2.4] Kernel panic - not syncing\n[2.5] watchdog: BUG: soft lockup\n[2.6] Call Trace:\n[2.7] Internal error: Oops\n[2.8] rcu: INFO: stall\n";
         assert_eq!(trouble_lines(log).len(), 9);
         assert!(trouble_lines("[1.0] all quiet\n[1.1] deferred probe pending\n").is_empty());
+    }
+
+    #[test]
+    fn a_kernel_runs_only_when_its_name_is_all_that_follows_the_version() {
+        assert!(runs_kernel("6.1.0-pmicwdt\n", "pmicwdt"));
+        assert!(runs_kernel("6.12.0-mainline-stable", "mainline-stable"));
+        for (release, name) in [
+            ("6.1.0-pmicwdt", "pmic"),
+            ("6.1.0-pmicwdt-2", "pmicwdt"),
+            ("6.1.0-xpmicwdt", "pmicwdt"),
+            ("6.1.0-pmic-wdt", "wdt"),
+            ("6.12.0-mainline-stable", "stable"),
+            ("6.1.0-pmicwdt", "1"),
+            ("6.1.0-rc1-foo", "rc1"),
+            ("6.1.0", "pmicwdt"),
+            ("pmicwdt", "pmicwdt"),
+        ] {
+            assert!(!runs_kernel(release, name), "{release} is not {name}");
+        }
     }
 }

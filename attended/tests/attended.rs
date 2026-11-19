@@ -542,9 +542,13 @@ fn boot_once_asks_devlab_for_one_try_of_the_named_kernel_and_names_a_refusal() {
     let dir = tmp("boot-once");
     let o = devlab_calls(&dir, "boot-once", "calls4", 0);
     assert_eq!(o.status.code(), Some(0), "{}", said(&o));
+    // the phone is asked which kernel runs first, then the one try is asked for
     assert_eq!(
         fs::read_to_string(dir.join("args")).unwrap().trim(),
-        format!("--device {}/device.toml kernel try calls4", dir.display())
+        format!(
+            "--device {d}/device.toml phone sh\n--device {d}/device.toml kernel try calls4",
+            d = dir.display()
+        )
     );
     let o = devlab_calls(&tmp("boot-once-refused"), "boot-once", "calls4", 1);
     let t = said(&o);
@@ -1461,4 +1465,45 @@ fn a_run_that_ended_at_until_names_the_from_that_resumes_it() {
     );
     let l = fs::read_to_string(&log).unwrap();
     assert!(l.contains("--from"), "{l}");
+}
+
+#[test]
+fn boot_once_of_the_kernel_that_already_runs_is_skipped_and_logged_already_running() {
+    let dir = tmp("skip-boot");
+    declare_kernels(&dir, "test = [\"pmicwdt\"]");
+    let o = devlab_calls(&dir, "boot-once", "pmicwdt", 0);
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(0), "{t}");
+    assert!(t.contains("already running"), "{t}");
+    let args = fs::read_to_string(dir.join("args")).unwrap();
+    assert!(!args.contains("kernel try"), "a try was asked for: {args}");
+}
+
+#[test]
+fn boot_once_of_any_other_kernel_still_boots_even_when_its_name_is_part_of_the_running_one() {
+    let dir = tmp("skip-boot-other");
+    declare_kernels(&dir, "test = [\"pmic\"]");
+    let o = devlab_calls(&dir, "boot-once", "pmic", 0);
+    assert_eq!(o.status.code(), Some(0), "{}", said(&o));
+    let args = fs::read_to_string(dir.join("args")).unwrap();
+    assert!(args.contains("kernel try pmic"), "{args}");
+}
+
+#[test]
+fn back_to_known_good_is_skipped_when_the_kept_kernel_already_runs_and_not_otherwise() {
+    let dir = tmp("skip-back");
+    declare_kernels(&dir, "test = [\"pmicwdt\"]\nkept = \"pmicwdt\"");
+    let o = devlab_calls(&dir, "back", "", 0);
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(0), "{t}");
+    assert!(t.contains("already running"), "{t}");
+    assert!(
+        !dir.join("rebooted").exists(),
+        "the phone was rebooted: {t}"
+    );
+    let dir = tmp("skip-back-other");
+    declare_kernels(&dir, "test = [\"pmicwdt\", \"calls4\"]\nkept = \"calls4\"");
+    let o = devlab_calls(&dir, "back", "", 0);
+    assert_eq!(o.status.code(), Some(0), "{}", said(&o));
+    assert!(dir.join("rebooted").exists(), "the phone was not rebooted");
 }
