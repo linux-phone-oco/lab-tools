@@ -69,7 +69,12 @@ fn pack(r: &argenv_resolve::Resolution) -> Result<(), String> {
     // Nura reads the phone's boot facts from /etc/deviceinfo; the other bases have no such file
     if format == Format::Apk {
         if let Some(body) = deviceinfo(&m).map_err(|e| format!("{}: {e}", manifest.display()))? {
-            add_deviceinfo(&mut pkgs, layer, &body);
+            let cmdline = m
+                .boot
+                .as_ref()
+                .map(|b| b.cmdline.as_str())
+                .unwrap_or_default();
+            add_deviceinfo(&mut pkgs, layer, &body, cmdline);
         }
     }
     let kernel_build = Contract::KERNEL_BUILD.get_from(r);
