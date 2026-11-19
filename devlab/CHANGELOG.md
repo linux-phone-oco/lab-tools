@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.6](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-lab-v0.29.5...lpoco-lab-v0.29.6) - 2026-11-19
+
+### Added
+
+- *(attended)* procedure() loads the named device's device.toml and hands devlab that file ([#260](https://github.com/linux-phone-oco/lab-tools/pull/260))
+
 ## [0.29.5](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-lab-v0.29.4...lpoco-lab-v0.29.5) - 2026-11-19
 
 ### Added
