@@ -569,6 +569,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "lpoco-attended"
+version = "0.28.3"
+dependencies = [
+ "argenv-resolve",
+]
+
+[[package]]
 name = "lpoco-bringup"
 version = "0.28.3"
 dependencies = [

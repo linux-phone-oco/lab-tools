@@ -316,11 +316,14 @@ an `SPDX-License-Identifier` header; the rest is annotated by path in [`REUSE.to
 keeps new files covered.
 The device-tree fixture is GPL-2.0-only OR BSD-2-Clause, the kernel's dual licence for device trees. Texts of the other licences: `LICENSES/`.
 
-## Attended procedures: `lpoco_bringup::attended`
+## Attended procedures: lpoco-attended
 
 A procedure a person attends (flash, power-cycle, look at the screen) is a short entry file of named steps,
-not a program: `examples/attended.rs` is the one to copy. `step(name, sh(..) | phone(..) | phone_root(..))` runs,
-`check(..)` looks, `ask_author(to_do, to_check)` waits for "ok" (anything else stops the run and is logged);
-the first failing step stops the run and is named, `--dry-run` walks the list and touches nothing, `--log FILE`
-is the log a lane files. The phone is reached through `lpoco lab phone sh|root` (the program devlab) (`LPOCO_ATTENDED_DEVLAB` names another).
-Not covered yet: a step that hangs (no time limit; the log names the step that began). The log is appended to.
+not a program: `attended/examples/attended.rs` is the one to copy (a rust-script with a git dependency on the
+tag `lpoco-attended-vX.Y.Z`). `use lpoco_attended::prelude::*;`, then `procedure(name, device)` once, and in order
+`step(what, || ..)`, `check(what, || ..)`, `ask_author("what to do / what to check")`; `phone().sh(..)` and
+`phone().root(..)` run a script on the phone through `lpoco lab phone sh|root` (`LPOCO_ATTENDED_DEVLAB` names another
+program). The first failing step stops the run, is named, and the run exits 1; `ask_author` waits for "ok" (anything
+else stops the run and is logged); `--dry-run` walks the list and touches nothing; `--log FILE` is the log a lane
+files (appended to). A `Step` is the one step type for this runner and the unattended one; library steps (`steps::`)
+return a `Step`. Not covered yet: a step that hangs (no time limit; the log names the step that began).
