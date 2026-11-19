@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-manifest-v0.21.2...lpoco-manifest-v0.22.0) - 2026-11-19
+
+### Added
+
+- *(host)* name a phone user config that drifts from its default or base copy ([#201](https://github.com/linux-phone-oco/lab-tools/pull/201))
+
 ## [0.21.2](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-manifest-v0.21.1...lpoco-manifest-v0.21.2) - 2026-11-19
 
 ### Added
