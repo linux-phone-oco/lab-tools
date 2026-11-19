@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.30.0...lpoco-bringup-v0.31.0) - 2026-11-19
+
+### Added
+
+- *(attended)* boot_once and back_to_known_good read the device's [kernels] ([#267](https://github.com/linux-phone-oco/lab-tools/pull/267))
+- *(attended)* physical acts over a Bench, the person by default ([#265](https://github.com/linux-phone-oco/lab-tools/pull/265))
+
 ## [0.30.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.29.6...lpoco-bringup-v0.30.0) - 2026-11-19
 
 ### Added
