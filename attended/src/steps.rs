@@ -291,7 +291,7 @@ fn declared_test_kernel(name: &str) {
             c.device.display(),
             if listed.is_empty() { "no kernel".to_string() } else { listed.join(", ") }
         );
-        std::process::exit(2)
+        crate::leave_with(2)
     }
 }
 

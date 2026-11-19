@@ -244,3 +244,16 @@ fn a_device_that_lists_no_such_test_kernel_stops_the_run_before_it_starts() {
         "{said}"
     );
 }
+
+#[test]
+fn a_step_that_panics_still_runs_the_way_backs_owed_and_exits_1() {
+    let dir = tmp("panic");
+    fs::write(dir.join("panic-here"), "").unwrap();
+    let (o, said, log) = run(&dir, &[]);
+    assert_eq!(o.status.code(), Some(1), "{said}");
+    assert_eq!(waybacks(&dir), "inner\nouter\n", "{said}");
+    assert!(
+        log.contains("PANIC") && log.contains("FAIL"),
+        "the panic is not in the log:\n{log}"
+    );
+}

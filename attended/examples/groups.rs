@@ -37,6 +37,9 @@ fn main() {
                 group(
                     "the inner part",
                     [Step::new(Kind::Do, "work unless told not to", || {
+                        if std::path::Path::new("panic-here").exists() {
+                            panic!("boom");
+                        }
                         phone().sh("test ! -e fail-here")
                     })],
                 )

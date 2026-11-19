@@ -493,7 +493,12 @@ pub fn run_step(s: Step) {
     arm_way_backs();
     println!("{indent}{kind} {n}: {name}{by}");
     note("begin", &path, &format!("{kind}{by}"));
-    let result = s.execute();
+    // a step that panics fails like one that returns an error: the way backs owed must still run
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| s.execute()))
+        .unwrap_or_else(|_| {
+            note("PANIC", &path, "the step panicked; the way backs owed run");
+            Err("the step panicked".to_string())
+        });
     STATE.lock().unwrap_or_else(|e| e.into_inner()).step.clear();
     match result {
         Ok(()) => note("ok", &path, ""),
@@ -553,7 +558,10 @@ impl Group {
     /// What to do when the run fails after this group's first step began: the step runs once, after the failing
     /// step, with the way backs of the other groups open or finished, the last to begin first. A run that passes
     /// runs none; a group skipped whole by `--from` owes none; a way back that fails is named and the others
-    /// still run.
+    /// still run. A group that has finished still owes its way back (a later group that undoes it, like
+    /// `leave_known_good`, does not cancel it); `--until FIRST_PROMPT` runs none, and `--from` arms the group again at
+    /// its first step run. A step that panics counts as failed; so does a key `dev()` or a step needs that
+    /// device.toml lacks (exit 2).
     pub fn way_back(mut self, back: Step) -> Group {
         self.way_back = Some(back);
         self
@@ -625,6 +633,11 @@ fn arm_way_backs() {
 
 /// End the run that failed: run the way backs owed, the last owed first, then exit 1.
 fn leave_failed() -> ! {
+    leave_with(1)
+}
+
+/// End the run with `code` after the way backs owed (a run that cannot go on, exit 2, leaves the phone as a failed one does).
+pub(crate) fn leave_with(code: i32) -> ! {
     let owed = OWED.with(|o| std::mem::take(&mut *o.borrow_mut()));
     for back in owed.into_iter().rev() {
         let name = back.name.clone();
@@ -641,7 +654,7 @@ fn leave_failed() -> ! {
             }
         }
     }
-    std::process::exit(1)
+    std::process::exit(code)
 }
 
 /// Do something; the run stops here when the closure fails.
@@ -716,7 +729,7 @@ pub fn part() -> Option<String> {
 /// End the run with exit 2 and the reason: a procedure that cannot know a value it needs must not start.
 pub(crate) fn stop(why: &str) -> ! {
     eprintln!("{}: {why}", config().name);
-    std::process::exit(2)
+    leave_with(2)
 }
 
 /// The value at a dotted key of the device's `device.toml` (`dev("health.battery_floor_mv")`): the table that owns
@@ -754,7 +767,7 @@ pub fn unknown_part(asked: &str, known: &[&str]) -> ! {
         config().name,
         known.join(", ")
     );
-    std::process::exit(2)
+    leave_with(2)
 }
 
 /// Try `run` up to `tries` times, `every` seconds apart, until it passes; the last failure is returned.
@@ -787,7 +800,7 @@ pub(crate) fn declared<T>(
             c.name,
             c.device.display()
         );
-        std::process::exit(2)
+        leave_with(2)
     })
 }
 
