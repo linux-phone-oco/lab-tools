@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-health-v0.25.0...lpoco-health-v0.26.0) - 2026-11-19
+
+### Added
+
+- *(layer)* [layer.names.FORMAT] names a dependency token per package format ([#225](https://github.com/linux-phone-oco/lab-tools/pull/225))
+
 ## [0.25.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-health-v0.24.3...lpoco-health-v0.25.0) - 2026-11-19
 
 ### Added
