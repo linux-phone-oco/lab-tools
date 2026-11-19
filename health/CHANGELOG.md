@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.33.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-health-v0.32.2...lpoco-health-v0.33.0) - 2026-11-19
+
+### Added
+
+- *(host)* install the family's programs from release assets, hash checked, cargo as the fallback ([#278](https://github.com/linux-phone-oco/lab-tools/pull/278))
+
 ## [0.32.2](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-health-v0.32.1...lpoco-health-v0.32.2) - 2026-11-19
 
 ### Added
