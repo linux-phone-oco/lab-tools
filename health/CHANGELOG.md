@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.3](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-health-v0.29.2...lpoco-health-v0.29.3) - 2026-11-19
+
+### Added
+
+- *(attended)* library steps boot_once and back_to_known_good, tested on a stand-in ([#253](https://github.com/linux-phone-oco/lab-tools/pull/253))
+
 ## [0.29.2](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-health-v0.29.1...lpoco-health-v0.29.2) - 2026-11-19
 
 ### Added
