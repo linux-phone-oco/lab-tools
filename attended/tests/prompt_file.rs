@@ -99,7 +99,9 @@ fn a_pending_prompt_is_filed_and_an_answer_file_is_taken_and_logged_with_who_wro
         "{p}"
     );
     assert!(
-        p.contains("waits-until: none") && p.contains("state: waiting"),
+        p.contains("waits-until: ")
+            && !p.contains("waits-until: none")
+            && p.contains("state: waiting"),
         "{p}"
     );
     assert_eq!(
@@ -261,4 +263,45 @@ fn a_prompt_that_cannot_be_filed_with_input_ended_does_not_wait_out_the_limit() 
         began.elapsed() < Duration::from_secs(50),
         "waited out the limit"
     );
+}
+
+#[test]
+fn with_no_terminal_a_prompt_waits_on_its_answer_file_by_default_and_says_so() {
+    let dir = tmp("noterminal");
+    let dev = dir.join("prompts/xiaomi-surya");
+    // standard input at its end, no limit given anywhere: EOF is no answer
+    let c = spawn(&dir, Stdio::null(), &[]);
+    wait_for(&dev.join("prompt"));
+    std::thread::sleep(Duration::from_secs(2));
+    let p = fs::read_to_string(dev.join("prompt")).unwrap();
+    assert!(
+        p.contains("state: waiting"),
+        "still waiting after 2 s of EOF: {p}"
+    );
+    let until: u64 = p
+        .lines()
+        .find_map(|l| l.strip_prefix("waits-until: "))
+        .and_then(|u| u.trim().parse().ok())
+        .expect("the default limit is filed as a time");
+    let left = until.saturating_sub(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs(),
+    );
+    assert!(
+        (200..=300).contains(&left),
+        "the default is 300 s: {left} s left"
+    );
+    fs::write(dev.join("answer"), "ok\nby: top-coordinator\n").unwrap();
+    let o = c.wait_with_output().unwrap();
+    assert_eq!(
+        o.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+    let e = String::from_utf8_lossy(&o.stderr);
+    assert!(e.contains("no terminal, waiting on the answer file"), "{e}");
+    assert!(log(&dir).contains("written by top-coordinator"));
 }

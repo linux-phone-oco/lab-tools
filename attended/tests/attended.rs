@@ -188,7 +188,12 @@ fn nobody_answering_stops_the_run() {
     let o = run(
         &dir,
         &devlab,
-        &["--log", dir.join("eof.log").to_str().unwrap()],
+        &[
+            "--log",
+            dir.join("eof.log").to_str().unwrap(),
+            "--answer-limit",
+            "1",
+        ],
         "",
     );
     assert_eq!(o.status.code(), Some(1), "{}", said(&o));
@@ -724,6 +729,7 @@ fn run_from(cwd: &Path, dir: &Path, args: &[&str]) -> Output {
         .arg(example(dir))
         .args(args)
         .env("LPOCO_ATTENDED_DEVLAB", devlab)
+        .env("LPOCO_ATTENDED_ANSWER_LIMIT", "1")
         .current_dir(cwd)
         .stdin(Stdio::null())
         .output()

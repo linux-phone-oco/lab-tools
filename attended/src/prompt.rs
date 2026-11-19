@@ -11,6 +11,8 @@ use std::sync::mpsc::{channel, Receiver, RecvTimeoutError};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+/// How long a prompt waits on its answer file when there is no terminal and no limit was given.
+const NO_TERMINAL_LIMIT: Duration = Duration::from_secs(300);
 const POLL: Duration = Duration::from_millis(200);
 static PROMPTS: AtomicU64 = AtomicU64::new(0);
 
@@ -176,15 +178,21 @@ enum Ended {
     NobodyAnswered,
 }
 
-/// Ask: the terminal and the answer file, whichever answers first. At the end of the terminal's input the
-/// wait goes on for the file only when a limit is given and the prompt is filed (else nobody can answer); past
-/// the limit it fails and the prompt file says so.
+/// Ask: the terminal and the answer file, whichever answers first. At the end of the terminal's input (EOF is
+/// no answer) the wait goes on for the file while the prompt is filed, up to the limit - 300 s when there is no
+/// terminal and none was given; past it the run fails and the prompt file says so.
 pub fn ask(files: &Files, p: &Prompt, limit: Option<Duration>) -> Result<Answer, String> {
+    let no_terminal = !std::io::stdin().is_terminal();
+    // with no terminal the end of input is no answer: the file is the way, and it is waited on for a default time
+    let limit = limit.or(no_terminal.then_some(NO_TERMINAL_LIMIT));
     // a file that cannot be written is said and the terminal still asks: the file is the extra way
     let id = files
         .open(p, limit)
         .map_err(|e| eprintln!("  (no prompt file: {e})"))
         .ok();
+    if no_terminal && id.is_some() {
+        eprintln!("  (no terminal, waiting on the answer file)");
+    }
     let began = Instant::now();
     let rx = lines().lock().unwrap_or_else(|e| e.into_inner());
     if std::io::stdin().is_terminal() {
