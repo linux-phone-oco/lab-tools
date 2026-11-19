@@ -8,7 +8,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 use lpoco_attended::prelude::*;
-use lpoco_attended::steps::{check_probe, dmesg_clean, read_dmesg, wait_for_phone, wait_for_usb};
+use lpoco_attended::steps::{
+    back_to_known_good, boot_once, check_probe, dmesg_clean, read_dmesg, wait_for_phone,
+    wait_for_usb,
+};
 
 fn main() {
     let _run = procedure("library steps", "xiaomi-surya");
@@ -21,6 +24,10 @@ fn main() {
         Ok("dmesg-empty") => run_step(read_dmesg(" ")),
         Ok("usb-late") => run_step(wait_for_usb("18d1:4ee0", 6, 1)),
         Ok("usb-bad") => run_step(wait_for_usb("18d1:4ee", 3, 0)),
+        Ok("boot-once" | "boot-once-dry") => {
+            run_step(boot_once(&std::env::var("KERNEL").unwrap_or_default()))
+        }
+        Ok("back" | "back-dry") => run_step(back_to_known_good()),
         Ok("probe-bad-name") => run_step(check_probe("x; reboot")),
         _ => run_step(wait_for_phone(3, 0)),
     }
