@@ -1373,3 +1373,92 @@ fn a_call_limit_that_is_not_a_number_of_seconds_is_refused_before_any_step() {
     assert!(t.contains("call-limit") || t.contains("call limit"), "{t}");
     assert!(!dir.join("calls").exists(), "a step ran: {t}");
 }
+
+#[test]
+fn from_skips_the_earlier_steps_logs_them_skipped_and_starts_at_the_named_one() {
+    let dir = tmp("from");
+    let devlab = stand_in(&dir, "pmicwdt 16384 0");
+    let log = dir.join("from.log");
+    let o = run(
+        &dir,
+        &devlab,
+        &[
+            "--from",
+            "put the kernel on it",
+            "--log",
+            log.to_str().unwrap(),
+        ],
+        "",
+    );
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(0), "{t}");
+    assert!(t.contains("the phone answers - skipped"), "{t}");
+    assert!(
+        t.contains("put the kernel on it") && !t.contains("put the kernel on it - skipped"),
+        "{t}"
+    );
+    let calls = fs::read_to_string(dir.join("calls")).unwrap();
+    assert_eq!(
+        calls.lines().count(),
+        3,
+        "the skipped steps reached the phone: {calls}"
+    );
+    let l = fs::read_to_string(&log).unwrap();
+    assert!(
+        l.contains("skip the phone answers") && l.contains("--from"),
+        "{l}"
+    );
+}
+
+#[test]
+fn an_unknown_from_exits_2_listing_the_steps_there_are_and_runs_nothing() {
+    let dir = tmp("from-bad");
+    let devlab = stand_in(&dir, "x");
+    let o = run(&dir, &devlab, &["--from", "no such step"], "");
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(2), "{t}");
+    assert!(
+        t.contains("no such step")
+            && t.contains("the phone answers")
+            && t.contains("put the kernel on it"),
+        "{t}"
+    );
+    assert!(!dir.join("calls").exists(), "a step reached the phone: {t}");
+}
+
+#[test]
+fn a_dry_run_shows_what_from_would_skip() {
+    let dir = tmp("from-dry");
+    let devlab = stand_in(&dir, "x");
+    let o = run(
+        &dir,
+        &devlab,
+        &["--dry-run", "--from", "put the kernel on it"],
+        "",
+    );
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(0), "{t}");
+    assert!(t.contains("the phone answers - skipped"), "{t}");
+    assert!(t.contains("put the kernel on it - dry run"), "{t}");
+}
+
+#[test]
+fn a_run_that_ended_at_until_names_the_from_that_resumes_it() {
+    let dir = tmp("from-resume");
+    let devlab = stand_in(&dir, "x");
+    let log = dir.join("resume.log");
+    let o = run(
+        &dir,
+        &devlab,
+        &["--until", "FIRST_PROMPT", "--log", log.to_str().unwrap()],
+        "",
+    );
+    assert_eq!(o.status.code(), Some(0), "{}", said(&o));
+    let t = said(&o);
+    assert!(
+        t.contains("resume with --from \"ask the author: hold volume down"),
+        "{t}"
+    );
+    let l = fs::read_to_string(&log).unwrap();
+    assert!(l.contains("--from"), "{l}");
+}
