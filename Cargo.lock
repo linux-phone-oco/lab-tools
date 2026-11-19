@@ -631,6 +631,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "lpoco-layer"
+version = "0.24.0"
+dependencies = [
+ "argenv-resolve",
+ "lpoco-manifest",
+ "serde",
+]
+
+[[package]]
 name = "lpoco-manifest"
 version = "0.24.0"
 dependencies = [
