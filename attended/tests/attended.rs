@@ -599,3 +599,91 @@ fn wait_for_usb_is_keyed_to_the_bring_up_step_gadget_enumerates() {
         "{l}"
     );
 }
+
+fn run_parts(dir: &Path, devlab: &Path, args: &[&str], stdin: &str) -> Output {
+    let mut c = Command::new("rust-script")
+        .arg(example_named(dir, "parts"))
+        .args(args)
+        .env("LPOCO_ATTENDED_DEVLAB", devlab)
+        .current_dir(dir)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("rust-script is on the lab machine");
+    c.stdin.take().unwrap().write_all(stdin.as_bytes()).unwrap();
+    c.wait_with_output().unwrap()
+}
+
+#[test]
+fn until_first_prompt_runs_what_comes_before_it_and_stops_cleanly_without_asking() {
+    let dir = tmp("until");
+    let devlab = stand_in(&dir, "x");
+    let log = dir.join("until.log");
+    let o = run_parts(
+        &dir,
+        &devlab,
+        &["--until", "FIRST_PROMPT", "--log", log.to_str().unwrap()],
+        "ok\n",
+    );
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(0), "{t}");
+    assert!(t.contains("the phone answers"), "{t}");
+    assert!(
+        !t.contains("after the prompt"),
+        "went on past the prompt: {t}"
+    );
+    assert!(t.contains("stopped before the first prompt"), "{t}");
+    assert!(t.contains("after 1 step(s)"), "{t}");
+    let l = fs::read_to_string(&log).unwrap();
+    assert!(l.contains("stop") && l.contains("press the button"), "{l}");
+    assert!(!l.contains("asked"), "the author was asked: {l}");
+}
+
+#[test]
+fn until_first_prompt_in_a_dry_run_stops_at_the_same_place() {
+    let dir = tmp("until-dry");
+    let devlab = stand_in(&dir, "x");
+    let o = run_parts(&dir, &devlab, &["--dry-run", "--until", "FIRST_PROMPT"], "");
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(0), "{t}");
+    assert!(!t.contains("after the prompt"), "{t}");
+    assert!(!dir.join("calls").exists(), "the phone was reached: {t}");
+    assert!(t.contains("dry run"), "{t}");
+}
+
+#[test]
+fn until_takes_only_the_point_it_knows() {
+    let dir = tmp("until-bad");
+    let devlab = stand_in(&dir, "x");
+    let o = run_parts(&dir, &devlab, &["--until", "NEVER"], "");
+    assert_eq!(o.status.code(), Some(1), "{}", said(&o));
+}
+
+#[test]
+fn a_part_runs_alone_and_an_unknown_part_is_refused_naming_the_known_ones() {
+    let dir = tmp("part");
+    let devlab = stand_in(&dir, "x");
+    let o = run_parts(&dir, &devlab, &["--part", "checks"], "");
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(0), "{t}");
+    assert!(
+        t.contains("only the checks") && !t.contains("the phone answers"),
+        "{t}"
+    );
+    let o = run_parts(&dir, &devlab, &["--part", "nope"], "");
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(2), "{t}");
+    assert!(t.contains("nope") && t.contains("checks"), "{t}");
+}
+
+#[test]
+fn a_part_asked_of_a_procedure_that_has_none_runs_nothing() {
+    let dir = tmp("no-parts");
+    let devlab = stand_in(&dir, "pmicwdt 16384 0");
+    let o = run(&dir, &devlab, &["--part", "x"], "ok\n");
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(2), "{t}");
+    assert!(t.contains("no parts"), "{t}");
+    assert!(!dir.join("calls").exists(), "the phone was reached: {t}");
+}

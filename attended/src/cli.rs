@@ -2,7 +2,7 @@
 //! The invocation surface every attended procedure has, declared once with argenv: its arguments and the
 //! environment variables the library reads. A lane's entry file declares none of it.
 //!
-//!   PROCEDURE [--dry-run] [--log FILE]
+//!   PROCEDURE [--dry-run] [--log FILE] [--until FIRST_PROMPT] [--part NAME]
 //!   PROCEDURE --help
 
 use argenv_resolve::*;
@@ -22,6 +22,23 @@ contract! {
         ty: Type::String,
         arg: Some(Arg { value_name: "FILE", ..Arg::long("log") }),
         summary: "The log to write, one line per step (attended-NAME.log in this folder when none is given).",
+        ..Input::EMPTY
+    };
+
+    UNTIL: String = Input {
+        key: "until",
+        ty: Type::Enum,
+        allowed: &["FIRST_PROMPT"],
+        arg: Some(Arg { value_name: "POINT", ..Arg::long("until") }),
+        summary: "Stop the run cleanly at a point, never answering it: FIRST_PROMPT is the first ask_author (the steps before it run).",
+        ..Input::EMPTY
+    };
+
+    PART: String = Input {
+        key: "part",
+        ty: Type::String,
+        arg: Some(Arg { value_name: "NAME", ..Arg::long("part") }),
+        summary: "Run one named part of the procedure instead of the whole (the entry file says which it has).",
         ..Input::EMPTY
     };
 

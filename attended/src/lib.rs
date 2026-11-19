@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! lpoco-attended: a lane's attended procedure as a plain list of named steps. The entry file reads like a
-//! shell script; the plumbing lives here: the arguments (`--dry-run`, `--log`, `--help`), running each step,
+//! shell script; the plumbing lives here: the arguments (`--dry-run`, `--log`, `--until FIRST_PROMPT`, `--part`, `--help`), running each step,
 //! stopping the run at the first that fails and naming it, the prompt-and-wait point, the log a lane files.
 //! The phone is reached through devlab (`devlab phone sh|root`, the script on its standard input).
 //! A file to copy: `examples/attended.rs`.
@@ -28,12 +28,16 @@ use std::fmt::Display;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// Everything an entry file needs, in one line: `use lpoco_attended::prelude::*;`.
 pub mod prelude {
-    pub use crate::{ask_author, check, phone, procedure, retry, run_step, step, Outcome, Step};
+    pub use crate::{
+        ask_author, check, part, phone, procedure, retry, run_step, step, unknown_part, Outcome,
+        Step,
+    };
 }
 
 /// What a step does with the world.
@@ -124,6 +128,8 @@ impl Step {
 
 struct Config {
     dry: bool,
+    until_first_prompt: bool,
+    part: Option<String>,
     devlab: String,
     sysfs_usb: String,
     name: String,
@@ -135,6 +141,8 @@ struct State {
 }
 
 static CONFIG: OnceLock<Config> = OnceLock::new();
+/// whether the entry file asked for its part: a `--part` it never looks at must not run the whole procedure
+static PART_ASKED: AtomicBool = AtomicBool::new(false);
 static STATE: Mutex<State> = Mutex::new(State { log: None, n: 0 });
 
 fn config() -> &'static Config {
@@ -202,9 +210,9 @@ impl Drop for Run {
     }
 }
 
-/// Begin the procedure: read the arguments (`--dry-run`, `--log FILE`, `--help`), open the log. Call it once,
+/// Begin the procedure: read the arguments (`--dry-run`, `--log FILE`, `--until FIRST_PROMPT`, `--part NAME`, `--help`), open the log. Call it once,
 /// first, and keep what it returns until the end of main. Exits 0 for `--help`; 1 for a wrong argument (as
-/// argenv does in every lpoco program); 2 when the log cannot be written.
+/// argenv does in every lpoco program); 2 when the log cannot be written, or when `--part` names a part the procedure has not got (a run stopped by `--until` exits 0 and leaves the log without an `end` line).
 pub fn procedure(name: &str, device: &str) -> Run {
     let r = cli::Contract::parse_and_lint(OnProblems::FailOnError);
     if cli::Contract::HELP.get_from(&r).unwrap_or(false) {
@@ -223,6 +231,8 @@ pub fn procedure(name: &str, device: &str) -> Run {
             eprintln!("{name}: cannot write the log {path}: {e}");
             std::process::exit(2)
         });
+    let until_first_prompt = cli::Contract::UNTIL.get_from(&r).as_deref() == Some("FIRST_PROMPT");
+    let part = cli::Contract::PART.get_from(&r);
     let devlab = cli::Contract::DEVLAB
         .get_from(&r)
         .unwrap_or_else(|| "devlab".into());
@@ -231,6 +241,8 @@ pub fn procedure(name: &str, device: &str) -> Run {
         .unwrap_or_else(|| "/sys/bus/usb/devices".into());
     let c = Config {
         dry,
+        until_first_prompt,
+        part,
         devlab,
         sysfs_usb,
         name: name.to_string(),
@@ -249,12 +261,39 @@ pub fn procedure(name: &str, device: &str) -> Run {
 /// failure name it, log it and end the process with exit 1.
 pub fn run_step(s: Step) {
     let c = config();
+    if c.part.is_some() && !PART_ASKED.load(Ordering::Relaxed) {
+        eprintln!(
+            "{}: this procedure has no parts (--part {:?} was given); nothing was run",
+            c.name,
+            c.part.as_deref().unwrap_or_default()
+        );
+        std::process::exit(2);
+    }
     let n = {
         let mut st = STATE.lock().unwrap_or_else(|e| e.into_inner());
         st.n += 1;
         st.n
     };
     let (kind, name) = (s.kind.word(), s.name.clone());
+    if s.kind == Kind::Ask && c.until_first_prompt {
+        note(
+            "stop",
+            &name,
+            "--until FIRST_PROMPT: the author is left alone",
+        );
+        println!(
+            "{}: stopped before the first prompt ({:?}) after {} step(s){}",
+            c.name,
+            name,
+            n - 1,
+            if c.dry {
+                " (dry run: nothing was done)"
+            } else {
+                ""
+            }
+        );
+        std::process::exit(0);
+    }
     if c.dry {
         println!("{kind} {n}: {name} - dry run, not run");
         note(
@@ -296,6 +335,23 @@ pub fn check<R: Outcome>(name: &str, run: impl FnOnce() -> R + 'static) {
 /// to check"): `ok` goes on, anything else stops the run and is logged as what was seen.
 pub fn ask_author(what: &str) {
     run_step(steps::ask(what));
+}
+
+/// The part of the procedure asked for with `--part NAME`, none for the whole: the entry file matches on it, one
+/// checklist per part, and sends a name it does not know to [`unknown_part`].
+pub fn part() -> Option<String> {
+    PART_ASKED.store(true, Ordering::Relaxed);
+    config().part.clone()
+}
+
+/// A `--part` the procedure has not got: name it and the known ones, end the run with exit 2.
+pub fn unknown_part(asked: &str, known: &[&str]) -> ! {
+    eprintln!(
+        "{}: no part {asked:?}; the parts are: {}",
+        config().name,
+        known.join(", ")
+    );
+    std::process::exit(2)
 }
 
 /// Try `run` up to `tries` times, `every` seconds apart, until it passes; the last failure is returned.
