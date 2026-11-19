@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-attended-v0.29.0...lpoco-attended-v0.29.1) - 2026-11-19
+
+### Added
+
+- *(attended)* library steps dmesg_clean, check_probe, wait_for_phone, tested on a stand-in ([#250](https://github.com/linux-phone-oco/lab-tools/pull/250))
+
+### Other
+
+- *(attended)* the example names the release that carries it ([#248](https://github.com/linux-phone-oco/lab-tools/pull/248))
+
 ## [0.29.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-attended-v0.28.3...lpoco-attended-v0.29.0) - 2026-11-19
 
 ### Added
