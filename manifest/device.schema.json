@@ -820,6 +820,14 @@
           },
           "default": []
         },
+        "names": {
+          "description": "the token map: per format, the package name a token has there when it is not the token itself",
+          "allOf": [
+            {
+              "$ref": "#/definitions/LayerNames"
+            }
+          ]
+        },
         "kernel": {
           "anyOf": [
             {
@@ -872,6 +880,41 @@
       "required": [
         "name"
       ]
+    },
+    "LayerNames": {
+      "description": "`[layer.names.FORMAT]`: token = \"that format's package name\"; a token not listed keeps its own name.",
+      "type": "object",
+      "properties": {
+        "apk": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {}
+        },
+        "deb": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {}
+        },
+        "rpm": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {}
+        },
+        "archlinux": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {}
+        }
+      },
+      "additionalProperties": false
     },
     "LayerKernel": {
       "description": "`[layer.kernel]`: where the kernel comes from and what it builds.",

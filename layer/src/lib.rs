@@ -3,7 +3,7 @@
 //! declared files, and kernel-install's devicetree file, go into `NAME-config`, the same in every format; the glue a format's base needs - the
 //! systemd preset, the initramfs module list in the initramfs tool's own form - goes into
 //! `NAME-boot`, which apk does not get (its initramfs tool, mkinitfs, is not known yet). Each package is an nfpm
-//! config; nfpm packs it. The kernel package (`linux-NAME`) and the dependency token map are not here yet.
+//! config; nfpm packs it. The dependency token map is `[layer.names.FORMAT]`; the kernel package (`linux-NAME`) is not here yet.
 
 use lpoco_manifest::{BootMethod, FileKind, Layer};
 use std::fs;
@@ -79,6 +79,20 @@ pub struct Entry {
     pub config: bool,
 }
 
+/// A dependency token with its name in this format's repositories, its version bound kept.
+fn named(layer: &Layer, format: Format, token: &str) -> String {
+    let at = token.find(['<', '>', '=']).unwrap_or(token.len());
+    let (name, bound) = token.split_at(at);
+    match layer
+        .names
+        .of(format.token())
+        .and_then(|m| m.get(name.trim()))
+    {
+        Some(n) => format!("{n}{bound}"),
+        None => token.to_string(),
+    }
+}
+
 pub fn packages(layer: &Layer, format: Format) -> Vec<Package> {
     let name = &layer.name;
     let mut out = Vec::new();
@@ -118,7 +132,11 @@ pub fn packages(layer: &Layer, format: Format) -> Vec<Package> {
         out.push(Package {
             name: format!("{name}-config"),
             description: format!("{name}: device configuration"),
-            depends: layer.needs.clone(),
+            depends: layer
+                .needs
+                .iter()
+                .map(|n| named(layer, format, n))
+                .collect(),
             items: config,
             post_install: None,
         });
