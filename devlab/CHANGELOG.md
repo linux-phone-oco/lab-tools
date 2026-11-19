@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.2](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-lab-v0.29.1...lpoco-lab-v0.29.2) - 2026-11-19
+
+### Added
+
+- *(attended)* library steps read_dmesg and wait_for_usb, tested on a stand-in and a fake bus ([#251](https://github.com/linux-phone-oco/lab-tools/pull/251))
+
 ## [0.29.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-lab-v0.29.0...lpoco-lab-v0.29.1) - 2026-11-19
 
 ### Added
