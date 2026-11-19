@@ -109,9 +109,9 @@ impl Device {
         })
     }
 
-    /// The manifest at `path`, or found by walking up from `start` as cargo finds Cargo.toml.
-    pub fn load(path: Option<&Path>, start: &Path) -> Result<(Device, PathBuf)> {
-        let file = match path {
+    /// The manifest file: `path`, or found by walking up from `start` as cargo finds Cargo.toml.
+    pub fn locate(path: Option<&Path>, start: &Path) -> Result<PathBuf> {
+        Ok(match path {
             Some(p) => p.to_path_buf(),
             None => start
                 .ancestors()
@@ -123,10 +123,28 @@ impl Device {
                         start.display()
                     )
                 })?,
-        };
+        })
+    }
+
+    pub fn load(path: Option<&Path>, start: &Path) -> Result<(Device, PathBuf)> {
+        let file = Device::locate(path, start)?;
         let text = std::fs::read_to_string(&file)
             .with_context(|| format!("reading {}", file.display()))?;
         Ok((Device::parse(&text)?, file))
+    }
+
+    /// `lpoco-lab manifest check`: whether this version reads the manifest as every command does (`Device::parse`) -
+    /// parse and validate only, nothing written. An error names the file, the version and the reason.
+    pub fn check(path: &Path, version: &str) -> Result<String> {
+        let text =
+            std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+        Device::parse(&text).map_err(|e| {
+            anyhow::anyhow!(
+                "{} is not read by lpoco-lab {version}: {e:#}",
+                path.display()
+            )
+        })?;
+        Ok(format!("{}: read by lpoco-lab {version}", path.display()))
     }
 
     /// Leave the manifest's addresses in the state, so that the lab's guard knows this phone when an agent

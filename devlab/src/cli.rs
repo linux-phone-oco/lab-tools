@@ -28,6 +28,7 @@ pub enum Command {
     Job,
     Guard,
     Kernel,
+    Manifest,
 }
 
 impl Command {
@@ -47,6 +48,7 @@ impl Command {
         "job",
         "guard",
         "kernel",
+        "manifest",
     ];
 }
 
@@ -68,6 +70,7 @@ impl FromRaw for Command {
             "job" => Command::Job,
             "guard" => Command::Guard,
             "kernel" => Command::Kernel,
+            "manifest" => Command::Manifest,
             _ => return None,
         })
     }
@@ -634,6 +637,18 @@ pub const TREE: &[Node] = &[
     n(
         &["guard", "tool"],
         "PreToolUse: the hook's JSON on standard input; ssh/scp to a phone outside lpoco-lab exits 2, saying why",
+        &[],
+        &[],
+    ),
+    n(
+        &["manifest"],
+        "The device manifest as the host reads it (needs no phone, no state)",
+        &[],
+        &[],
+    ),
+    n(
+        &["manifest", "check"],
+        "Read the manifest (--device FILE, or device.toml here or above) as every command does and say whether this version of lpoco-lab accepts it: parse and validate only, nothing written, no phone, no lease (exit 1 with the reason when not)",
         &[],
         &[],
     ),
