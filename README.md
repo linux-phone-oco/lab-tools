@@ -257,6 +257,21 @@ From the release tags, with cargo; the family has one version, so the tags of on
 `lpoco --version` is the tag's version and `lpoco list` shows bringup. Proof: `lpoco/tests/install_from_tag.rs`
 installs the newest release into a clean root and checks both, and that bringup refuses a wrong pin.
 
+## lpoco layer: a phone's device layer as packages
+
+`lpoco-layer` (run as `lpoco layer ...`) packs the `[layer]` of a device's `device.toml` (typed in lpoco-manifest) with
+[nfpm](https://nfpm.goreleaser.com), which it needs on PATH (`LPOCO_NFPM` names another):
+
+    lpoco layer pack --manifest device.toml --format apk|deb|rpm|archlinux --out DIR [--pkg-version V]
+
+Per format it writes `NAME-config` (the declared files and, for `efi-kernel-install`, `/usr/lib/kernel/devicetree` naming
+the first dtb: the same files in every format; dependency tokens written the way the format writes them) and, except
+for apk, `NAME-boot` (a systemd preset enabling the layer's units; the initramfs module list as an initramfs-tools hook,
+a dracut drop-in or a mkinitcpio drop-in). Each package's nfpm config is kept beside it. Proof: `layer/tests/pack.rs`
+from fixtures; with nfpm, research `test-layer-apk-and-deb.sh` (docs) passes on a fixture of surya's shape.
+Not yet: a scriptlet that runs `systemctl preset` (the preset file alone enables nothing until a first boot or preset call), the kernel package, the per-base dependency token map (tokens pass through), mkinitfs for apk, Nura's deviceinfo,
+`export`.
+
 ## lpoco host: the lab host prepared from declarations
 
 `lpoco-host` (run as `lpoco host ...`) prepares the machine the lab runs on from two declarations: the lab's own
