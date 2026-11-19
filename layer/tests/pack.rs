@@ -703,7 +703,7 @@ fn nura_gets_the_phones_deviceinfo_from_boot_and_the_others_do_not() {
     }
     let layer = m.layer.as_ref().unwrap();
     let mut pkgs = packages(layer, Format::Apk);
-    add_deviceinfo(&mut pkgs, layer, &body);
+    add_deviceinfo(&mut pkgs, layer, &body, "console=ttyMSM0");
     let p = pkgs
         .iter()
         .find(|p| p.name == "google-walleye-config")
@@ -773,7 +773,12 @@ fn a_layer_without_files_still_gets_its_dependencies_on_the_config_package_that_
     .unwrap();
     let layer = m.layer.as_ref().unwrap();
     let mut pkgs = packages(layer, Format::Apk);
-    add_deviceinfo(&mut pkgs, layer, &deviceinfo(&m).unwrap().unwrap());
+    add_deviceinfo(
+        &mut pkgs,
+        layer,
+        &deviceinfo(&m).unwrap().unwrap(),
+        "console=ttyMSM0",
+    );
     assert_eq!(pkgs[0].name, "google-walleye-config");
     assert_eq!(pkgs[0].depends, vec!["qrtr".to_string()]);
 }

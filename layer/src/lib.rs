@@ -653,7 +653,7 @@ pub fn deviceinfo(m: &Manifest) -> Result<Option<String>, String> {
 }
 
 /// Puts `/etc/deviceinfo` into `NAME-config` (made when the layer declares no file).
-pub fn add_deviceinfo(pkgs: &mut Vec<Package>, layer: &Layer, body: &str) {
+pub fn add_deviceinfo(pkgs: &mut Vec<Package>, layer: &Layer, body: &str, cmdline: &str) {
     let name = &layer.name;
     let item = Item {
         source: Source::Text(body.to_string()),
@@ -661,9 +661,17 @@ pub fn add_deviceinfo(pkgs: &mut Vec<Package>, layer: &Layer, body: &str) {
         mode: 0o644,
         config: false,
     };
+    // the same cmdline in the file boot-deploy and kernel-install read now (pmaports marks the deviceinfo key obsolete);
+    // `cmdline` has passed `deviceinfo`'s refusal of what a shell would run, which also keeps it to one line
+    let cmdline_d = Item {
+        source: Source::Text(format!("{cmdline}\n")),
+        dst: format!("/usr/lib/kernel-cmdline.d/50-{name}.conf"),
+        mode: 0o644,
+        config: false,
+    };
     let want = format!("{name}-config");
     match pkgs.iter_mut().find(|p| p.name == want) {
-        Some(p) => p.items.push(item),
+        Some(p) => p.items.extend([item, cmdline_d]),
         None => pkgs.insert(
             0,
             Package {
@@ -675,7 +683,7 @@ pub fn add_deviceinfo(pkgs: &mut Vec<Package>, layer: &Layer, body: &str) {
                     .iter()
                     .map(|n| named(layer, Format::Apk, n))
                     .collect(),
-                items: vec![item],
+                items: vec![item, cmdline_d],
                 post_install: None,
             },
         ),

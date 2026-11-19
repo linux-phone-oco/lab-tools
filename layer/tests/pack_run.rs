@@ -179,3 +179,29 @@ fn apk_packs_the_deviceinfo_from_boot_and_deb_does_not() {
     assert_eq!(o.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&o.stderr).contains("cmdline"));
 }
+
+#[test]
+fn apk_also_writes_the_cmdline_as_a_kernel_cmdline_d_file() {
+    let (dir, nfpm) = setup("cd", "#!/bin/sh\nexit 0\n");
+    let dev = format!(
+        "[device]\ncodename = \"google-walleye\"\n\n[boot]\nkernel_offset = 0x8000\nramdisk_offset = 0x1000000\ntags_offset = 0x100\npagesize = 4096\ncmdline = \"console=ttyMSM0 quiet\"\n{DEVICE}"
+    );
+    fs::write(dir.join("device.toml"), dev).unwrap();
+    let o = pack(&dir, &nfpm, "apk");
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    let conf = fs::read_to_string(dir.join("out/xiaomi-surya-config.nfpm.yaml")).unwrap();
+    assert!(
+        conf.contains("/usr/lib/kernel-cmdline.d/50-xiaomi-surya.conf"),
+        "{conf}"
+    );
+    let body = fs::read_to_string(
+        dir.join("out/stage/xiaomi-surya-config/usr/lib/kernel-cmdline.d/50-xiaomi-surya.conf"),
+    )
+    .unwrap();
+    assert_eq!(body, "console=ttyMSM0 quiet\n");
+    // the other formats have no such file from here
+    let o = pack(&dir, &nfpm, "deb");
+    assert!(o.status.success());
+    let conf = fs::read_to_string(dir.join("out/xiaomi-surya-config.nfpm.yaml")).unwrap();
+    assert!(!conf.contains("kernel-cmdline.d"), "{conf}");
+}
