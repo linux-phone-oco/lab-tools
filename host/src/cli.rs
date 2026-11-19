@@ -5,6 +5,7 @@
 //!   lpoco-host [plan]            what the lab host needs, as a diff per file and the exact root commands; changes nothing on the host (each device clone is fetched)
 //!   lpoco-host prepare now       do it: files written, udev reloaded, modules loaded, tools installed - only where they differ
 //!   lpoco-host follow [now]      a newer family release: installed when every keeper lease is free, checked, the pin landed; stepped back on a failing check
+//!   lpoco-host clones [now]      the shared clones under lab.toml [clones] folders: each clean main checkout fast-forwarded to origin/main, any other left alone and named
 //!   lpoco-host check             the lab user can open each declared node that is present; each tool at its pin
 //!   lpoco-host --version         this program's version (the lpoco family's one version)
 
@@ -18,10 +19,12 @@ pub enum Command {
     Check,
     Revoke,
     Follow,
+    Clones,
 }
 
 impl Command {
-    pub const TOKENS: &'static [&'static str] = &["plan", "prepare", "check", "revoke", "follow"];
+    pub const TOKENS: &'static [&'static str] =
+        &["plan", "prepare", "check", "revoke", "follow", "clones"];
 }
 
 impl FromRaw for Command {
@@ -32,6 +35,7 @@ impl FromRaw for Command {
             "check" => Command::Check,
             "revoke" => Command::Revoke,
             "follow" => Command::Follow,
+            "clones" => Command::Clones,
             _ => return None,
         })
     }
@@ -51,9 +55,9 @@ contract! {
         key: "now",
         ty: Type::Enum,
         allowed: &["now"],
-        subcommands: &[Command::Prepare, Command::Revoke, Command::Follow],
+        subcommands: &[Command::Prepare, Command::Revoke, Command::Follow, Command::Clones],
         arg: Some(Arg::positional(0)),
-        summary: "prepare and follow change the host only when told `now`.",
+        summary: "prepare, follow and clones change the host only when told `now`.",
         ..Input::EMPTY
     };
 

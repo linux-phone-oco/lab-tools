@@ -345,3 +345,14 @@ A device repo keeps its procedures as `procedures/NAME.rs` beside its `device.to
 Parse and validate only: no state directory, no phone, no lease. A device repository's CI downloads the
 `lpoco-lab` release asset the lab machine pins (`lab.toml`'s `lpoco`) and runs this on its `device.toml`, so a file the
 host cannot read cannot land (device-template's `bin/check-device-toml.sh`).
+
+### The shared clones, kept fresh: `lpoco-host clones`
+
+`lab.toml` `[clones]` with `folders = ["~/Projects"]` and `every = "15min"` makes `plan` list, and `prepare now` write and
+enable, the user timer `lpoco-host-clones.timer` that runs `lpoco-host clones now`. Each clone under a folder that is on
+`main` and has no uncommitted tracked change is fast-forwarded to origin/main (`merge --ff-only`: nothing is reset or
+removed, and git itself refuses a fast-forward that an untracked file would meet). Any other - dirty, detached, on another
+branch, diverged - is left exactly as it is and named with why; a worktree is not a clone. `clones` without `now` only
+fetches and says what it would do (a fresh `origin/main` is all it changes). The unit fails (exit 1) when a declared
+folder cannot be read or when no clone could be fetched; a clone left alone is named, not a failure. The result is that a
+clone the keeper starts from is at origin/main within the interval; a clone on another branch is not moved.

@@ -107,14 +107,14 @@ pub fn plan_root_commands(plan_out: &str) -> Option<Vec<String>> {
 }
 
 /// `every reaches a unit file: a number and a unit (`15min`, `1h`).
-pub fn valid_every(s: &str) -> Result<(), String> {
+pub fn valid_every(table: &str, s: &str) -> Result<(), String> {
     let digits = s.chars().take_while(|c| c.is_ascii_digit()).count();
     let unit = &s[digits..];
     if digits > 0 && !unit.is_empty() && unit.chars().all(|c| c.is_ascii_lowercase()) {
         Ok(())
     } else {
         Err(format!(
-            "[follow] every = {s:?} must be a number and a unit, as 15min or 1h"
+            "{table} every = {s:?} must be a number and a unit, as 15min or 1h"
         ))
     }
 }
@@ -166,9 +166,9 @@ mod tests {
 
     #[test]
     fn an_interval_is_a_number_and_a_unit() {
-        assert!(valid_every("15min").is_ok() && valid_every("1h").is_ok());
+        assert!(valid_every("[follow]", "15min").is_ok() && valid_every("[follow]", "1h").is_ok());
         for bad in ["", "min", "15", "15 min", "15min\nExecStart=x", "-1h"] {
-            assert!(valid_every(bad).is_err(), "{bad:?}");
+            assert!(valid_every("[follow]", bad).is_err(), "{bad:?}");
         }
     }
 }
