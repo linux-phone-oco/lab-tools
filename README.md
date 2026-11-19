@@ -265,11 +265,11 @@ installs the newest release into a clean root and checks both, and that bringup 
     lpoco layer pack --manifest device.toml --format apk|deb|rpm|archlinux --out DIR [--pkg-version V] [--kernel-build DIR]
 
 Per format it writes `NAME-config` (the declared files and, for `efi-kernel-install`, `/usr/lib/kernel/devicetree` naming
-the first dtb: the same files in every format; dependency tokens written the way the format writes them) and, except
-for apk, `NAME-boot` (a systemd preset enabling the layer's units; the initramfs module list as an initramfs-tools hook,
-a dracut drop-in or a mkinitcpio drop-in). With `--kernel-build DIR` (a finished build: `Image`, `kernel.release`, `dtbs/`, optionally `modules/` = the tree for `/usr/lib/modules/RELEASE`) it also writes `linux-NAME` for arm64: `vmlinuz`, the declared dtbs under `dtb/` where kernel-install reads them, and the modules. It builds no kernel; a missing declared dtb, an `Image` or a release that is not one word is refused. Each package's nfpm config is kept beside it. Proof: `layer/tests/pack.rs`
+the first dtb: the same files in every format; dependency tokens written the way the format writes them) and,
+`NAME-boot` (a systemd preset enabling the layer's units, not for apk; the initramfs module list as an initramfs-tools hook,
+a dracut drop-in or a mkinitcpio drop-in; for apk only the mkinitfs module list, as globs under `/lib/modules/KERNEL`, and a scriptlet adding the feature to `mkinitfs.conf` once, depending on `mkinitfs`). With `--kernel-build DIR` (a finished build: `Image`, `kernel.release`, `dtbs/`, optionally `modules/` = the tree for `/usr/lib/modules/RELEASE`) it also writes `linux-NAME` for arm64: `vmlinuz`, the declared dtbs under `dtb/` where kernel-install reads them, and the modules. It builds no kernel; a missing declared dtb, an `Image` or a release that is not one word is refused. Each package's nfpm config is kept beside it. Proof: `layer/tests/pack.rs`
 from fixtures; with nfpm, research `test-layer-apk-and-deb.sh` (docs) passes on a fixture of surya's shape.
-Not yet: building the kernel from `[layer.kernel]` tree and tag (the package takes a finished build), mkinitfs for apk, Nura's deviceinfo,
+Not yet: building the kernel from `[layer.kernel]` tree and tag (the package takes a finished build), Nura's deviceinfo,
 `export`.
 
 ## lpoco host: the lab host prepared from declarations

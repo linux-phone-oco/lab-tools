@@ -2,7 +2,7 @@
 //! lpoco-layer: a phone's device layer ([layer] in device.toml, typed in lpoco-manifest) as packages. The
 //! declared files, and kernel-install's devicetree file, go into `NAME-config`, the same in every format; the glue a format's base needs - the
 //! systemd preset, the initramfs module list in the initramfs tool's own form - goes into
-//! `NAME-boot`, which apk does not get (its initramfs tool, mkinitfs, is not known yet). Each package is an nfpm
+//! `NAME-boot` (for apk only the mkinitfs module list and the scriptlet that enables it). Each package is an nfpm
 //! config; nfpm packs it. The dependency token map is `[layer.names.FORMAT]`; the kernel package (`linux-NAME`) is not here yet.
 
 use lpoco_manifest::{BootMethod, FileKind, Layer};
@@ -160,6 +160,26 @@ pub fn packages(layer: &Layer, format: Format) -> Vec<Package> {
         });
     }
     if format == Format::Apk {
+        // Alpine runs OpenRC, so no systemd preset. mkinitfs globs each line of features.d/*.modules against the
+        // files under /lib/modules/KERNEL (a bare name matches nothing), and a feature counts only when
+        // mkinitfs.conf names it: the scriptlet adds it once and keeps what the user set.
+        if let Some(i) = layer.initramfs.as_ref().filter(|i| !i.modules.is_empty()) {
+            out.push(Package {
+                arch: None,
+                name: format!("{name}-boot"),
+                description: format!("{name}: boot glue (mkinitfs modules)"),
+                depends: vec![format!("{name}-config"), "mkinitfs".to_string()],
+                items: vec![text(
+                    format!("/etc/mkinitfs/features.d/{name}.modules"),
+                    mkinitfs_globs(&i.modules),
+                    0o644,
+                )],
+                post_install: Some(format!(
+                    "#!/bin/sh\n# mkinitfs builds a feature in only when mkinitfs.conf lists it; add {name} once\nconf=/etc/mkinitfs/mkinitfs.conf\nif [ ! -f \"$conf\" ]; then\n    echo \"{name}: no $conf; add {name} to its features by hand\" >&2\nelif grep -q '^features=\"\\([^\"]* \\)\\{{0,1\\}}{re}\\( [^\"]*\\)\\{{0,1\\}}\"$' \"$conf\"; then\n    :\nelif grep -q '^features=\"[^\"]*\"$' \"$conf\"; then\n    sed -i 's/^features=\"\\(.*\\)\"$/features=\"\\1 {name}\"/' \"$conf\"\nelse\n    echo \"{name}: no one-line features=\\\"...\\\" in $conf; add {name} to it by hand\" >&2\nfi\n",
+                    re = name.replace('.', "\\.")
+                )),
+            });
+        }
         return out;
     }
     let mut boot = Vec::new();
@@ -385,8 +405,8 @@ pub fn check(layer: &Layer, format: Format) -> Result<(), String> {
             }
         }
     }
-    // apk makes no boot package, so its modules are written nowhere
-    if let (Some(i), false) = (&layer.initramfs, format == Format::Apk) {
+    // every format writes the modules into a script or a config line
+    if let Some(i) = &layer.initramfs {
         for m in &i.modules {
             if m.is_empty()
                 || !m
@@ -518,4 +538,25 @@ pub fn kernel_package(layer: &Layer, build: &Path) -> Result<Package, String> {
         items,
         post_install: None,
     })
+}
+
+/// The lines of an mkinitfs `features.d/*.modules` file for these module names: mkinitfs globs each line under
+/// /lib/modules/KERNEL, and a module's folder is not declared, so each name (in both spellings, `-` and `_`)
+/// is tried at depths 1 to 8 under kernel/ (the deepest driver in a stock kernel sits at 7; one deeper is not found); a glob that matches nothing is skipped by mkinitfs.
+fn mkinitfs_globs(modules: &[String]) -> String {
+    let mut out = String::new();
+    for m in modules {
+        let mut spellings = vec![m.clone()];
+        for s in [m.replace('_', "-"), m.replace('-', "_")] {
+            if !spellings.contains(&s) {
+                spellings.push(s);
+            }
+        }
+        for dirs in 1..=8 {
+            for s in &spellings {
+                out.push_str(&format!("kernel/{}{s}.ko*\n", "*/".repeat(dirs)));
+            }
+        }
+    }
+    out
 }
