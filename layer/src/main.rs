@@ -5,7 +5,9 @@ mod cli;
 
 use argenv_resolve::{InputResolveExt, OnProblems};
 use cli::Contract;
-use lpoco_layer::{check, materialize, nfpm_yaml, packages, post_install, stale, Format};
+use lpoco_layer::{
+    check, kernel_package, materialize, nfpm_yaml, packages, post_install, stale, Format,
+};
 use lpoco_manifest::Manifest;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -62,12 +64,17 @@ fn pack(r: &argenv_resolve::Resolution) -> Result<(), String> {
     let dir = std::path::absolute(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let out = std::path::absolute(&out).map_err(|e| format!("{}: {e}", out.display()))?;
     check(layer, format).map_err(|e| format!("{}: {e}", manifest.display()))?;
-    let pkgs = packages(layer, format);
+    let mut pkgs = packages(layer, format);
+    let kernel_build = Contract::KERNEL_BUILD.get_from(r);
+    if let Some(b) = &kernel_build {
+        let b = std::path::absolute(b).map_err(|e| format!("{b}: {e}"))?;
+        pkgs.push(kernel_package(layer, &b).map_err(|e| format!("{}: {e}", manifest.display()))?);
+    }
     if pkgs.is_empty() {
         return Err("the layer holds no file to pack".into());
     }
     fs::create_dir_all(&out).map_err(|e| format!("{}: {e}", out.display()))?;
-    for old in stale(layer, format, &version, &out) {
+    for old in stale(layer, format, &version, &out, kernel_build.is_some()) {
         fs::remove_file(&old).map_err(|e| format!("{}: {e}", old.display()))?;
         eprintln!("lpoco-layer: removed the stale {}", old.display());
     }
@@ -81,7 +88,7 @@ fn pack(r: &argenv_resolve::Resolution) -> Result<(), String> {
             nfpm_yaml(p, format, &version, &entries, script.as_deref())?,
         )
         .map_err(|e| format!("{}: {e}", conf.display()))?;
-        let target = out.join(format.file_name(&p.name, &version));
+        let target = out.join(format.file_name_for(&p.name, &version, p.arch));
         let status = Command::new(&nfpm)
             .args(["package", "--packager", format.token(), "--config"])
             .arg(&conf)

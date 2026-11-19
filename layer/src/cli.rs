@@ -2,7 +2,7 @@
 //! lpoco-layer's invocation surface, declared once with argenv: its command, its arguments and the environment
 //! variables it reads. Run as `lpoco layer ...`.
 //!
-//!   lpoco-layer pack --manifest FILE --format apk|deb|rpm|archlinux --out DIR   one package per piece of the layer
+//!   lpoco-layer pack --manifest FILE --format apk|deb|rpm|archlinux --out DIR [--kernel-build DIR]   one package per piece of the layer
 //!   lpoco-layer --version                                                       this program's version (the family's)
 
 use argenv_resolve::*;
@@ -68,6 +68,15 @@ contract! {
         arg: Some(Arg { value_name: "VERSION", ..Arg::long("pkg-version") }),
         env: Some(Env::new("LPOCO_LAYER_VERSION")),
         summary: "The packages' version (0.1.0 when none is given: the layer declares none yet).",
+        ..Input::EMPTY
+    };
+
+    KERNEL_BUILD: String = Input {
+        key: "kernel_build",
+        ty: Type::String,
+        arg: Some(Arg { value_name: "DIR", ..Arg::long("kernel-build") }),
+        env: Some(Env::new("LPOCO_KERNEL_BUILD")),
+        summary: "A finished kernel build (Image, kernel.release, dtbs/, optionally modules/): also packs it as linux-NAME for arm64 (none given: no kernel package).",
         ..Input::EMPTY
     };
 

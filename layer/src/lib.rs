@@ -36,11 +36,23 @@ impl Format {
 
     /// The file a package of this format is written to, in the form each format's tools expect.
     pub fn file_name(self, name: &str, version: &str) -> String {
+        self.file_name_for(name, version, None)
+    }
+
+    /// The same for a package built for one architecture (`arm64`, as nfpm says it); none is architecture-independent.
+    pub fn file_name_for(self, name: &str, version: &str, arch: Option<&str>) -> String {
+        let arm = arch.is_some();
         match self {
             Format::Apk => format!("{name}-{version}-r0.apk"),
-            Format::Deb => format!("{name}_{version}_all.deb"),
-            Format::Rpm => format!("{name}-{version}-1.noarch.rpm"),
-            Format::Archlinux => format!("{name}-{version}-1-any.pkg.tar.zst"),
+            Format::Deb => format!("{name}_{version}_{}.deb", arch.unwrap_or("all")),
+            Format::Rpm => format!(
+                "{name}-{version}-1.{}.rpm",
+                if arm { "aarch64" } else { "noarch" }
+            ),
+            Format::Archlinux => format!(
+                "{name}-{version}-1-{}.pkg.tar.zst",
+                if arm { "aarch64" } else { "any" }
+            ),
         }
     }
 }
@@ -50,6 +62,8 @@ impl Format {
 pub enum Source {
     Tree(String),
     Text(String),
+    /// A whole directory, packed as a tree.
+    Dir(String),
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -63,6 +77,8 @@ pub struct Item {
 #[derive(Clone, PartialEq, Debug)]
 pub struct Package {
     pub name: String,
+    /// The architecture it is built for (`arm64`); none when it holds the same files for every phone.
+    pub arch: Option<&'static str>,
     pub description: String,
     pub depends: Vec<String>,
     pub items: Vec<Item>,
@@ -77,6 +93,7 @@ pub struct Entry {
     pub dst: String,
     pub mode: u32,
     pub config: bool,
+    pub tree: bool,
 }
 
 /// A dependency token with its name in this format's repositories, its version bound kept.
@@ -130,6 +147,7 @@ pub fn packages(layer: &Layer, format: Format) -> Vec<Package> {
     }
     if !config.is_empty() {
         out.push(Package {
+            arch: None,
             name: format!("{name}-config"),
             description: format!("{name}: device configuration"),
             depends: layer
@@ -199,6 +217,7 @@ pub fn packages(layer: &Layer, format: Format) -> Vec<Package> {
     }
     if !boot.is_empty() {
         out.push(Package {
+            arch: None,
             name: format!("{name}-boot"),
             description: format!("{name}: boot glue (systemd preset, initramfs modules)"),
             depends: if post_install.is_some() {
@@ -229,6 +248,17 @@ pub fn materialize(pkg: &Package, manifest_dir: &Path, stage: &Path) -> Result<V
                 }
                 p
             }
+            Source::Dir(rel) => {
+                let p = manifest_dir.join(rel);
+                if !p.is_dir() {
+                    return Err(format!(
+                        "{}: {rel} is not a folder under {}",
+                        pkg.name,
+                        manifest_dir.display()
+                    ));
+                }
+                p
+            }
             Source::Text(body) => {
                 let p = stage.join(&pkg.name).join(it.dst.trim_start_matches('/'));
                 fs::create_dir_all(p.parent().unwrap())
@@ -242,6 +272,7 @@ pub fn materialize(pkg: &Package, manifest_dir: &Path, stage: &Path) -> Result<V
             dst: it.dst.clone(),
             mode: it.mode,
             config: it.config,
+            tree: matches!(it.source, Source::Dir(_)),
         });
     }
     Ok(out)
@@ -289,8 +320,9 @@ pub fn nfpm_yaml(
     script: Option<&Path>,
 ) -> Result<String, String> {
     let mut y = format!(
-        "name: {}\narch: all\nplatform: linux\nversion: {}\nsection: misc\nmaintainer: linux-phone-oco\ndescription: {}\nlicense: MIT OR Apache-2.0\n",
+        "name: {}\narch: {}\nplatform: linux\nversion: {}\nsection: misc\nmaintainer: linux-phone-oco\ndescription: {}\nlicense: MIT OR Apache-2.0\n",
         pkg.name,
+        pkg.arch.unwrap_or("all"),
         quote(version),
         quote(&pkg.description)
     );
@@ -309,11 +341,16 @@ pub fn nfpm_yaml(
     y.push_str("contents:\n");
     for e in entries {
         y.push_str(&format!(
-            "- src: {}\n  dst: {}\n  file_info:\n    mode: {:04o}\n",
+            "- src: {}\n  dst: {}\n",
             quote(&e.src.to_string_lossy()),
-            quote(&e.dst),
-            e.mode
+            quote(&e.dst)
         ));
+        if e.tree {
+            // a tree keeps each file's own mode: nfpm would otherwise stamp one mode on every file in it
+            y.push_str("  type: tree\n");
+        } else {
+            y.push_str(&format!("  file_info:\n    mode: {:04o}\n", e.mode));
+        }
         if e.config {
             y.push_str("  type: config|noreplace\n");
         }
@@ -367,16 +404,28 @@ pub fn check(layer: &Layer, format: Format) -> Result<(), String> {
 
 /// Packages of this layer's name that an earlier run left in `out` and this run does not make (its `-boot`
 /// when the layer has no boot glue now); the caller removes them so nobody installs a stale one.
-pub fn stale(layer: &Layer, format: Format, version: &str, out: &Path) -> Vec<PathBuf> {
-    let made: Vec<String> = packages(layer, format)
+pub fn stale(
+    layer: &Layer,
+    format: Format,
+    version: &str,
+    out: &Path,
+    with_kernel: bool,
+) -> Vec<PathBuf> {
+    let mut made: Vec<String> = packages(layer, format)
         .into_iter()
         .map(|p| p.name)
         .collect();
+    if with_kernel {
+        made.push(format!("linux-{}", layer.name));
+    }
+    let arm = |n: &str| (n.starts_with("linux-").then_some("arm64"), n.to_string());
     ["config", "boot"]
         .iter()
         .map(|s| format!("{}-{s}", layer.name))
+        .chain([format!("linux-{}", layer.name)])
         .filter(|n| !made.contains(n))
-        .map(|n| out.join(format.file_name(&n, version)))
+        .map(|n| arm(&n))
+        .map(|(a, n)| out.join(format.file_name_for(&n, version, a)))
         .filter(|p| p.exists())
         .collect()
 }
@@ -390,4 +439,83 @@ pub fn post_install(pkg: &Package, stage: &Path) -> Result<Option<PathBuf>, Stri
     fs::create_dir_all(p.parent().unwrap()).map_err(|e| format!("{}: {e}", p.display()))?;
     fs::write(&p, body).map_err(|e| format!("{}: {e}", p.display()))?;
     Ok(Some(p))
+}
+
+/// The kernel package `linux-NAME` from a finished build, laid out where kernel-install(8) looks: the image
+/// as `/usr/lib/modules/RELEASE/vmlinuz`, each declared dtb under `.../RELEASE/dtb/` by the path
+/// `/usr/lib/kernel/devicetree` names, and the build's module tree (`modules/`, when there is one) as
+/// `/usr/lib/modules/RELEASE`. The build folder holds `Image`, `kernel.release`, `dtbs/` and optionally `modules/`.
+pub fn kernel_package(layer: &Layer, build: &Path) -> Result<Package, String> {
+    let k = layer
+        .kernel
+        .as_ref()
+        .ok_or("a kernel build is given but the layer declares no [layer.kernel]")?;
+    let file = |rel: &str| -> Result<String, String> {
+        let p = build.join(rel);
+        if p.is_file() {
+            Ok(p.to_string_lossy().into_owned())
+        } else {
+            Err(format!("{}: {rel} is not in the kernel build", p.display()))
+        }
+    };
+    let image = file("Image")?;
+    let rel_file = build.join("kernel.release");
+    file("kernel.release")?;
+    let release = fs::read_to_string(&rel_file)
+        .map_err(|e| format!("{}: {e}", rel_file.display()))?
+        .trim()
+        .to_string();
+    if release.is_empty()
+        || release.starts_with('.')
+        || !release
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "._+-".contains(c))
+    {
+        return Err(format!(
+            "kernel release {release:?} is not one word of letters, digits and . _ + - (it names a folder under /usr/lib/modules)"
+        ));
+    }
+    let base = format!("/usr/lib/modules/{release}");
+    let mut items = vec![Item {
+        source: Source::Tree(image),
+        dst: format!("{base}/vmlinuz"),
+        mode: 0o644,
+        config: false,
+    }];
+    for d in &k.dtbs {
+        items.push(Item {
+            source: Source::Tree(file(&format!("dtbs/{d}"))?),
+            dst: format!("{base}/dtb/{d}"),
+            mode: 0o644,
+            config: false,
+        });
+    }
+    let modules = build.join("modules");
+    for clash in ["vmlinuz", "dtb"] {
+        if modules.join(clash).exists() {
+            return Err(format!(
+                "{}: modules/{clash} would overwrite the kernel package's own file; modules/ must be a clean module tree",
+                build.display()
+            ));
+        }
+    }
+    if modules.is_dir() {
+        items.push(Item {
+            source: Source::Dir(modules.to_string_lossy().into_owned()),
+            dst: base,
+            mode: 0o755,
+            config: false,
+        });
+    }
+    Ok(Package {
+        name: format!("linux-{}", layer.name),
+        arch: Some("arm64"),
+        description: format!(
+            "{}: Linux {release}, its device trees and modules",
+            layer.name
+        ),
+        depends: Vec::new(),
+        items,
+        post_install: None,
+    })
 }
