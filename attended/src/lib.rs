@@ -22,6 +22,7 @@
 //! the unattended step runner (bringup-step-runner) takes the same value, so an attended procedure and a nightly
 //! health run are the same chain. A library step (like [`steps::ask`]) is a function that returns a `Step`.
 
+pub mod bench;
 mod cli;
 mod device;
 pub mod steps;
@@ -37,9 +38,11 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// Everything an entry file needs, in one line: `use lpoco_attended::prelude::*;`.
 pub mod prelude {
+    pub use crate::bench::{bench, Act, ActKind, Bench};
     pub use crate::{
-        ask_author, check, part, phone, procedure, retry, run_step, step, unknown_part, Outcome,
-        Step,
+        ask_author, check, confirm, hold_button, listen_for, look_for, part, phone, press_power,
+        procedure, replug_usb, retry, run_step, step, swipe, touch, unknown_part, unplug_usb,
+        Outcome, Step,
     };
 }
 
@@ -104,6 +107,8 @@ pub struct Step {
     pub kind: Kind,
     /// the bring-up step id (a step of the docs base) this step carries out, where one exists
     pub id: Option<String>,
+    /// who does it where it is physical: a bench's name, `person` for the person at the bench
+    pub doer: Option<String>,
     run: Box<dyn FnOnce() -> Result<(), String>>,
 }
 
@@ -113,6 +118,7 @@ impl Step {
             name: name.to_string(),
             kind,
             id: None,
+            doer: None,
             run: Box::new(move || run().outcome()),
         }
     }
@@ -121,6 +127,17 @@ impl Step {
     pub fn keyed(mut self, id: &str) -> Step {
         self.id = Some(id.to_string());
         self
+    }
+
+    /// Name who does the step.
+    pub fn by(mut self, doer: &str) -> Step {
+        self.doer = Some(doer.to_string());
+        self
+    }
+
+    /// Whether the run waits for the author at this step: it asks, and a person is the one asked.
+    fn prompts(&self) -> bool {
+        self.kind == Kind::Ask && self.doer.as_deref().is_none_or(|d| d == bench::PERSON)
     }
 
     /// Run it: the part both runners share.
@@ -324,7 +341,7 @@ pub fn run_step(s: Step) {
         st.n
     };
     let (kind, name) = (s.kind.word(), s.name.clone());
-    if s.kind == Kind::Ask && c.until_first_prompt {
+    if s.prompts() && c.until_first_prompt {
         note(
             "stop",
             &name,
@@ -344,7 +361,11 @@ pub fn run_step(s: Step) {
         std::process::exit(0);
     }
     if c.dry {
-        println!("{kind} {n}: {name} - dry run, not run");
+        let by = s
+            .doer
+            .as_deref()
+            .map_or(String::new(), |d| format!(" (by {d})"));
+        println!("{kind} {n}: {name} - dry run, not run{by}");
         note(
             "dry",
             &name,
@@ -357,8 +378,14 @@ pub fn run_step(s: Step) {
         );
         return;
     }
-    println!("{kind} {n}: {name}");
-    note("begin", &name, kind);
+    // a person is the usual doer and not said; a bench is
+    let by = s
+        .doer
+        .as_deref()
+        .filter(|d| *d != bench::PERSON)
+        .map_or(String::new(), |d| format!(" by {d}"));
+    println!("{kind} {n}: {name}{by}");
+    note("begin", &name, &format!("{kind}{by}"));
     let result = s.execute();
     STATE.lock().unwrap_or_else(|e| e.into_inner()).step.clear();
     match result {
@@ -385,7 +412,52 @@ pub fn check<R: Outcome>(name: &str, run: impl FnOnce() -> R + 'static) {
 /// A point where the author does something and looks at something and says how it went ("what to do / what
 /// to check"): `ok` goes on, anything else stops the run and is logged as what was seen.
 pub fn ask_author(what: &str) {
-    run_step(steps::ask(what));
+    confirm(what);
+}
+
+/// The author's own words ("what to do / what to check"), done by the person at the bench; the same as [`ask_author`].
+pub fn confirm(what: &str) {
+    run_step(steps::confirm(what));
+}
+
+/// Press the power button, then check `check`.
+pub fn press_power(check: &str) {
+    run_step(steps::press_power(check));
+}
+
+/// Hold a button (`"volume down"`).
+pub fn hold_button(button: &str, check: &str) {
+    run_step(steps::hold_button(button, check));
+}
+
+/// Unplug the USB cable.
+pub fn unplug_usb(check: &str) {
+    run_step(steps::unplug_usb(check));
+}
+
+/// Plug the USB cable back in.
+pub fn replug_usb(check: &str) {
+    run_step(steps::replug_usb(check));
+}
+
+/// Touch something on the screen.
+pub fn touch(target: &str, check: &str) {
+    run_step(steps::touch(target, check));
+}
+
+/// Swipe (`"up from the bottom edge"`).
+pub fn swipe(way: &str, check: &str) {
+    run_step(steps::swipe(way, check));
+}
+
+/// Look at the phone for something.
+pub fn look_for(what: &str) {
+    run_step(steps::look_for(what));
+}
+
+/// Listen to the phone for something.
+pub fn listen_for(what: &str) {
+    run_step(steps::listen_for(what));
 }
 
 /// The part of the procedure asked for with `--part NAME`, none for the whole: the entry file matches on it, one

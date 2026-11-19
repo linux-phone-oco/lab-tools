@@ -322,7 +322,7 @@ The device-tree fixture is GPL-2.0-only OR BSD-2-Clause, the kernel's dual licen
 A procedure a person attends (flash, power-cycle, look at the screen) is a short entry file of named steps,
 not a program: `attended/examples/attended.rs` is the one to copy (a rust-script with a git dependency on the
 tag `lpoco-attended-vX.Y.Z`). `use lpoco_attended::prelude::*;`, then `procedure(name, device)` once, and in order
-`step(what, || ..)`, `check(what, || ..)`, `ask_author("what to do / what to check")`; `phone().sh(..)` and
+`step(what, || ..)`, `check(what, || ..)`, `ask_author("what to do / what to check")`; physical acts named for a bench to do (`press_power`, `hold_button`, `unplug_usb`, `replug_usb`, `touch`, `swipe`, `look_for`, `listen_for`, `confirm`; `bench(impl Bench)` puts a relay, servo or camera on the bench to claim acts, the person does the rest; a dry run lists each doer; `examples/physical.rs`); `phone().sh(..)` and
 `phone().root(..)` run a script on the phone through `lpoco lab phone sh|root` (`LPOCO_ATTENDED_DEVLAB` names another
 program). The first failing step stops the run, is named, and the run exits 1; `ask_author` waits for "ok" (anything
 else stops the run and is logged); `--dry-run` walks the list and touches nothing; `--log FILE` is the log a lane

@@ -4,46 +4,102 @@
 //! back_to_known_good. More come as a second device needs one, each keyed to its bring-up step id and taking its device values from
 //! device.toml / [layer], never hard-coded.
 
+use crate::bench::{self, Act, ActKind};
 use crate::{Kind, Step};
 use std::io::BufRead;
 
 /// The author does something and looks at something ("what to do / what to check"); "ok" goes on, anything
-/// else is what was seen and stops the run; nobody answering stops it too.
+/// else is what was seen and stops the run; nobody answering stops it too. The same as [`confirm`].
 pub fn ask(what: &str) -> Step {
-    let (to_do, to_check) = what
-        .split_once(" / ")
-        .unwrap_or((what, "it went as expected"));
-    let (to_do, to_check) = (to_do.to_string(), to_check.to_string());
-    let name = format!("ask the author: {to_do}");
-    let to_do2 = to_do.clone();
-    Step::new(Kind::Ask, &name, move || {
-        let to_do = to_do2;
-        println!("  ATTENDED - please {to_do}.");
-        println!("  Check that {to_check}. Answer ok, or say what you saw instead:");
-        let mut line = String::new();
-        let mut got = 1;
-        while got > 0 && line.trim().is_empty() {
-            line.clear();
-            got = std::io::stdin().lock().read_line(&mut line).unwrap_or(0);
+    confirm(what)
+}
+
+/// The author's own words, "what to do / what to check", done by the person at the bench (a bench may claim it).
+pub fn confirm(what: &str) -> Step {
+    act(Act::new(ActKind::Confirm(what.to_string()), ""))
+}
+
+/// Press the power button, then check `check`.
+pub fn press_power(check: &str) -> Step {
+    act(Act::new(ActKind::PressPower, check))
+}
+
+/// Hold a button (`"volume down"`) until the check holds.
+pub fn hold_button(button: &str, check: &str) -> Step {
+    act(Act::new(ActKind::HoldButton(button.to_string()), check))
+}
+
+/// Unplug the USB cable.
+pub fn unplug_usb(check: &str) -> Step {
+    act(Act::new(ActKind::UnplugUsb, check))
+}
+
+/// Plug the USB cable back in.
+pub fn replug_usb(check: &str) -> Step {
+    act(Act::new(ActKind::ReplugUsb, check))
+}
+
+/// Touch something on the screen (`"the Settings icon"`).
+pub fn touch(target: &str, check: &str) -> Step {
+    act(Act::new(ActKind::Touch(target.to_string()), check))
+}
+
+/// Swipe (`"up from the bottom edge"`).
+pub fn swipe(way: &str, check: &str) -> Step {
+    act(Act::new(ActKind::Swipe(way.to_string()), check))
+}
+
+/// Look at the phone for something (`"the boot logo"`).
+pub fn look_for(what: &str) -> Step {
+    act(Act::new(ActKind::LookFor(what.to_string()), ""))
+}
+
+/// Listen to the phone for something (`"the ringtone"`).
+pub fn listen_for(what: &str) -> Step {
+    act(Act::new(ActKind::ListenFor(what.to_string()), ""))
+}
+
+/// A physical act as a step: the bench that claims it does it, the person otherwise. The doer is taken now, so put
+/// a [`bench`](crate::bench) on the bench before the steps it should do.
+pub fn act(act: Act) -> Step {
+    let name = act.name();
+    match bench::doer(&act) {
+        Some(b) => {
+            let doer = b.name().to_string();
+            Step::new(Kind::Ask, &name, move || b.do_act(&act)).by(&doer)
         }
-        let answer = line.trim();
-        if got > 0 {
-            crate::note(
-                "asked",
-                &format!("ask the author: {to_do}"),
-                &format!("check: {to_check}; answer: {answer}"),
-            );
-        }
-        if got == 0 {
-            Err("nobody answered".to_string())
-        } else if answer.eq_ignore_ascii_case("ok") {
-            Ok(())
-        } else {
-            Err(format!(
-                "expected that {to_check}, the author saw: {answer}"
-            ))
-        }
-    })
+        None => Step::new(Kind::Ask, &name, move || person(&act)).by(bench::PERSON),
+    }
+}
+
+/// The person is told what to do and what to check, answers `ok` or says what was seen.
+fn person(act: &Act) -> Result<(), String> {
+    let (to_do, to_check) = (act.to_do(), act.to_check());
+    println!("  ATTENDED - please {to_do}.");
+    println!("  Check that {to_check}. Answer ok, or say what you saw instead:");
+    let mut line = String::new();
+    let mut got = 1;
+    while got > 0 && line.trim().is_empty() {
+        line.clear();
+        got = std::io::stdin().lock().read_line(&mut line).unwrap_or(0);
+    }
+    let answer = line.trim();
+    if got > 0 {
+        crate::note(
+            "asked",
+            &act.name(),
+            &format!("check: {to_check}; answer: {answer}"),
+        );
+    }
+    if got == 0 {
+        Err("nobody answered".to_string())
+    } else if answer.eq_ignore_ascii_case("ok") {
+        Ok(())
+    } else {
+        Err(format!(
+            "expected that {to_check}, the author saw: {answer}"
+        ))
+    }
 }
 
 /// The kernel messages that mean the kernel itself is unhappy: an oops, a BUG, a panic, a lockup, a stall.
