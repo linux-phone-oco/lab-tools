@@ -269,7 +269,8 @@ the first dtb: the same files in every format; dependency tokens written the way
 `NAME-boot` (a systemd preset enabling the layer's units, not for apk; the initramfs module list as an initramfs-tools hook,
 a dracut drop-in or a mkinitcpio drop-in; for apk only the mkinitfs module list, as globs under `/lib/modules/KERNEL`, and a scriptlet adding the feature to `mkinitfs.conf` once, depending on `mkinitfs`). With `--kernel-build DIR` (a finished build: `Image`, `kernel.release`, `dtbs/`, optionally `modules/` = the tree for `/usr/lib/modules/RELEASE`) it also writes `linux-NAME` for arm64: `vmlinuz`, the declared dtbs under `dtb/` where kernel-install reads them, and the modules. It builds no kernel; a missing declared dtb, an `Image` or a release that is not one word is refused. Each package's nfpm config is kept beside it. Proof: `layer/tests/pack.rs`
 from fixtures; with nfpm, research `test-layer-apk-and-deb.sh` (docs) passes on a fixture of surya's shape.
-Not yet: building the kernel from `[layer.kernel]` tree and tag (the package takes a finished build), Nura's deviceinfo,
+For apk, `NAME-config` also holds `/etc/deviceinfo` (Nura's override of the device package's deviceinfo, sourced by mkinitfs and boot-deploy) written from `[boot]` and `[device]`: codename, aarch64, header version, generate_bootimg, page size, the flash offsets, the cmdline; a codename or cmdline a shell would run (quote, `$`, backtick, backslash, newline) is refused. Open: current pmaports marks `deviceinfo_kernel_cmdline` obsolete for `/usr/lib/kernel-cmdline.d/*.conf` (not yet confirmed against boot-deploy), and flash_method/dtb are not written.
+Not yet: building the kernel from `[layer.kernel]` tree and tag (the package takes a finished build),
 `export`.
 
 ## lpoco host: the lab host prepared from declarations

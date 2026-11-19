@@ -4,7 +4,8 @@
 //! format's own glue (systemd preset, initramfs module list) in a boot package that apk does not get.
 
 use lpoco_layer::{
-    check, kernel_package, materialize, nfpm_yaml, packages, post_install, stale, Format,
+    add_deviceinfo, check, deviceinfo, kernel_package, materialize, nfpm_yaml, packages,
+    post_install, stale, Format,
 };
 use lpoco_manifest::Manifest;
 use std::fs;
@@ -658,4 +659,121 @@ fn a_link_that_climbs_out_through_another_link_or_a_linked_modules_folder_is_ref
     fs::rename(b.join("modules"), &real).unwrap();
     std::os::unix::fs::symlink(&real, b.join("modules")).unwrap();
     assert!(kernel_package(layer, &b).unwrap_err().contains("is a link"));
+}
+
+const WALLEYE: &str = r#"
+[device]
+codename = "google-walleye"
+
+[boot]
+base = 0
+kernel_offset = 0x00008000
+ramdisk_offset = 0x01000000
+tags_offset = 0x00000100
+pagesize = 4096
+cmdline = "console=ttyMSM0,115200n8 androidboot.hardware=walleye"
+
+[layer]
+name = "google-walleye"
+
+[[layer.file]]
+from = "ucm/HiFi.conf"
+to = "/usr/share/alsa/ucm2/Google/walleye/HiFi.conf"
+kind = "data"
+"#;
+
+#[test]
+fn nura_gets_the_phones_deviceinfo_from_boot_and_the_others_do_not() {
+    let (dir, stage) = fixture("di1");
+    let m = Manifest::parse(WALLEYE).unwrap();
+    let body = deviceinfo(&m)
+        .unwrap()
+        .expect("a [boot] makes a deviceinfo");
+    for want in [
+        "deviceinfo_codename=\"google-walleye\"\n",
+        "deviceinfo_arch=\"aarch64\"\n",
+        "deviceinfo_flash_pagesize=\"4096\"\n",
+        "deviceinfo_flash_offset_base=\"0x00000000\"\n",
+        "deviceinfo_flash_offset_kernel=\"0x00008000\"\n",
+        "deviceinfo_flash_offset_ramdisk=\"0x01000000\"\n",
+        "deviceinfo_flash_offset_tags=\"0x00000100\"\n",
+        "deviceinfo_kernel_cmdline=\"console=ttyMSM0,115200n8 androidboot.hardware=walleye\"\n",
+    ] {
+        assert!(body.contains(want), "{want:?} missing from:\n{body}");
+    }
+    let layer = m.layer.as_ref().unwrap();
+    let mut pkgs = packages(layer, Format::Apk);
+    add_deviceinfo(&mut pkgs, layer, &body);
+    let p = pkgs
+        .iter()
+        .find(|p| p.name == "google-walleye-config")
+        .unwrap();
+    let got: Vec<String> = materialize(p, &dir, &stage)
+        .unwrap()
+        .into_iter()
+        .map(|e| e.dst)
+        .collect();
+    assert!(got.contains(&"/etc/deviceinfo".to_string()), "{got:?}");
+    // no [boot], no deviceinfo
+    let none = Manifest::parse(DEVICE).unwrap();
+    assert_eq!(deviceinfo(&none).unwrap(), None);
+}
+
+#[test]
+fn a_cmdline_a_shell_would_run_is_refused_in_the_deviceinfo() {
+    // deviceinfo is sourced by shell scripts (mkinitfs, boot-deploy): a quote, $, backtick or backslash would run
+    for bad in ["a\\\"b", "a$(id)", "a`id`", "a\\\\b"] {
+        let m = Manifest::parse(&WALLEYE.replace("androidboot.hardware=walleye", bad)).unwrap();
+        let e = deviceinfo(&m).unwrap_err();
+        assert!(e.contains("cmdline"), "{bad}: {e}");
+    }
+}
+
+#[test]
+fn a_codename_a_shell_would_run_is_refused_and_the_file_sources_to_what_is_declared() {
+    for bad in ["x\\\"; id; \\\"", "$(id)", "a b", ""] {
+        let m = Manifest::parse(
+            &WALLEYE.replace("google-walleye\"\n\n[boot]", &format!("{bad}\"\n\n[boot]")),
+        )
+        .unwrap();
+        let e = deviceinfo(&m).unwrap_err();
+        assert!(e.contains("codename"), "{bad}: {e}");
+    }
+    let m = Manifest::parse(WALLEYE).unwrap();
+    let body = deviceinfo(&m).unwrap().unwrap();
+    assert!(
+        body.contains("deviceinfo_flash_offset_second=\"0x00000000\"\n"),
+        "{body}"
+    );
+    assert!(
+        body.contains("deviceinfo_generate_bootimg=\"true\"\n")
+            && body.contains("deviceinfo_header_version=\"0\"\n"),
+        "{body}"
+    );
+    let (dir, _) = fixture("di2");
+    fs::write(dir.join("deviceinfo"), &body).unwrap();
+    let out = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(". \"$1\"; printf '%s|%s' \"$deviceinfo_codename\" \"$deviceinfo_kernel_cmdline\"")
+        .arg("sh")
+        .arg(dir.join("deviceinfo"))
+        .output()
+        .unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        "google-walleye|console=ttyMSM0,115200n8 androidboot.hardware=walleye"
+    );
+}
+
+#[test]
+fn a_layer_without_files_still_gets_its_dependencies_on_the_config_package_that_holds_deviceinfo() {
+    let m = Manifest::parse(
+        "[device]\ncodename = \"google-walleye\"\n[boot]\nkernel_offset = 0x8000\nramdisk_offset = 0x1000000\ntags_offset = 0x100\npagesize = 4096\ncmdline = \"x\"\n[layer]\nname = \"google-walleye\"\nneeds = [\"qrtr\"]\n",
+    )
+    .unwrap();
+    let layer = m.layer.as_ref().unwrap();
+    let mut pkgs = packages(layer, Format::Apk);
+    add_deviceinfo(&mut pkgs, layer, &deviceinfo(&m).unwrap().unwrap());
+    assert_eq!(pkgs[0].name, "google-walleye-config");
+    assert_eq!(pkgs[0].depends, vec!["qrtr".to_string()]);
 }

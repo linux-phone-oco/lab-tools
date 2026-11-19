@@ -151,3 +151,31 @@ fn a_kernel_build_given_is_packed_as_linux_name_for_arm64_and_none_given_makes_n
         "{packed}"
     );
 }
+
+#[test]
+fn apk_packs_the_deviceinfo_from_boot_and_deb_does_not() {
+    let (dir, nfpm) = setup("di", "#!/bin/sh\nexit 0\n");
+    let dev = format!(
+        "[device]\ncodename = \"google-walleye\"\n\n[boot]\nkernel_offset = 0x8000\nramdisk_offset = 0x1000000\ntags_offset = 0x100\npagesize = 4096\ncmdline = \"console=ttyMSM0\"\n{DEVICE}"
+    );
+    fs::write(dir.join("device.toml"), dev).unwrap();
+    let o = pack(&dir, &nfpm, "apk");
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    let conf = fs::read_to_string(dir.join("out/xiaomi-surya-config.nfpm.yaml")).unwrap();
+    assert!(conf.contains("/etc/deviceinfo"), "{conf}");
+    let o = pack(&dir, &nfpm, "deb");
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    let conf = fs::read_to_string(dir.join("out/xiaomi-surya-config.nfpm.yaml")).unwrap();
+    assert!(!conf.contains("/etc/deviceinfo"), "{conf}");
+    // a cmdline a shell would run stops the run before anything is packed
+    fs::write(
+        dir.join("device.toml"),
+        fs::read_to_string(dir.join("device.toml"))
+            .unwrap()
+            .replace("console=ttyMSM0", "a$(id)"),
+    )
+    .unwrap();
+    let o = pack(&dir, &nfpm, "apk");
+    assert_eq!(o.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&o.stderr).contains("cmdline"));
+}
