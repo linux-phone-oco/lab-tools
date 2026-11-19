@@ -17,6 +17,9 @@ on:
       tag:
         description: Release tag to publish (default - the newest lpoco-health-v tag)
         required: false
+      retire:
+        description: Packages to drop from the Pages repository at this run, space separated (packages this repository no longer ships)
+        required: false
 
 permissions:
   contents: read
@@ -71,5 +74,6 @@ jobs:
     uses: linux-package-distribution-oco/conveyor/.github/workflows/alpine.yml@v1
     with:
       tag: ${{ needs.tag.outputs.health }}
+      retire: ${{ inputs.retire }}
     secrets:
       APK_SIGNING_KEY: ${{ secrets.APK_SIGNING_KEY }}
