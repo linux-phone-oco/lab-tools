@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.27.3...lpoco-bringup-v0.28.0) - 2026-11-19
+
+### Added
+
+- *(layer)* apk also writes the cmdline to /usr/lib/kernel-cmdline.d/50-NAME.conf ([#237](https://github.com/linux-phone-oco/lab-tools/pull/237))
+
 ## [0.27.3](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.27.2...lpoco-bringup-v0.27.3) - 2026-11-19
 
 ### Added
