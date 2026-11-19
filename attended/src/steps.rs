@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! The library's steps: small, device-agnostic functions that return a [`Step`]; a lane's procedure only chains
-//! them with its own values. Here: ask, dmesg_clean, check_probe, wait_for_phone, read_dmesg, wait_for_usb. More come as a second device needs one (boot_once,
-//! back_to_known_good), each keyed to its bring-up step id and taking its device values from
+//! them with its own values. Here: ask, dmesg_clean, check_probe, wait_for_phone, read_dmesg, wait_for_usb, boot_once,
+//! back_to_known_good. More come as a second device needs one, each keyed to its bring-up step id and taking its device values from
 //! device.toml / [layer], never hard-coded.
 
 use crate::{Kind, Step};
@@ -155,6 +155,36 @@ pub fn wait_for_usb(id: &str, tries: u32, every: u64) -> Step {
             })
         },
     )
+}
+
+/// Boot the named test kernel once, through devlab's `kernel try` (never around it): devlab refuses an entry with
+/// no try left, reboots, waits for the phone and measures the boot it came to; its output is the step's.
+/// Any later boot is the default again. The name is the kernel's own (lowercase letters, digits, `-`: devlab's
+/// rule, so a `+`, which is systemd-boot's try counter, is refused here before the phone is reached).
+pub fn boot_once(name: &str) -> Step {
+    let name = name.to_string();
+    Step::new(Kind::Do, &format!("boot {name} once"), move || {
+        let word = |c: char| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-';
+        if name.is_empty() || !name.chars().all(word) {
+            return Err(format!(
+                "not a test kernel name: {name:?} (lowercase letters, digits and -)"
+            ));
+        }
+        let out = crate::devlab(&["kernel", "try", &name])?;
+        print!("{out}");
+        Ok::<(), String>(())
+    })
+}
+
+/// Go back to the phone's known good: tell the phone, as root, to reboot, so the default entry (the stock or the
+/// kept kernel; a try is used up) boots. It does not wait: follow it with [`wait_for_phone`], after the phone
+/// has gone down, as that step says.
+pub fn back_to_known_good() -> Step {
+    Step::new(Kind::Do, "reboot into the default kernel", || {
+        crate::phone()
+            .root("set -e\nsync\nsystemd-run --on-active=2 systemctl reboot >/dev/null\necho rebooting\n")
+            .map(|_| ())
+    })
 }
 
 /// The `vendor:product` of every device under a sysfs USB devices folder.

@@ -317,6 +317,36 @@ pub(crate) fn sysfs_usb() -> &'static str {
     &config().sysfs_usb
 }
 
+/// Run devlab itself on this computer (`devlab ARGS`, e.g. `kernel try NAME`): its output when it exits 0, its
+/// output named when it does not. A dry run reaches nothing.
+pub(crate) fn devlab(args: &[&str]) -> Result<String, String> {
+    if config().dry {
+        return Err("dry run: devlab is not reached".into());
+    }
+    let o = Command::new(&config().devlab)
+        .args(args)
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|e| format!("cannot start {}: {e}", config().devlab))?;
+    let out = format!(
+        "{}{}",
+        String::from_utf8_lossy(&o.stdout),
+        String::from_utf8_lossy(&o.stderr)
+    );
+    if o.status.success() {
+        Ok(out)
+    } else {
+        Err(format!(
+            "devlab {} exited {}: {}",
+            args.join(" "),
+            o.status
+                .code()
+                .map_or("by signal".into(), |c| c.to_string()),
+            out.trim()
+        ))
+    }
+}
+
 /// The phone, reached through devlab.
 pub struct Phone(());
 

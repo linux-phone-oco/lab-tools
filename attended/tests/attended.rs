@@ -455,3 +455,126 @@ fn wait_for_usb_sees_a_device_that_arrives_late_refuses_a_bad_id_and_names_an_un
         said(&gone)
     );
 }
+
+/// The library example with `CASE` (and `KERNEL`, where the case reads it) chosen against a stand-in `devlab`
+/// that writes every call's whole command line to dir/args, exits `code` for `kernel try` and runs the phone
+/// script (as `stand_in` does) for the rest.
+fn devlab_calls(dir: &Path, case: &str, kernel: &str, code: u32) -> Output {
+    let devlab = stand_in(dir, "");
+    // every way a script could take down the machine it runs on is a fake that only writes a line
+    let bin = dir.join("phone/bin");
+    for cmd in [
+        "systemd-run",
+        "systemctl",
+        "reboot",
+        "shutdown",
+        "poweroff",
+        "sync",
+    ] {
+        let fake = bin.join(cmd);
+        let fail = if cmd == "systemd-run" {
+            "if [ -e DIR/reboot-fails ]; then exit 1; fi"
+        } else {
+            "true"
+        };
+        let body = format!("#!/bin/sh\necho \"{cmd} $*\" >> DIR/rebooted\n{fail}\n")
+            .replace("DIR", &dir.display().to_string());
+        fs::write(&fake, body).unwrap();
+        assert!(Command::new("chmod")
+            .arg("+x")
+            .arg(&fake)
+            .status()
+            .unwrap()
+            .success());
+    }
+    fs::write(
+        &devlab,
+        format!(
+            "#!/bin/sh\necho \"$*\" >> {args}\ncase \"$1 $2\" in \"kernel try\") echo 'trying once'; exit {code};; esac\nPATH={bin}:$PATH exec sh -s\n",
+            args = dir.join("args").display(),
+            bin = dir.join("phone/bin").display()
+        ),
+    )
+    .unwrap();
+    Command::new("rust-script")
+        .arg(example_named(dir, "library"))
+        .env("CASE", case)
+        .env("KERNEL", kernel)
+        .args(if case.ends_with("-dry") {
+            vec!["--dry-run"]
+        } else {
+            vec![]
+        })
+        .env("LPOCO_ATTENDED_DEVLAB", &devlab)
+        .current_dir(dir)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn boot_once_asks_devlab_for_one_try_of_the_named_kernel_and_names_a_refusal() {
+    let dir = tmp("boot-once");
+    let o = devlab_calls(&dir, "boot-once", "calls4", 0);
+    assert_eq!(o.status.code(), Some(0), "{}", said(&o));
+    assert_eq!(
+        fs::read_to_string(dir.join("args")).unwrap().trim(),
+        "kernel try calls4"
+    );
+    let o = devlab_calls(&tmp("boot-once-refused"), "boot-once", "calls4", 1);
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(1), "{t}");
+    assert!(
+        t.contains("boot calls4 once") && t.contains("trying once"),
+        "{t}"
+    );
+}
+
+#[test]
+fn boot_once_refuses_a_name_devlab_would_not_take_before_reaching_it() {
+    for bad in ["calls+", "Calls", "a b", ""] {
+        let dir = tmp("boot-once-bad");
+        let o = devlab_calls(&dir, "boot-once", bad, 0);
+        let t = said(&o);
+        assert_eq!(o.status.code(), Some(1), "{bad:?}: {t}");
+        assert!(t.contains("not a test kernel name"), "{bad:?}: {t}");
+        assert!(!dir.join("args").exists(), "{bad:?} reached devlab");
+    }
+}
+
+#[test]
+fn back_to_known_good_reboots_the_phone_into_its_default_and_a_dry_run_does_not() {
+    let dir = tmp("back-good");
+    let o = devlab_calls(&dir, "back", "", 0);
+    assert_eq!(o.status.code(), Some(0), "{}", said(&o));
+    assert_eq!(
+        fs::read_to_string(dir.join("args")).unwrap().trim(),
+        "phone root"
+    );
+    assert!(
+        fs::read_to_string(dir.join("rebooted"))
+            .unwrap()
+            .contains("systemctl reboot"),
+        "the phone was not told to reboot"
+    );
+    let dir = tmp("back-good-dry");
+    let o = devlab_calls(&dir, "back-dry", "", 0);
+    assert_eq!(o.status.code(), Some(0), "{}", said(&o));
+    assert!(!dir.join("args").exists(), "a dry run reached devlab");
+    assert!(!dir.join("rebooted").exists());
+}
+
+#[test]
+fn a_reboot_that_was_not_scheduled_fails_the_step_and_a_dry_boot_once_reaches_nothing() {
+    let dir = tmp("back-good-fails");
+    // the stand-in phone is made by the helper, so mark the failure after it: pre-create the marker
+    fs::write(dir.join("reboot-fails"), "").unwrap();
+    let o = devlab_calls(&dir, "back", "", 0);
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(1), "{t}");
+    assert!(t.contains("reboot into the default kernel"), "{t}");
+    let dir = tmp("boot-once-dry");
+    let o = devlab_calls(&dir, "boot-once-dry", "calls4", 0);
+    assert_eq!(o.status.code(), Some(0), "{}", said(&o));
+    assert!(!dir.join("args").exists(), "a dry run reached devlab");
+}
