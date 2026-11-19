@@ -58,6 +58,15 @@ contract! {
         ..Input::EMPTY
     };
 
+    CALL_LIMIT: String = Input {
+        key: "call_limit",
+        ty: Type::String,
+        env: Some(Env::new("LPOCO_ATTENDED_CALL_LIMIT")),
+        arg: Some(Arg { value_name: "SECONDS", ..Arg::long("call-limit") }),
+        summary: "The longest one call to the phone may take, in seconds (no limit when none is given: devlab waits ten minutes or more for a boot); a call past it is cut and fails its step.",
+        ..Input::EMPTY
+    };
+
     SYSFS_USB: String = Input {
         key: "sysfs_usb",
         ty: Type::String,

@@ -92,6 +92,14 @@ contract! {
         ..Input::EMPTY
     };
 
+
+    CALL_LIMIT: String = Input {
+        key: "call_limit",
+        ty: Type::String,
+        arg: Some(Arg { value_name: "SECONDS", ..Arg::long("call-limit") }),
+        summary: "run: the longest one call to the phone may take, in seconds (none when not given).",
+        ..Input::EMPTY
+    };
     PART: String = Input {
         key: "part",
         ty: Type::String,
