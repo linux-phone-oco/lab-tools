@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.32.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.32.0...lpoco-bringup-v0.32.1) - 2026-11-19
+
+### Added
+
+- *(devlab)* kernel try --cmdline boots an installed kernel once with extra options ([#272](https://github.com/linux-phone-oco/lab-tools/pull/272))
+- *(attended)* ship lpoco-attended with the family and refuse a stray word ([#274](https://github.com/linux-phone-oco/lab-tools/pull/274))
+- *(attended)* an optional per-call time limit (--call-limit SECONDS) ([#275](https://github.com/linux-phone-oco/lab-tools/pull/275))
+
 ## [0.32.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.31.1...lpoco-bringup-v0.32.0) - 2026-11-19
 
 ### Added
