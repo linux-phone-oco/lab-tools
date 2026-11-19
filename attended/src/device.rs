@@ -12,7 +12,7 @@ const FILE: &str = "device.toml";
 /// upwards (as devlab finds it). It must parse as the declared manifest and be the named device's: a procedure
 /// for one phone never runs against another's file. Only the schema and the codename are checked here; devlab
 /// judges the rest (its connection) when a step reaches the phone.
-pub fn load(given: Option<&str>, device: &str) -> Result<(PathBuf, Manifest), String> {
+pub fn load(given: Option<&str>, device: &str) -> Result<(PathBuf, Manifest, toml::Value), String> {
     let path = match given {
         Some(p) => PathBuf::from(p),
         None => find_upwards(device)?,
@@ -21,6 +21,7 @@ pub fn load(given: Option<&str>, device: &str) -> Result<(PathBuf, Manifest), St
     let text = std::fs::read_to_string(&path)
         .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
     let m = Manifest::parse(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+    let raw: toml::Value = toml::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
     let codename = m.device.as_ref().map(|d| d.codename.as_str());
     if codename != Some(device) {
         return Err(format!(
@@ -29,7 +30,7 @@ pub fn load(given: Option<&str>, device: &str) -> Result<(PathBuf, Manifest), St
             codename.unwrap_or("no device ([device] codename is missing)")
         ));
     }
-    Ok((path, m))
+    Ok((path, m, raw))
 }
 
 fn find_upwards(device: &str) -> Result<PathBuf, String> {

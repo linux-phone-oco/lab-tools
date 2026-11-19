@@ -5,12 +5,14 @@
 //! projected from these types (`schema()`), committed as `device.schema.json` and checked against them.
 
 pub mod boot;
+pub mod images;
 pub mod layer;
 
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 pub use boot::{Boot, BootGadget, Console, ShellWord};
+pub use images::{Image, Images, ProcValue};
 pub use layer::{
     BootMethod, FileKind, FirmwareMethod, Layer, LayerBoot, LayerFile, LayerFirmware,
     LayerInitramfs, LayerKernel,
@@ -54,6 +56,12 @@ pub struct Manifest {
     pub tools: Option<Tools>,
     /// The kernels `lpoco lab kernel` keeps on the phone beside stock
     pub kernels: Option<Kernels>,
+    /// The images a procedure puts on the phone, by name
+    pub images: Option<Images>,
+    /// Values only one procedure uses, per procedure (a free table of numbers and words)
+    #[serde(default)]
+    pub procedures:
+        std::collections::BTreeMap<String, std::collections::BTreeMap<String, ProcValue>>,
 }
 
 impl Manifest {
@@ -76,6 +84,11 @@ impl Manifest {
                 id.make_ascii_lowercase();
             }
         }
+        if let Some(i) = &m.images {
+            i.validate()?;
+        }
+        images::validate_procedures(&m.procedures)?;
+        m.health.validate()?;
         if let Some(k) = &m.kernels {
             k.validate()?;
         }
@@ -155,6 +168,10 @@ impl Kernels {
 pub struct Tools {
     /// The release of the lpoco family the phone's pieces come from
     pub lpoco: Option<String>,
+    /// The adb program of this lab (adb on the path when none is given)
+    pub adb: Option<String>,
+    /// The fastboot program of this lab (fastboot on the path when none is given)
+    pub fastboot: Option<String>,
 }
 
 /// `devices = "glob"` is the lab's; these are the device's own `[host]` words.
@@ -380,6 +397,12 @@ pub struct Health {
     /// layer's mobile-data check skips once the month has spent it (lpoco-health data)
     #[serde(default)]
     pub data_budget_mb: Option<u64>,
+    /// The battery charge, in mV, below which a procedure that changes the phone does not start
+    #[serde(default)]
+    pub battery_floor_mv: Option<u32>,
+    /// How the battery is read for that floor (needed with it, and only with it)
+    #[serde(default)]
+    pub battery_source: Option<BatterySource>,
     /// Interrupts one 15 s suspended cycle may count in all (the suite check suspend-irq-quiet); unsaid, the
     /// check says not measured: the number comes from a reading of this phone, never a guess
     #[serde(default)]
@@ -463,6 +486,10 @@ pub struct Connection {
     pub user: String,
     /// Addresses to try, in order (USB networking first, as a rule)
     pub addresses: Vec<String>,
+    /// The port the phone's early shell answers on (its telnet port), where it has one
+    pub shell_port: Option<u16>,
+    /// The address that shell answers on, where it is not the first of `addresses`
+    pub shell_address: Option<String>,
 }
 
 /// The tones the lab's ear listens for (`devlab hear`); none named means one on each side. How loud
@@ -608,5 +635,25 @@ impl UserConfig {
             ));
         }
         Ok(())
+    }
+}
+
+/// How `[health] battery_floor_mv` is read.
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, JsonSchema)]
+pub enum BatterySource {
+    /// `fastboot getvar battery-voltage`, while the phone is in the bootloader
+    #[serde(rename = "fastboot-getvar")]
+    FastbootGetvar,
+}
+
+impl Health {
+    fn validate(&self) -> Result<(), String> {
+        match (self.battery_floor_mv, self.battery_source) {
+            (Some(_), None) => {
+                Err("health: battery_floor_mv needs battery_source (how it is read)".into())
+            }
+            (None, Some(_)) => Err("health: battery_source needs battery_floor_mv".into()),
+            _ => Ok(()),
+        }
     }
 }
