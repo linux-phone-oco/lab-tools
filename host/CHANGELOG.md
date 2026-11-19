@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.34.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-host-v0.34.0...lpoco-host-v0.34.1) - 2026-11-19
+
+### Added
+
+- *(attended)* boot_once and back_to_known_good skip when the kernel already runs ([#286](https://github.com/linux-phone-oco/lab-tools/pull/286))
+- *(attended)* run --from STEP skips the steps before it; an --until stop names its --from ([#285](https://github.com/linux-phone-oco/lab-tools/pull/285))
+- *(attended)* a prompt is filed and its answer file read, the terminal answering too ([#284](https://github.com/linux-phone-oco/lab-tools/pull/284))
+- *(attended)* lpoco attended lift flags near-duplicate steps across device repos by body ([#282](https://github.com/linux-phone-oco/lab-tools/pull/282))
+
 ## [0.34.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-host-v0.33.0...lpoco-host-v0.34.0) - 2026-11-19
 
 ### Added
