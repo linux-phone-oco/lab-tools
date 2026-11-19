@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.3](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-health-v0.28.2...lpoco-health-v0.28.3) - 2026-11-19
+
+### Added
+
+- *(bringup)* attended, a library for a lane's attended procedure as a list of named steps ([#243](https://github.com/linux-phone-oco/lab-tools/pull/243))
+
 ## [0.28.2](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-health-v0.28.1...lpoco-health-v0.28.2) - 2026-11-19
 
 ### Other
