@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-layer-v0.24.3...lpoco-layer-v0.25.0) - 2026-11-19
+
+### Added
+
+- *(layer)* lpoco layer pack applies the systemd preset after install, on first install only ([#223](https://github.com/linux-phone-oco/lab-tools/pull/223))
+
 ## [0.24.3](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-layer-v0.24.2...lpoco-layer-v0.24.3) - 2026-11-19
 
 ### Other
