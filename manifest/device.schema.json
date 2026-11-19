@@ -600,7 +600,7 @@
           "default": null
         },
         "usb_id": {
-          "description": "What the phone shows on the host's USB bus when this gadget is up, as `vendor:product` in four hex digits each (`18d1:4ee0`); kept lowercase. A procedure reads it (lpoco-attended wait_for_gadget) instead of carrying it.",
+          "description": "What the phone shows on the host's USB bus when this gadget is up, as `vendor:product` in four hex digits each (`18d1:4ee0`); kept lowercase.",
           "type": [
             "string",
             "null"
