@@ -11,6 +11,7 @@ key = "packaging/alpine/linux-phone-oco-lab-tools-20261117.rsa.pub"
 release = "3.24"        # postmarketOS v26.06, as surya runs it
 repo = "lab-tools"
 archs = ["aarch64"]
+retire = ["sxmo-utils"]   # no longer built or published (lab-tools #214): the conveyor drops it from the pages, once
 
 [site]
 title = "lab-tools packages"
