@@ -325,5 +325,5 @@ tag `lpoco-attended-vX.Y.Z`). `use lpoco_attended::prelude::*;`, then `procedure
 `phone().root(..)` run a script on the phone through `lpoco lab phone sh|root` (`LPOCO_ATTENDED_DEVLAB` names another
 program). The first failing step stops the run, is named, and the run exits 1; `ask_author` waits for "ok" (anything
 else stops the run and is logged); `--dry-run` walks the list and touches nothing; `--log FILE` is the log a lane
-files (appended to). A `Step` is the one step type for this runner and the unattended one; library steps (`steps::`)
+files (appended to). `--until FIRST_PROMPT` runs the steps before the first `ask_author` and stops there with exit 0, never asking, so a keeper runs everything that needs no author; `--part NAME` runs one named part of a procedure (`part()` in the entry file, `unknown_part(name, &[..])` refuses the rest, exit 2; `examples/parts.rs`) - the parts a keeper may run alone hold no prompt and no risky step. A `Step` is the one step type for this runner and the unattended one; library steps (`steps::`)
 return a `Step`. Not covered yet: a step that hangs (no time limit; the log names the step that began).
