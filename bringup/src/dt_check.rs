@@ -8,10 +8,9 @@
 use std::path::Path;
 use std::process::Command;
 
-/// What the container runs: install the tools, run make with the arguments docker passes after the script
+/// What the container runs: run make (the tools are in the image, dt-check/Dockerfile) with the arguments docker passes after the script
 /// (so nothing the caller names is spliced into a shell string), give the output back to the user.
-const SCRIPT: &str =
-    "apk add -q make gcc musl-dev flex bison yamllint py3-dt-schema dtc && make \"$@\"; \
+const SCRIPT: &str = "make \"$@\"; \
 rc=$?; chown -R \"$HOST_UID:$HOST_GID\" /out; exit $rc";
 
 /// `name@sha256:<64 hex>`: an image by digest.
@@ -97,9 +96,24 @@ pub fn docker_args(
     a.extend(make_args.iter().cloned());
     a
 }
+/// The lines of the checker's output that are violations: dtschema names a file and what is wrong with it
+/// (`arch/arm64/boot/dts/qcom/x.dtb: pmic: ... Unevaluated properties are not allowed`). make exits 0 on
+/// these (CHECK_DTBS and the binding examples report them as warnings), so the verdict comes from them.
+/// yamllint's parsable line: `FILE.yaml:LINE:COL: [error] ...`.
+fn yamllint(l: &str) -> bool {
+    l.split_once(".yaml:")
+        .is_some_and(|(_, r)| r.starts_with(|c: char| c.is_ascii_digit()))
+}
 
-/// Run the check; 0 when clean, 1 when the checker (or the container) reports a failure. The container's
-/// own output is passed through, so a schema error is named in it.
+pub fn violations(output: &str) -> Vec<&str> {
+    output
+        .lines()
+        .filter(|l| l.contains(".dtb: ") || l.contains(".yaml: ") || yamllint(l))
+        .collect()
+}
+
+/// Run the check; 0 when clean, 1 when the schema's output names a violation. The container's own output
+/// is passed through. make ending non-zero with no violation named is an error (the setup, not the check).
 pub fn run(
     docker: &str,
     image: &str,
@@ -123,24 +137,52 @@ pub fn run(
         .map_err(|e| format!("{}: {e}", out.display()))?;
     plain_path("--src", &src)?;
     plain_path("--out", &out)?;
-    let args = docker_args(image, &src, &out, &id("-u")?, &id("-g")?, make_args);
-    let st = Command::new(docker)
+    // a fresh --out has no .config, and the dtbs checks stop without one: make defconfig first
+    let mut make_args = make_args.to_vec();
+    if make_args.iter().any(|a| a == "CHECK_DTBS=y") && !out.join(".config").exists() {
+        let at = make_args
+            .iter()
+            .position(|a| !a.contains('='))
+            .unwrap_or(make_args.len());
+        make_args.insert(at, "defconfig".into());
+    }
+    // make skips the check of a dtb already built (the check runs inside its build command): build it again
+    let arch = make_args
+        .iter()
+        .find_map(|a| a.strip_prefix("ARCH="))
+        .unwrap_or("arm64")
+        .to_string();
+    for t in make_args.iter().filter(|a| a.ends_with(".dtb")) {
+        let _ = std::fs::remove_file(out.join(format!("arch/{arch}/boot/dts/{t}")));
+    }
+    let args = docker_args(image, &src, &out, &id("-u")?, &id("-g")?, &make_args);
+    let o = Command::new(docker)
         .args(&args)
-        .status()
+        .output()
         .map_err(|e| format!("cannot run {docker}: {e}"))?;
+    let (so, se) = (
+        String::from_utf8_lossy(&o.stdout),
+        String::from_utf8_lossy(&o.stderr),
+    );
+    print!("{so}");
+    eprint!("{se}");
     let said = make_args.join(" ");
-    match st.code() {
+    let found = format!("{so}\n{se}");
+    let bad = violations(&found);
+    if !bad.is_empty() {
+        println!(
+            "dt-check: failed ({said}): {} violation(s), named above",
+            bad.len()
+        );
+        return Ok(1);
+    }
+    match o.status.code() {
         Some(0) => {
             println!("dt-check: clean ({said})");
             Ok(0)
         }
-        Some(1) | Some(2) => {
-            println!("dt-check: failed ({said}); the checker's lines are above");
-            Ok(1)
-        }
-        Some(70) => Err("the container could not install its tools (apk add)".into()),
         other => Err(format!(
-            "{docker} ended with {other:?} before a verdict (not a check failure)"
+            "{docker} ended with {other:?} and no violation was named: the setup failed, not a check failure (the lines above say why; is the image's toolset complete?)"
         )),
     }
 }
