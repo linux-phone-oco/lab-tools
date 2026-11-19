@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.5](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.29.4...lpoco-bringup-v0.29.5) - 2026-11-19
+
+### Added
+
+- *(health)* suspend cycle --before/--after hooks ([#257](https://github.com/linux-phone-oco/lab-tools/pull/257))
+- *(attended)* --until FIRST_PROMPT and --part NAME ([#259](https://github.com/linux-phone-oco/lab-tools/pull/259))
+
 ## [0.29.4](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.29.3...lpoco-bringup-v0.29.4) - 2026-11-19
 
 ### Added
