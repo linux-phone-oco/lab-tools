@@ -6,7 +6,8 @@ mod cli;
 use argenv_resolve::{InputResolveExt, OnProblems};
 use cli::Contract;
 use lpoco_layer::{
-    check, kernel_package, materialize, nfpm_yaml, packages, post_install, stale, Format,
+    add_deviceinfo, check, deviceinfo, kernel_package, materialize, nfpm_yaml, packages,
+    post_install, stale, Format,
 };
 use lpoco_manifest::Manifest;
 use std::fs;
@@ -65,6 +66,12 @@ fn pack(r: &argenv_resolve::Resolution) -> Result<(), String> {
     let out = std::path::absolute(&out).map_err(|e| format!("{}: {e}", out.display()))?;
     check(layer, format).map_err(|e| format!("{}: {e}", manifest.display()))?;
     let mut pkgs = packages(layer, format);
+    // Nura reads the phone's boot facts from /etc/deviceinfo; the other bases have no such file
+    if format == Format::Apk {
+        if let Some(body) = deviceinfo(&m).map_err(|e| format!("{}: {e}", manifest.display()))? {
+            add_deviceinfo(&mut pkgs, layer, &body);
+        }
+    }
     let kernel_build = Contract::KERNEL_BUILD.get_from(r);
     if let Some(b) = &kernel_build {
         let b = std::path::absolute(b).map_err(|e| format!("{b}: {e}"))?;

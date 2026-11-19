@@ -5,7 +5,7 @@
 //! `NAME-boot` (for apk only the mkinitfs module list and the scriptlet that enables it). Each package is an nfpm
 //! config; nfpm packs it. The dependency token map is `[layer.names.FORMAT]`; the kernel package (`linux-NAME`) is not here yet.
 
-use lpoco_manifest::{BootMethod, FileKind, Layer};
+use lpoco_manifest::{BootMethod, FileKind, Layer, Manifest};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -608,4 +608,76 @@ fn outside_links(build: &Path, root: &Path, dir: &Path) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// Nura's (postmarketOS's) `/etc/deviceinfo`, which overrides the device package's `/usr/share/deviceinfo/deviceinfo` (so it has no format_version, name or manufacturer): the shell-sourced file mkinitfs and boot-deploy read the phone's
+/// boot facts from, written from the manifest's `[boot]` and `[device]`; none when the manifest has no `[boot]`.
+/// Only what the manifest declares is written. Its values are sourced by shell, so a cmdline holding a quote,
+/// `$`, a backtick or a backslash is refused.
+pub fn deviceinfo(m: &Manifest) -> Result<Option<String>, String> {
+    let Some(b) = &m.boot else {
+        return Ok(None);
+    };
+    if let Some(c) = b.cmdline.chars().find(|c| "\"$`\\\n".contains(*c)) {
+        return Err(format!(
+            "[boot] cmdline holds {c:?}: deviceinfo is read by shell scripts, which would run or mangle it"
+        ));
+    }
+    let mut s = String::new();
+    if let Some(d) = &m.device {
+        if !d
+            .codename
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "_-.".contains(c))
+            || d.codename.is_empty()
+        {
+            return Err(format!("[device] codename {:?} is not one word of letters, digits and _ - .: deviceinfo is read by shell scripts", d.codename));
+        }
+        s += &format!("deviceinfo_codename=\"{}\"\n", d.codename);
+    }
+    s += "deviceinfo_arch=\"aarch64\"\n";
+    s += &format!("deviceinfo_header_version=\"{}\"\n", b.header_version);
+    s += "deviceinfo_generate_bootimg=\"true\"\n";
+    s += &format!("deviceinfo_flash_pagesize=\"{}\"\n", b.pagesize);
+    for (k, v) in [
+        ("base", b.base),
+        ("kernel", b.kernel_offset),
+        ("ramdisk", b.ramdisk_offset),
+        ("second", b.second_offset),
+        ("tags", b.tags_offset),
+    ] {
+        s += &format!("deviceinfo_flash_offset_{k}=\"0x{v:08x}\"\n");
+    }
+    s += &format!("deviceinfo_kernel_cmdline=\"{}\"\n", b.cmdline);
+    Ok(Some(s))
+}
+
+/// Puts `/etc/deviceinfo` into `NAME-config` (made when the layer declares no file).
+pub fn add_deviceinfo(pkgs: &mut Vec<Package>, layer: &Layer, body: &str) {
+    let name = &layer.name;
+    let item = Item {
+        source: Source::Text(body.to_string()),
+        dst: "/etc/deviceinfo".into(),
+        mode: 0o644,
+        config: false,
+    };
+    let want = format!("{name}-config");
+    match pkgs.iter_mut().find(|p| p.name == want) {
+        Some(p) => p.items.push(item),
+        None => pkgs.insert(
+            0,
+            Package {
+                arch: None,
+                name: want,
+                description: format!("{name}: device configuration"),
+                depends: layer
+                    .needs
+                    .iter()
+                    .map(|n| named(layer, Format::Apk, n))
+                    .collect(),
+                items: vec![item],
+                post_install: None,
+            },
+        ),
+    }
 }
