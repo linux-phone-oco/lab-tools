@@ -67,6 +67,23 @@ contract! {
         ..Input::EMPTY
     };
 
+    ANSWER_LIMIT: String = Input {
+        key: "answer_limit",
+        ty: Type::String,
+        env: Some(Env::new("LPOCO_ATTENDED_ANSWER_LIMIT")),
+        arg: Some(Arg { value_name: "SECONDS", ..Arg::long("answer-limit") }),
+        summary: "The longest a prompt waits for the author, in seconds, when the terminal has nothing to give (input ended, or a keeper with no terminal): the answer file is waited for that long; none: an ended input is nobody answering.",
+        ..Input::EMPTY
+    };
+
+    PROMPT_DIR: String = Input {
+        key: "prompt_dir",
+        ty: Type::String,
+        env: Some(Env::new("LPOCO_ATTENDED_PROMPT_DIR")),
+        summary: "Where a pending prompt is filed (~/.cache/lpoco-attended when none is given): DIR/DEVICE/prompt says what to do and check, DIR/DEVICE/answer is read, the first line the answer and an optional 'by: NAME' line who wrote it; the terminal answers too, whichever comes first.",
+        ..Input::EMPTY
+    };
+
     SYSFS_USB: String = Input {
         key: "sysfs_usb",
         ty: Type::String,

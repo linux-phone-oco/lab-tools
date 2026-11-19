@@ -104,6 +104,14 @@ contract! {
         ..Input::EMPTY
     };
 
+    ANSWER_LIMIT: String = Input {
+        key: "answer_limit",
+        ty: Type::String,
+        arg: Some(Arg { value_name: "SECONDS", ..Arg::long("answer-limit") }),
+        summary: "run: the longest a prompt waits for the author when the terminal has nothing to give (the answer file is waited for).",
+        ..Input::EMPTY
+    };
+
 
     CALL_LIMIT: String = Input {
         key: "call_limit",

@@ -27,6 +27,7 @@ pub mod bench;
 pub mod call;
 mod cli;
 mod device;
+pub(crate) mod prompt;
 pub mod steps;
 mod values;
 pub use values::Val;
@@ -164,6 +165,10 @@ struct Config {
     sysfs_usb: String,
     /// the longest one call to the phone may take; none unless asked for
     call_limit: Option<std::time::Duration>,
+    /// where a pending prompt is filed and its answer file read: DIR/DEVICE
+    prompt_files: prompt::Files,
+    /// the longest a prompt waits for the author when the terminal has nothing to give; none unless asked for
+    answer_limit: Option<std::time::Duration>,
     name: String,
 }
 
@@ -310,10 +315,24 @@ pub fn procedure(name: &str, device: &str) -> Run {
     let sysfs_usb = cli::Contract::SYSFS_USB
         .get_from(&r)
         .unwrap_or_else(|| "/sys/bus/usb/devices".into());
-    let call_limit = call_limit(cli::Contract::CALL_LIMIT.get_from(&r)).unwrap_or_else(|e| {
-        eprintln!("{name}: {e}");
-        std::process::exit(2)
-    });
+    let call_limit = seconds("--call-limit", cli::Contract::CALL_LIMIT.get_from(&r))
+        .unwrap_or_else(|e| {
+            eprintln!("{name}: {e}");
+            std::process::exit(2)
+        });
+    let answer_limit = seconds("--answer-limit", cli::Contract::ANSWER_LIMIT.get_from(&r))
+        .unwrap_or_else(|e| {
+            eprintln!("{name}: {e}");
+            std::process::exit(2)
+        });
+    let prompt_base = cli::Contract::PROMPT_DIR
+        .get_from(&r)
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
+                .join(".cache/lpoco-attended")
+        });
+    let prompt_files = prompt::Files::new(prompt::dir_for(&prompt_base, device));
     let c = Config {
         dry,
         until_first_prompt,
@@ -324,6 +343,8 @@ pub fn procedure(name: &str, device: &str) -> Run {
         devlab,
         sysfs_usb,
         call_limit,
+        prompt_files,
+        answer_limit,
         name: name.to_string(),
     };
     CONFIG.set(c).ok().expect("procedure() is called once");
@@ -559,21 +580,25 @@ pub(crate) fn declared<T>(
     })
 }
 
+/// Ask the person one prompt: the terminal and the answer file, whichever answers first.
+pub(crate) fn ask_person(p: &prompt::Prompt) -> Result<prompt::Answer, String> {
+    let c = config();
+    prompt::ask(&c.prompt_files, p, c.answer_limit)
+}
+
 pub(crate) fn sysfs_usb() -> &'static str {
     &config().sysfs_usb
 }
 
-/// The call limit, parsed at the edge: whole seconds, at least one; none when none is given (a call waits as
+/// A limit in seconds, parsed at the edge: whole seconds, at least one; none when none is given (a call waits as
 /// long as devlab does: its own boot wait is ten minutes and more).
-fn call_limit(given: Option<String>) -> Result<Option<std::time::Duration>, String> {
+fn seconds(flag: &str, given: Option<String>) -> Result<Option<std::time::Duration>, String> {
     let Some(s) = given else {
         return Ok(None);
     };
     match s.trim().parse::<u64>() {
         Ok(n) if n >= 1 => Ok(Some(std::time::Duration::from_secs(n))),
-        _ => Err(format!(
-            "--call-limit wants whole seconds, at least 1; got '{s}'"
-        )),
+        _ => Err(format!("{flag} wants whole seconds, at least 1; got '{s}'")),
     }
 }
 
