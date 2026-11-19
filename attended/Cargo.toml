@@ -14,3 +14,11 @@ name = "lpoco_attended"
 argenv-resolve = "0.4"
 # the device manifest a procedure names: its values are read from the same declared tables every lpoco program reads
 lpoco-manifest = { path = "../manifest" }
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+
+# the front door of a device repo's procedures: `lpoco attended new|run|check`
+[[bin]]
+name = "lpoco-attended"
+path = "src/bin/lpoco-attended/main.rs"
+
