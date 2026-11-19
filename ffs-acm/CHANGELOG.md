@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.32.2](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-ffs-acm-v0.32.1...lpoco-ffs-acm-v0.32.2) - 2026-11-19
+
+### Added
+
+- *(attended)* check --host runs the installed devlab on the manifest ([#276](https://github.com/linux-phone-oco/lab-tools/pull/276))
+
 ## [0.32.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-ffs-acm-v0.32.0...lpoco-ffs-acm-v0.32.1) - 2026-11-19
 
 ### Added
