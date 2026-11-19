@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.2](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-tone-v0.28.1...lpoco-tone-v0.28.2) - 2026-11-19
+
+### Other
+
+- *(bringup)* the bisect test decodes the kernel frame without the dtb behind it ([#241](https://github.com/linux-phone-oco/lab-tools/pull/241))
+
 ## [0.28.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-tone-v0.28.0...lpoco-tone-v0.28.1) - 2026-11-19
 
 ### Other
