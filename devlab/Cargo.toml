@@ -1,7 +1,7 @@
 [package]
 name = "lpoco-lab"
 # the family is released together: one version (release-plz.toml, version_group)
-version = "0.23.0"
+version = "0.24.0"
 edition = "2021"
 description = "The device lab for Linux phones: reach a phone, try a kernel, test - for any device, from its manifest"
 license = "MIT OR Apache-2.0"

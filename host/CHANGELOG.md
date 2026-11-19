@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-host-v0.23.0...lpoco-host-v0.24.0) - 2026-11-19
+
+### Added
+
+- *(manifest)* [layer] table - files, dependency tokens, kernel, boot, firmware, early modules ([#212](https://github.com/linux-phone-oco/lab-tools/pull/212))
+
 ## [0.23.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-host-v0.22.2...lpoco-host-v0.23.0) - 2026-11-19
 
 ### Added
