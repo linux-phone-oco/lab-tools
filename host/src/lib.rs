@@ -763,6 +763,16 @@ pub enum Step {
         from: String,
         to: String,
     },
+    /// fetch a release asset and its `.sha256`, install it at `to` only when the hash matches; when the release
+    /// has no asset, run `fallback` instead (a wrong hash never falls back)
+    Release {
+        url: String,
+        sha_url: String,
+        to: String,
+        /// the same file under the program's old names (devlab is a second binary of lpoco-lab)
+        also: Vec<String>,
+        fallback: Vec<String>,
+    },
     /// record the rev a script tool was installed at, so a later plan judges it by that and not by `--version`
     Stamp {
         to: String,
@@ -775,6 +785,16 @@ impl Step {
         match self {
             Step::Run(a) => a.join(" "),
             Step::Copy { from, to } => format!("install -m 0755 {from} {to}"),
+            Step::Release {
+                url,
+                sha_url,
+                to,
+                also: _,
+                fallback,
+            } => format!(
+                "fetch {url} (hash from {sha_url}) to {to}, else {}",
+                fallback.join(" ")
+            ),
             Step::Stamp { to, rev } => format!("echo {rev} > {to}"),
         }
     }
@@ -834,13 +854,14 @@ pub fn family_tag(program: &str, version: &str) -> String {
     format!("{program}-v{version}")
 }
 
-/// `found` is the version a program reports, `stamp` the rev a script tool's install recorded, `on_path` whether a program is on PATH.
+/// `release_base`: where a tag's release assets are (None when this host fits no asset, so cargo builds). `found` is the version a program reports, `stamp` the rev a script tool's install recorded, `on_path` whether a program is on PATH.
 pub fn tools_for(
     lab: &Lab,
     home: &str,
     found: &dyn Fn(&str) -> Option<String>,
     stamp: &dyn Fn(&str) -> Option<String>,
     on_path: &dyn Fn(&str) -> bool,
+    release_base: Option<&str>,
 ) -> Vec<ToolPlan> {
     let mut plans = Vec::new();
     for (name, pin) in &lab.tools {
@@ -854,8 +875,8 @@ pub fn tools_for(
                         installed_by: None,
                         by_rev: false,
                         on_path: false,
-                        steps: vec![Step::Run(
-                            [
+                        steps: {
+                            let build = [
                                 "cargo",
                                 "install",
                                 "--locked",
@@ -866,10 +887,12 @@ pub fn tools_for(
                                 p,
                                 "--root",
                                 &format!("{home}/.local"),
+                                "--force",
                             ]
                             .map(String::from)
-                            .to_vec(),
-                        )],
+                            .to_vec();
+                            release_steps(home, p, v, release_base, build)
+                        },
                     });
                 }
                 for (old, from) in OLD_NAMES {
@@ -1416,4 +1439,43 @@ fn sets_mode_0666(line: &str) -> bool {
         rest = &rest[i + 4..];
     }
     false
+}
+
+/// The file a release attaches for a program: `NAME-x86_64-unknown-linux-gnu`, with `.sha256` beside it.
+pub const ASSET_TARGET: &str = "x86_64-unknown-linux-gnu";
+
+/// Whether a release has an asset for this host at all: the family's assets are x86_64 Linux only.
+pub fn asset_fits(os: &str, arch: &str) -> bool {
+    os == "linux" && arch == "x86_64" && cfg!(target_env = "gnu")
+}
+
+/// The steps that install a family program at a version: its release asset checked against its hash, cargo when
+/// there is none (`build` is the cargo command), or cargo alone when this host fits no asset.
+fn release_steps(
+    home: &str,
+    program: &str,
+    version: &str,
+    release_base: Option<&str>,
+    build: Vec<String>,
+) -> Vec<Step> {
+    let Some(base) = release_base else {
+        return vec![Step::Run(build)];
+    };
+    let url = format!(
+        "{}/{}/{program}-{ASSET_TARGET}",
+        base.trim_end_matches('/'),
+        family_tag(program, version)
+    );
+    let also = OLD_NAMES
+        .iter()
+        .filter(|(_, from)| *from == program)
+        .map(|(old, _)| format!("{home}/.local/bin/{old}"))
+        .collect();
+    vec![Step::Release {
+        sha_url: format!("{url}.sha256"),
+        url,
+        to: format!("{home}/.local/bin/{program}"),
+        also,
+        fallback: build,
+    }]
 }

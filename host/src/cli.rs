@@ -79,6 +79,14 @@ contract! {
         ..Input::EMPTY
     };
 
+    RELEASE_BASE: String = Input {
+        key: "release_base",
+        ty: Type::String,
+        env: Some(Env::new("LPOCO_RELEASE_BASE")),
+        summary: "Where the family's release assets are (the GitHub releases of lab-tools when none is given): a tag's folder holds NAME-x86_64-unknown-linux-gnu and its .sha256. A file:// folder serves tests.",
+        ..Input::EMPTY
+    };
+
     HOME: String = Input {
         key: "home",
         ty: Type::String,

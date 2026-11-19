@@ -1,0 +1,81 @@
+name: Assets
+
+# The family's x86_64 programs as release assets (decision 2026-11-19-host-follows-releases (a)): after a Release
+# run, when the commit carries an lpoco-vX.Y.Z tag, the programs are built once at that tag and each is attached to
+# its own release NAME-vX.Y.Z as NAME-x86_64-unknown-linux-gnu with NAME-x86_64-unknown-linux-gnu.sha256 beside it.
+# `lpoco host prepare` fetches them, checks the hash and falls back to `cargo install` when an asset is missing
+# (host/src/main.rs install_release). The family shares one version (release-plz.toml version_group), so one build
+# serves every tag.
+on:
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Family tag to attach assets to (default - the lpoco-v tag on main's head)
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: assets-${{ github.event.workflow_run.head_sha || github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  assets:
+    name: build and attach
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TARGET: x86_64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - name: which release?
+        id: tag
+        env:
+          TAG_IN: ${{ inputs.tag }}
+        run: |
+          tag="$TAG_IN"
+          if [ -z "$tag" ]; then
+            tag=$(git tag --points-at HEAD --list 'lpoco-v*' | head -n 1)
+          fi
+          if [ -z "$tag" ]; then
+            echo "no lpoco-v tag on this commit: nothing released, nothing to attach"
+            echo "version=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! printf '%s\n' "$tag" | grep -Eqx 'lpoco-v[0-9]+\.[0-9]+\.[0-9]+'; then
+            echo "not a family tag: $tag"
+            exit 1
+          fi
+          git checkout --quiet "$tag"
+          echo "version=${tag#lpoco-v}" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.tag.outputs.version != ''
+      - name: build
+        if: steps.tag.outputs.version != ''
+        run: |
+          cargo build --release --locked --target "$TARGET" \
+            -p lpoco -p lpoco-lab -p lpoco-bringup -p lpoco-health -p lpoco-host -p lpoco-tone -p lpoco-attended
+      - name: attach
+        if: steps.tag.outputs.version != ''
+        env:
+          V: ${{ steps.tag.outputs.version }}
+        run: |
+          v="$V"
+          mkdir -p dist
+          for p in lpoco lpoco-lab lpoco-bringup lpoco-health lpoco-host lpoco-tone lpoco-attended; do
+            f="$p-$TARGET"
+            cp "target/$TARGET/release/$p" "dist/$f"
+            (cd dist && sha256sum "$f" > "$f.sha256")
+            # the hash first: a host that fetches between the two sees a missing asset hash, never a stale one
+            gh release upload "$p-v$v" "dist/$f.sha256" --clobber
+            gh release upload "$p-v$v" "dist/$f" --clobber
+          done
