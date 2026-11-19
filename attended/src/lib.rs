@@ -192,6 +192,8 @@ struct State {
 static CONFIG: OnceLock<Config> = OnceLock::new();
 /// whether the entry file asked for its part: a `--part` it never looks at must not run the whole procedure
 static PART_ASKED: AtomicBool = AtomicBool::new(false);
+static NEXT_GROUP: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 static STATE: Mutex<State> = Mutex::new(State {
     log: None,
     n: 0,
@@ -204,9 +206,9 @@ static STATE: Mutex<State> = Mutex::new(State {
 
 thread_local! {
     /// the way backs of the groups now open that no step has started yet (a group skipped whole owes none)
-    static PENDING: std::cell::RefCell<Vec<Option<Step>>> = const { std::cell::RefCell::new(Vec::new()) };
-    /// the way backs owed: a step of their group has begun; run in reverse order when the run fails
-    static OWED: std::cell::RefCell<Vec<Step>> = const { std::cell::RefCell::new(Vec::new()) };
+    static PENDING: std::cell::RefCell<Vec<(u64, Option<Step>)>> = const { std::cell::RefCell::new(Vec::new()) };
+    /// the way backs owed, each with the id of its group: a step of the group has begun; run in reverse order when the run fails
+    static OWED: std::cell::RefCell<Vec<(u64, Step)>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
 fn config() -> &'static Config {
@@ -542,6 +544,7 @@ pub struct Group {
     name: String,
     items: Vec<Item>,
     way_back: Option<Step>,
+    settles: bool,
 }
 
 /// A named group of steps (or of groups): `run_group(group("reach the phone", [a, b]))`. A mix of steps and groups
@@ -551,6 +554,7 @@ pub fn group<I: Into<Item>>(name: &str, items: impl IntoIterator<Item = I>) -> G
         name: name.to_string(),
         items: items.into_iter().map(Into::into).collect(),
         way_back: None,
+        settles: false,
     }
 }
 
@@ -558,12 +562,21 @@ impl Group {
     /// What to do when the run fails after this group's first step began: the step runs once, after the failing
     /// step, with the way backs of the other groups open or finished, the last to begin first. A run that passes
     /// runs none; a group skipped whole by `--from` owes none; a way back that fails is named and the others
-    /// still run. A group that has finished still owes its way back (a later group that undoes it, like
-    /// `leave_known_good`, does not cancel it); `--until FIRST_PROMPT` runs none, and `--from` arms the group again at
+    /// still run. A group that has finished still owes its way back until a later [`Group::settling`] group
+    /// (like `leave_known_good`) has passed; `--until FIRST_PROMPT` runs none, and `--from` arms the group again at
     /// its first step run. A step that panics counts as failed; so does a key `dev()` or a step needs that
     /// device.toml lacks (exit 2).
     pub fn way_back(mut self, back: Step) -> Group {
         self.way_back = Some(back);
+        self
+    }
+
+    /// This group puts the phone back (like `leave_known_good`): once all its steps have passed, the way backs of the
+    /// groups that finished before it (at any depth) are settled, and a later failure runs none of them, nor this
+    /// group's own. The way backs of groups
+    /// still open around it stay owed. A failing step in this group settles nothing: every way back owed runs.
+    pub fn settling(mut self) -> Group {
+        self.settles = true;
         self
     }
 }
@@ -585,6 +598,11 @@ pub fn run_group(g: Group) {
         .way_back
         .as_ref()
         .map_or(String::new(), |b| format!(" (way back: {})", b.name));
+    let back = if g.settles {
+        format!("{back} (settles the way backs of finished groups)")
+    } else {
+        back
+    };
     println!("{indent}group: {}{back}", g.name);
     let path = label(
         &STATE.lock().unwrap_or_else(|e| e.into_inner()).groups,
@@ -603,7 +621,8 @@ pub fn run_group(g: Group) {
         .unwrap_or_else(|e| e.into_inner())
         .groups
         .push(g.name);
-    PENDING.with(|p| p.borrow_mut().push(g.way_back));
+    let id = NEXT_GROUP.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    PENDING.with(|p| p.borrow_mut().push((id, g.way_back)));
     for item in g.items {
         match item {
             Item::Step(s) => run_step(s),
@@ -611,6 +630,9 @@ pub fn run_group(g: Group) {
         }
     }
     PENDING.with(|p| p.borrow_mut().pop());
+    if g.settles {
+        settle_finished();
+    }
     STATE.lock().unwrap_or_else(|e| e.into_inner()).groups.pop();
 }
 
@@ -626,9 +648,20 @@ fn label(groups: &[String], name: &str) -> String {
 
 /// A step is about to begin: the way backs of the groups it is in are owed from now on.
 fn arm_way_backs() {
-    let armed: Vec<Step> =
-        PENDING.with(|p| p.borrow_mut().iter_mut().filter_map(Option::take).collect());
+    let armed: Vec<(u64, Step)> = PENDING.with(|p| {
+        p.borrow_mut()
+            .iter_mut()
+            .filter_map(|(id, back)| Some((*id, back.take()?)))
+            .collect()
+    });
     OWED.with(|o| o.borrow_mut().extend(armed));
+}
+
+/// A settling group has passed: the way backs owed by groups no longer open (the ones that finished before it,
+/// whatever their depth, and its own) are settled; those of the groups still open around it stay owed.
+fn settle_finished() {
+    let open: Vec<u64> = PENDING.with(|p| p.borrow().iter().map(|(id, _)| *id).collect());
+    OWED.with(|o| o.borrow_mut().retain(|(owner, _)| open.contains(owner)));
 }
 
 /// End the run that failed: run the way backs owed, the last owed first, then exit 1.
@@ -639,7 +672,7 @@ fn leave_failed() -> ! {
 /// End the run with `code` after the way backs owed (a run that cannot go on, exit 2, leaves the phone as a failed one does).
 pub(crate) fn leave_with(code: i32) -> ! {
     let owed = OWED.with(|o| std::mem::take(&mut *o.borrow_mut()));
-    for back in owed.into_iter().rev() {
+    for (_, back) in owed.into_iter().rev() {
         let name = back.name.clone();
         println!("way back: {name}");
         note("way-back", &name, "begin");

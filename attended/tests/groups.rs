@@ -222,7 +222,7 @@ fn phone_ready_and_leave_known_good_are_groups_whose_kernels_come_from_device_to
         "  check 2: the phone answers - dry run, not run",
         "  check 3: the shell answers - dry run, not run",
         "check 4: the driver is bound - dry run, not run",
-        "group: leave the phone on its known good",
+        "group: leave the phone on its known good (settles the way backs of finished groups)",
         "  step 5: reboot into the default kernel (kept: mainline) - dry run, not run",
         "  check 6: the phone goes down - dry run, not run",
         "  check 7: the phone answers - dry run, not run",
@@ -256,4 +256,49 @@ fn a_step_that_panics_still_runs_the_way_backs_owed_and_exits_1() {
         log.contains("PANIC") && log.contains("FAIL"),
         "the panic is not in the log:\n{log}"
     );
+}
+
+#[test]
+fn a_settling_group_that_finished_leaves_the_way_backs_of_finished_groups_settled() {
+    let dir = tmp("settled");
+    fs::write(dir.join("settle-here"), "").unwrap();
+    fs::write(dir.join("fail-after"), "").unwrap();
+    let (o, said, log) = run(&dir, &[]);
+    assert_eq!(o.status.code(), Some(1), "{said}");
+    assert!(said.contains("work after settling"), "{said}");
+    assert_eq!(
+        waybacks(&dir),
+        "",
+        "a way back ran after the phone was put back: {said}"
+    );
+    assert!(!log.contains("way-back"), "{log}");
+}
+
+#[test]
+fn a_settling_group_that_failed_settles_nothing() {
+    let dir = tmp("settle-failed");
+    fs::write(dir.join("settle-here"), "").unwrap();
+    fs::write(dir.join("fail-settling"), "").unwrap();
+    let (o, said, _) = run(&dir, &[]);
+    assert_eq!(o.status.code(), Some(1), "{said}");
+    assert_eq!(waybacks(&dir), "inner\nouter\n", "{said}");
+}
+
+#[test]
+fn without_a_settling_group_a_later_failure_still_runs_the_way_backs_of_finished_groups() {
+    let dir = tmp("not-settled");
+    fs::write(dir.join("fail-here"), "").unwrap();
+    let (o, said, _) = run(&dir, &[]);
+    assert_eq!(o.status.code(), Some(1), "{said}");
+    assert_eq!(waybacks(&dir), "inner\nouter\n", "{said}");
+}
+
+#[test]
+fn a_settling_group_nested_deeper_settles_the_finished_groups_but_not_the_open_one_around_it() {
+    let dir = tmp("settle-nested");
+    fs::write(dir.join("settle-nested"), "").unwrap();
+    fs::write(dir.join("fail-after"), "").unwrap();
+    let (o, said, _) = run(&dir, &[]);
+    assert_eq!(o.status.code(), Some(1), "{said}");
+    assert_eq!(waybacks(&dir), "wrapper\n", "{said}");
 }
