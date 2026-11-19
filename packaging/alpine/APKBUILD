@@ -2,6 +2,7 @@
 # and their words, and the timer that runs them 120 s after every boot. A phone's own checks and what its
 # manifest expects of it (/etc/lpoco-health/health.env) are the lab's, put by devlab. Published by the package
 # conveyor (packaging/conveyor.toml): pkgver and the checksums are filled in for each release tag.
+# Origin: written in this repository (linux-phone-oco/lab-tools), source at the release tag below
 pkgname=lpoco-health
 pkgver=0.1.0
 pkgrel=0
