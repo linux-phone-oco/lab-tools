@@ -10,6 +10,9 @@ use std::collections::HashMap;
 /// A device that has sat connected this long, with nothing after it, is not coming up any more.
 pub const SETTLE_SECONDS: u64 = 60;
 
+/// How far before the try the host's log is read, so a phone that never left the bus is still seen.
+pub const LOOKBACK_SECONDS: u64 = 3600;
+
 /// How the phone is recognised on the host's bus: `[[host.gadget]]` usb_id and serial.
 pub struct Wanted<'a> {
     pub usb_id: &'a str,
@@ -28,7 +31,7 @@ pub enum Timeline {
 
 #[derive(Debug, PartialEq)]
 enum Event {
-    Connect { device: u32, at: u64 },
+    Connect { port: String, device: u32, at: u64 },
     Disconnect { at: u64 },
 }
 
@@ -42,7 +45,7 @@ fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
     era * 146097 + doe - 719468
 }
 
-/// Seconds since the epoch of a `short-iso` stamp (`2026-11-19T14:25:41+0000`, read as UTC: the log is asked with --utc).
+/// Seconds since the epoch of a `short-iso` stamp (`2026-11-19T14:25:41+00:00`, read as UTC: the log is asked with --utc).
 fn stamp(line: &str) -> Option<(u64, &str)> {
     let (when, rest) = line.split_once(' ')?;
     let n = |a: usize, b: usize| when.get(a..b)?.parse::<i64>().ok();
@@ -94,14 +97,18 @@ pub fn read(journal: &str, wanted: &Wanted, until: u64) -> Timeline {
             );
             if let (true, Some(&(device, seen))) = (id == wanted.usb_id, announced.get(port)) {
                 ours.insert(port, device);
-                events.push(Event::Connect { device, at: seen });
+                events.push(Event::Connect {
+                    port: port.to_string(),
+                    device,
+                    at: seen,
+                });
             }
         } else if let Some(serial) = msg.strip_prefix("SerialNumber: ") {
             if let Some(device) = ours.get(port).copied() {
                 if serial.trim() != wanted.serial {
                     ours.remove(port);
                     events
-                        .retain(|e| !matches!(e, Event::Connect { device: d, .. } if *d == device));
+                        .retain(|e| !matches!(e, Event::Connect { port: p, device: d, .. } if p == port && *d == device));
                 }
             }
         } else if let Some(n) = msg.strip_prefix("USB disconnect, device number ") {
@@ -120,7 +127,7 @@ fn verdict(events: &[Event], until: u64) -> Timeline {
     match events.last() {
         None => Timeline::Absent { gone_at: None },
         Some(Event::Disconnect { at }) => Timeline::Absent { gone_at: Some(*at) },
-        Some(Event::Connect { device, at }) if until.saturating_sub(*at) > SETTLE_SECONDS => {
+        Some(Event::Connect { device, at, .. }) if until.saturating_sub(*at) > SETTLE_SECONDS => {
             Timeline::Frozen {
                 device: *device,
                 since: *at,
@@ -184,6 +191,22 @@ pub fn now() -> u64 {
         .map_or(0, |d| d.as_secs())
 }
 
+/// The verdict for gadget `g` from a journal: a journal with no kernel line at all is not known, never an absent phone.
+fn describe(g: &lpoco_manifest::Gadget, journal: &str, until: u64) -> String {
+    let usb_id = g.usb_id.as_deref().unwrap_or_default();
+    if !journal.contains(" kernel: ") {
+        return format!("host USB timeline ({usb_id}): not known yet - the host's kernel log holds no line in the window");
+    }
+    let wanted = Wanted {
+        usb_id,
+        serial: &g.serial,
+    };
+    format!(
+        "host USB timeline ({usb_id}): {}",
+        say(&read(journal, &wanted, until))
+    )
+}
+
 /// What the host saw of the phone since `since`, in words: its kernel log read for the first declared
 /// gadget with a usb_id (times passed as arguments, never in a shell string). Read-only; a log that
 /// cannot be read is said so, never taken for an absent phone.
@@ -193,23 +216,15 @@ pub fn report(gadgets: &[lpoco_manifest::Gadget], since: u64) -> String {
             .into();
     };
     let until = now();
+    // from an hour before the try: a phone that froze before it left the bus has its connect line there
+    let since = since.saturating_sub(LOOKBACK_SECONDS);
     let out = Command::new("journalctl")
         .args(["-k", "--utc", "-o", "short-iso", "--no-pager"])
         .arg(format!("--since=@{since}"))
         .arg(format!("--until=@{until}"))
         .output();
     match out {
-        Ok(o) if o.status.success() => {
-            let usb_id = g.usb_id.as_deref().unwrap_or_default();
-            let wanted = Wanted {
-                usb_id,
-                serial: &g.serial,
-            };
-            format!(
-                "host USB timeline ({usb_id}): {}",
-                say(&read(&String::from_utf8_lossy(&o.stdout), &wanted, until))
-            )
-        }
+        Ok(o) if o.status.success() => describe(g, &String::from_utf8_lossy(&o.stdout), until),
         Ok(o) => format!(
             "host USB timeline: not known yet - journalctl said {}",
             String::from_utf8_lossy(&o.stderr)
@@ -237,20 +252,20 @@ mod tests {
 
     fn enumerated(at: &str, device: u32) -> String {
         format!(
-            "{at}+0000 lab kernel: usb 3-1: new high-speed USB device number {device} using xhci_hcd\n\
-             {at}+0000 lab kernel: usb 3-1: New USB device found, idVendor=18d1, idProduct=d001, bcdDevice= 7.01\n\
-             {at}+0000 lab kernel: usb 3-1: SerialNumber: surya-lab\n"
+            "{at}+00:00 lab kernel: usb 3-1: new high-speed USB device number {device} using xhci_hcd\n\
+             {at}+00:00 lab kernel: usb 3-1: New USB device found, idVendor=18d1, idProduct=d001, bcdDevice= 7.01\n\
+             {at}+00:00 lab kernel: usb 3-1: SerialNumber: surya-lab\n             {at}+00:00 lab kernel: usb 3-1: Product: surya\n"
         )
     }
     fn left(at: &str, device: u32) -> String {
-        format!("{at}+0000 lab kernel: usb 3-1: USB disconnect, device number {device}\n")
+        format!("{at}+00:00 lab kernel: usb 3-1: USB disconnect, device number {device}\n")
     }
 
     /// The host's journal of 2026-11-19 14:25-14:48 (surya-lab research
     /// 2026-11-19-calls4-hang-was-the-reboot-out-of-calls-plus): d001 at 14:25:41, again as device 38 at
     /// 14:25:54, then nothing until the author's power cycle at 14:47:45 and the next boot at 14:48:04.
     fn the_calls4_night() -> String {
-        let mut j = String::from("2026-11-19T14:20:00+0000 lab kernel: usb 1-2: new full-speed USB device number 5 using xhci_hcd\n");
+        let mut j = String::from("2026-11-19T14:20:00+00:00 lab kernel: usb 1-2: new full-speed USB device number 5 using xhci_hcd\n");
         j += &enumerated("2026-11-19T14:25:41", 37);
         j += &left("2026-11-19T14:25:53", 37);
         j += &enumerated("2026-11-19T14:25:54", 38);
@@ -319,6 +334,56 @@ mod tests {
             }
         );
         assert!(say(&mid).starts_with("absent: the phone disconnected at 14:47:45 UTC"));
+    }
+
+    #[test]
+    fn a_second_port_and_another_serial_never_take_the_phones_events() {
+        let mut j = enumerated("2026-11-19T14:25:41", 37);
+        // another device of the same id on bus 1, the phone's own device number, another serial
+        j += "2026-11-19T14:25:50+00:00 lab kernel: usb 1-4: new high-speed USB device number 37 using xhci_hcd\n\
+               2026-11-19T14:25:50+00:00 lab kernel: usb 1-4: New USB device found, idVendor=18d1, idProduct=d001, bcdDevice= 7.01\n\
+               2026-11-19T14:25:50+00:00 lab kernel: usb 1-4: SerialNumber: walleye\n\
+               2026-11-19T14:25:51+00:00 lab kernel: usb 1-4: USB disconnect, device number 37\n";
+        assert_eq!(
+            read(&j, &WANTED, at("2026-11-19T14:30:00")),
+            Timeline::Frozen {
+                device: 37,
+                since: at("2026-11-19T14:25:41")
+            }
+        );
+    }
+
+    #[test]
+    fn the_settle_time_is_sixty_seconds_and_one_enumeration_reads_as_re_enumerating() {
+        let j = enumerated("2026-11-19T14:25:41", 37);
+        let t = at("2026-11-19T14:25:41");
+        assert_eq!(
+            read(&j, &WANTED, t + 60),
+            Timeline::Reenumerating {
+                enumerations: 1,
+                last: t
+            }
+        );
+        assert_eq!(
+            read(&j, &WANTED, t + 61),
+            Timeline::Frozen {
+                device: 37,
+                since: t
+            }
+        );
+    }
+
+    #[test]
+    fn a_log_without_kernel_lines_is_not_known_and_a_gadget_without_usb_id_is_said() {
+        let g = lpoco_manifest::Gadget {
+            serial: "s".into(),
+            access: vec![],
+            net_name: None,
+            net_address: None,
+            usb_id: Some("18d1:d001".into()),
+        };
+        assert!(describe(&g, "-- No entries --\n", 0).contains("not known yet"));
+        assert!(report(&[], 0).contains("declares no [[host.gadget]] usb_id"));
     }
 
     #[test]
