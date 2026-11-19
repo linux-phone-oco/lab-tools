@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.2](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-health-v0.24.1...lpoco-health-v0.24.2) - 2026-11-19
+
+### Added
+
+- *(layer)* lpoco layer pack refuses an unpackable layer and removes stale packages ([#219](https://github.com/linux-phone-oco/lab-tools/pull/219))
+
 ## [0.24.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-health-v0.24.0...lpoco-health-v0.24.1) - 2026-11-19
 
 ### Added
