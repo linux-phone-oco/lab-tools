@@ -111,6 +111,17 @@
           "type": "null"
         }
       ]
+    },
+    "kernels": {
+      "description": "The kernels `lpoco lab kernel` keeps on the phone beside stock",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Kernels"
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   },
   "additionalProperties": false,
@@ -1050,6 +1061,28 @@
       "properties": {
         "lpoco": {
           "description": "The release of the lpoco family the phone's pieces come from",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "Kernels": {
+      "description": "`[kernels]`: the test kernels kept on the phone as boot entries beside stock (`lpoco lab kernel try NAME`), and\nthe one kept as the default. A procedure reads the names from here instead of carrying them.",
+      "type": "object",
+      "properties": {
+        "test": {
+          "description": "the test kernels by name (lowercase letters, digits and `-`: devlab's rule; `+` is systemd-boot's try counter)",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "kept": {
+          "description": "the test kernel kept as the default (it must be listed in `test`); none means stock is the default",
           "type": [
             "string",
             "null"

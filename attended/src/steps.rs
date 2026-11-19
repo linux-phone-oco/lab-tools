@@ -6,6 +6,7 @@
 
 use crate::bench::{self, Act, ActKind};
 use crate::{Kind, Step};
+use lpoco_manifest::is_kernel_name;
 use std::io::BufRead;
 
 /// The author does something and looks at something ("what to do / what to check"); "ok" goes on, anything
@@ -227,12 +228,13 @@ pub fn wait_for_gadget(tries: u32, every: u64) -> Step {
 /// Boot the named test kernel once, through devlab's `kernel try` (never around it): devlab refuses an entry with
 /// no try left, reboots, waits for the phone and measures the boot it came to; its output is the step's.
 /// Any later boot is the default again. The name is the kernel's own (lowercase letters, digits, `-`: devlab's
-/// rule, so a `+`, which is systemd-boot's try counter, is refused here before the phone is reached).
+/// rule, so a `+`, which is systemd-boot's try counter, is refused here before the phone is reached) and one the
+/// device lists under `[kernels] test`: a name it does not list ends the run (exit 2, dry run too) naming the key.
 pub fn boot_once(name: &str) -> Step {
     let name = name.to_string();
+    declared_test_kernel(&name);
     Step::new(Kind::Do, &format!("boot {name} once"), move || {
-        let word = |c: char| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-';
-        if name.is_empty() || !name.chars().all(word) {
+        if !is_kernel_name(&name) {
             return Err(format!(
                 "not a test kernel name: {name:?} (lowercase letters, digits and -)"
             ));
@@ -243,15 +245,46 @@ pub fn boot_once(name: &str) -> Step {
     })
 }
 
+/// A valid test kernel name must be listed under `[kernels] test` of the device: the run ends (exit 2) naming the key
+/// and the file when the table is missing, or the name when it is not listed. A name devlab would refuse is left to
+/// the step to refuse.
+fn declared_test_kernel(name: &str) {
+    if !is_kernel_name(name) {
+        return;
+    }
+    let listed = crate::declared("[kernels] test", "boot_once", |m| {
+        m.kernels.as_ref().map(|k| k.test.clone())
+    });
+    if !listed.iter().any(|k| k == name) {
+        let c = crate::config();
+        eprintln!(
+            "{}: {} does not list {name:?} under [kernels] test, which boot_once reads (it lists: {})",
+            c.name,
+            c.device.display(),
+            if listed.is_empty() { "no kernel".to_string() } else { listed.join(", ") }
+        );
+        std::process::exit(2)
+    }
+}
+
 /// Go back to the phone's known good: tell the phone, as root, to reboot, so the default entry (the stock or the
 /// kept kernel; a try is used up) boots. It does not wait: follow it with [`wait_for_phone`], after the phone
-/// has gone down, as that step says.
+/// has gone down, as that step says. The device declares a `[kernels]` table; its `kept` kernel is named in the
+/// step, and without one the step says stock. The name is what the device declares, not what the phone is checked to boot.
 pub fn back_to_known_good() -> Step {
-    Step::new(Kind::Do, "reboot into the default kernel", || {
-        crate::phone()
-            .root("set -e\nsync\nsystemd-run --on-active=2 systemctl reboot >/dev/null\necho rebooting\n")
-            .map(|_| ())
-    })
+    let kept = crate::declared("[kernels]", "back_to_known_good", |m| {
+        m.kernels.as_ref().map(|k| k.kept.clone())
+    });
+    let default = kept.map_or("stock".to_string(), |k| format!("kept: {k}"));
+    Step::new(
+        Kind::Do,
+        &format!("reboot into the default kernel ({default})"),
+        || {
+            crate::phone()
+                .root("set -e\nsync\nsystemd-run --on-active=2 systemctl reboot >/dev/null\necho rebooting\n")
+                .map(|_| ())
+        },
+    )
 }
 
 /// The `vendor:product` of every device under a sysfs USB devices folder.

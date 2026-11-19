@@ -475,6 +475,15 @@ fn wait_for_usb_sees_a_device_that_arrives_late_refuses_a_bad_id_and_names_an_un
 /// that writes every call's whole command line to dir/args, exits `code` for `kernel try` and runs the phone
 /// script (as `stand_in` does) for the rest.
 fn devlab_calls(dir: &Path, case: &str, kernel: &str, code: u32) -> Output {
+    // the device declares its test kernel unless the test says it declares none (a `no-kernels` file) or its own
+    let own = fs::read_to_string(dir.join("device.toml")).unwrap();
+    if !own.contains("[kernels]") && !dir.join("no-kernels").exists() {
+        fs::write(
+            dir.join("device.toml"),
+            format!("{own}[kernels]\ntest = [\"calls4\"]\n"),
+        )
+        .unwrap();
+    }
     let devlab = stand_in(dir, "");
     // every way a script could take down the machine it runs on is a fake that only writes a line
     let bin = dir.join("phone/bin");
@@ -1173,4 +1182,88 @@ fn the_log_says_who_did_each_act_and_a_plain_ask_keeps_its_old_lines() {
         "{t}"
     );
     assert!(!t.contains("by person"), "{t}");
+}
+
+/// A device.toml that declares its kernels, written where the procedure runs.
+fn declare_kernels(dir: &Path, kernels: &str) {
+    let mut m = fs::read_to_string(dir.join("device.toml")).unwrap();
+    m.push_str(&format!("[kernels]\n{kernels}\n"));
+    fs::write(dir.join("device.toml"), m).unwrap();
+}
+
+#[test]
+fn boot_once_takes_only_a_kernel_the_device_declares_and_names_the_key_when_it_does_not() {
+    // declared: it goes through as before
+    let dir = tmp("kern-ok");
+    declare_kernels(&dir, "test = [\"calls4\"]");
+    let o = devlab_calls(&dir, "boot-once", "calls4", 0);
+    assert_eq!(o.status.code(), Some(0), "{}", said(&o));
+    assert!(
+        fs::read_to_string(dir.join("args"))
+            .unwrap()
+            .contains("kernel try calls4"),
+        "a declared kernel did not reach devlab"
+    );
+    // not listed: the dry run fails naming the key and the kernel, and reaches nothing
+    let dir = tmp("kern-unlisted");
+    declare_kernels(&dir, "test = [\"other\"]");
+    let o = devlab_calls(&dir, "boot-once-dry", "calls4", 0);
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(2), "{t}");
+    assert!(
+        t.contains("[kernels] test") && t.contains("calls4") && t.contains("device.toml"),
+        "{t}"
+    );
+    assert!(!dir.join("args").exists(), "a dry run reached devlab");
+    // no [kernels] table at all
+    let dir = tmp("kern-none");
+    fs::write(dir.join("no-kernels"), "").unwrap();
+    let o = devlab_calls(&dir, "boot-once-dry", "calls4", 0);
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(2), "{t}");
+    assert!(t.contains("[kernels] test"), "{t}");
+}
+
+#[test]
+fn back_to_known_good_needs_the_kernels_table_and_names_the_kept_kernel_it_returns_to() {
+    let dir = tmp("kern-back-none");
+    fs::write(dir.join("no-kernels"), "").unwrap();
+    let o = devlab_calls(&dir, "back-dry", "", 0);
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(2), "{t}");
+    assert!(
+        t.contains("[kernels]") && t.contains("back_to_known_good"),
+        "{t}"
+    );
+    let dir = tmp("kern-back-kept");
+    declare_kernels(&dir, "test = [\"calls4\"]\nkept = \"calls4\"");
+    let o = devlab_calls(&dir, "back-dry", "", 0);
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(0), "{t}");
+    assert!(
+        t.contains("reboot into the default kernel (kept: calls4)"),
+        "{t}"
+    );
+    let dir = tmp("kern-back-stock");
+    declare_kernels(&dir, "test = [\"calls4\"]");
+    let o = devlab_calls(&dir, "back-dry", "", 0);
+    assert!(
+        said(&o).contains("reboot into the default kernel (stock)"),
+        "{}",
+        said(&o)
+    );
+}
+
+#[test]
+fn a_name_devlab_would_refuse_is_named_as_such_even_when_the_device_declares_no_kernels() {
+    let dir = tmp("kern-bad-none");
+    fs::write(dir.join("no-kernels"), "").unwrap();
+    let o = devlab_calls(&dir, "boot-once", "calls+", 0);
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(1), "{t}");
+    assert!(t.contains("not a test kernel name"), "{t}");
+    let dir = tmp("kern-empty-list");
+    declare_kernels(&dir, "test = []");
+    let o = devlab_calls(&dir, "boot-once-dry", "calls4", 0);
+    assert!(said(&o).contains("lists: no kernel"), "{}", said(&o));
 }
