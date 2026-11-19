@@ -88,6 +88,11 @@ const FILES: &[(&str, &str, &str)] = &[
         "644",
     ),
     (
+        "usr/lib/lpoco-health/checks/base/95-test-layer.sh",
+        include_str!("../../health/suite/checks/base/95-test-layer.sh"),
+        "644",
+    ),
+    (
         "usr/lib/lpoco-health/checks/shell/10-sound-output.sh",
         include_str!("../../health/suite/checks/shell/10-sound-output.sh"),
         "644",
