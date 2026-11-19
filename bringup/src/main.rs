@@ -56,6 +56,12 @@ fn run(r: &argenv_resolve::Resolution) -> Result<i32, String> {
         );
     };
     let command = Contract::COMMAND.get_from(r);
+    if matches!(verb, Verb::Capture | Verb::Diff) != (command == Some(Command::Reference)) {
+        return Err("capture and diff are for the reference: lpoco-bringup reference capture --via COMMAND --out DIR | reference diff PART --live DIR --ours DIR".into());
+    }
+    if command == Some(Command::Reference) {
+        return reference(verb, r);
+    }
     if matches!(verb, Verb::Build | Verb::Init | Verb::Files)
         != (command == Some(Command::Initramfs))
     {
@@ -197,6 +203,7 @@ fn run(r: &argenv_resolve::Resolution) -> Result<i32, String> {
             println!("{out}: {} (net {net})", names.join(", "));
             Ok(0)
         }
+        Verb::Capture | Verb::Diff => unreachable!("handled above"),
         Verb::Check => {
             let path = need(Contract::IMAGE.get_from(r), "an image (IMG)")?;
             let bytes = read(&path)?;
@@ -251,5 +258,55 @@ fn net_of(r: &argenv_resolve::Resolution) -> Result<u8, String> {
             .trim()
             .parse::<u8>()
             .map_err(|_| format!("--net {n}: a number from 0 to 255")),
+    }
+}
+
+/// `reference capture` and `reference diff`: a stock OS's snapshot, and two snapshots compared for one part.
+fn reference(verb: Verb, r: &argenv_resolve::Resolution) -> Result<i32, String> {
+    use lpoco_bringup::reference as rf;
+    match verb {
+        Verb::Capture => {
+            let via = need(
+                Contract::VIA.get_from(r),
+                "--via COMMAND (adb shell su 0 sh, ssh HOST sudo sh)",
+            )?;
+            let out = need(Contract::OUT.get_from(r), "--out DIR")?;
+            for line in rf::capture(&via, Path::new(&out))? {
+                println!("{line}");
+            }
+            Ok(0)
+        }
+        _ => {
+            let part = need(Contract::PART.get_from(r), "the part (PART)")?;
+            let live = need(Contract::LIVE.get_from(r), "--live DIR")?;
+            let ours = need(Contract::OURS.get_from(r), "--ours DIR")?;
+            let words: Vec<String> = Contract::MATCH
+                .get_from(r)
+                .unwrap_or_else(|| part.clone())
+                .split(',')
+                .map(|w| w.trim().to_lowercase())
+                .filter(|w| !w.is_empty())
+                .collect();
+            let rep = rf::diff(Path::new(&live), Path::new(&ours), &words)?;
+            for l in &rep.lines {
+                println!("{l}");
+            }
+            if rep.differences > 0 {
+                println!(
+                    "{part}: {} differences in {} lines",
+                    rep.differences, rep.matched
+                );
+                return Ok(1);
+            }
+            if rep.matched == 0 || rep.unmeasured > 0 {
+                println!(
+                    "{part}: not known yet ({} lines of it, {} things one side did not give; --match WORDS says what to look for)",
+                    rep.matched, rep.unmeasured
+                );
+                return Ok(2);
+            }
+            println!("{part}: no difference in {} lines", rep.matched);
+            Ok(0)
+        }
     }
 }

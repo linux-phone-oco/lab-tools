@@ -1,0 +1,4 @@
+ regulator                      use open bypass  voltage current     min     max
+  vreg_l20a_ufs_vcc              1    1      0  2950mV     0mA  2950mV  2950mV
+  vreg_l26a_ufs_vccq             1    1      0  1200mV     0mA  1200mV  1200mV
+  vreg_s3a                       3    4      0  1352mV     0mA  1352mV  1352mV
