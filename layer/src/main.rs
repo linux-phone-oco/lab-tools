@@ -5,7 +5,7 @@ mod cli;
 
 use argenv_resolve::{InputResolveExt, OnProblems};
 use cli::Contract;
-use lpoco_layer::{check, materialize, nfpm_yaml, packages, stale, Format};
+use lpoco_layer::{check, materialize, nfpm_yaml, packages, post_install, stale, Format};
 use lpoco_manifest::Manifest;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -75,8 +75,12 @@ fn pack(r: &argenv_resolve::Resolution) -> Result<(), String> {
     for p in &pkgs {
         let entries = materialize(p, &dir, &stage)?;
         let conf = out.join(format!("{}.nfpm.yaml", p.name));
-        fs::write(&conf, nfpm_yaml(p, format, &version, &entries)?)
-            .map_err(|e| format!("{}: {e}", conf.display()))?;
+        let script = post_install(p, &stage)?;
+        fs::write(
+            &conf,
+            nfpm_yaml(p, format, &version, &entries, script.as_deref())?,
+        )
+        .map_err(|e| format!("{}: {e}", conf.display()))?;
         let target = out.join(format.file_name(&p.name, &version));
         let status = Command::new(&nfpm)
             .args(["package", "--packager", format.token(), "--config"])
