@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! lpoco-health: the phone's health, measured on the phone - after every boot (lpoco-health.timer)
 //! and whenever the lab asks. Written onto the phone by devlab from the device's manifest; nothing
 //! here is about one phone: what a phone is expected to have is in /etc/lpoco-health/health.env, and a

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! `lpoco mcp`: one MCP server for the family (backlog lpoco-mcp-one-door, proof
 //! lpoco-mcp-lists-every-family-tool). Every subcommand's tools are listed under its name, and the
 //! names devlab's door had before still answer.

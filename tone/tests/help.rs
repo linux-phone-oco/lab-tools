@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! lpoco-tone's command line is declared once with argenv (backlog lpoco-tone-argenv, proof
 //! lpoco-tone-help-from-argenv): `--help` prints the argenv usage under both names, and a usage mistake
 //! exits 2 with the usage, as lpoco-lab does (devlab/tests/help.rs). What the tone commands do stays as

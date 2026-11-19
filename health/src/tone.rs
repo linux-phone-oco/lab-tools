@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! `lpoco-health tone make|find`: the lab's tone crate on the phone, so a check that plays a tone
 //! and listens for it hands the numbers to tested Rust instead of an awk Goertzel.
 //!

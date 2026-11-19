@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: MIT OR Apache-2.0
 # a stand-in for docker: records its arguments, then plays what the container would say.
 # FAKE_DOCKER_LOG: where the arguments go (one per line); a source tree holding bogus-prop.yaml-error makes it fail like dtschema.
 printf '%s\n' "$@" >"$FAKE_DOCKER_LOG"

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! A test tone, and finding it again: a device's speaker plays a tone, its microphone records,
 //! and the recording tells whether the tone came through - no listener needed.
 

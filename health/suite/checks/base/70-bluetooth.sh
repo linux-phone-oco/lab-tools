@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
 # Bluetooth: a controller, powered
 . /usr/lib/lpoco-health/lib.sh
 absent bluetooth && { say bt-controller bluetooth skip "the manifest says this phone has no Bluetooth"; exit 0; }

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! The reference snapshot: what a stock OS does for a part, taken once over a transport (adb, ssh) and
 //! compared with the same snapshot of our mainline boot. A snapshot is a folder: `devicetree.txt`
 //! (one `node property = value` line per property, sorted, phandles by name only, the format walleye's

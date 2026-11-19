@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! A flattened device tree, read only as far as the checks need: whether a blob is one, and the u32 cells of a
 //! property of the root node (qcom,msm-id).
 

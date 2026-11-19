@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! lpoco-health's invocation surface, declared once with argenv: its commands, their arguments and the
 //! environment variables it reads. (`tone` and `data` are the checks' own helpers, with parsers of their own
 //! in tone.rs and data.rs; they are dispatched before this surface is read.)

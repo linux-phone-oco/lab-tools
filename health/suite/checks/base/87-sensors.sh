@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
 # motion, light and proximity: exposed to the system, and proximity giving a reading. Sensors reach Linux
 # two ways - as IIO devices the kernel drives, or through a sensor hub on a DSP (Qualcomm's Sensor Core,
 # served by hexagonrpcd and read by libssc) that only iio-sensor-proxy shows. Both are counted, through

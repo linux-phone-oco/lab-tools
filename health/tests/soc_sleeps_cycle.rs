@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! The check soc-sleeps reads this boot's controlled cycle (lpoco-health suspend cycle), and no other boot's.
 
 use std::fs;

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! What the program tells its reader to type names the program lpoco-lab (proof: lpoco-names-sweep,
 //! messages slice). A message is a line of code, not a comment; `guard.rs` and the old-name
 //! sentences stay for later slices, and the aliases keep working.

@@ -7,6 +7,7 @@
 //! [dependencies]
 //! lpoco-bringup = { git = "https://github.com/linux-phone-oco/lab-tools", tag = "lpoco-v0.1.7" }
 //! ```
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 use lpoco_bringup::{boot::Boot, image};
 use std::path::Path;

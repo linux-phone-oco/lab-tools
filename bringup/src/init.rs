@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! The bring-up init: the shell script the phone's initramfs runs as /init, made from the device's
 //! `[boot.gadget]` (serial, product, label, whether RNDIS is offered) and the gadget address. Replaces the
 //! init files each phone's lab kept for itself (walleye carried about twenty variants).

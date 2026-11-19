@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
 # mobile data carries traffic, on any phone with a modem: over the modem's own interface - the one
 # ModemManager's connected bearer names, so Wi-Fi cannot pass for it - five pings to 1.1.1.1 and an
 # HTTPS download of 100 kB, or 5 MB once a week to measure throughput. What the run moved is read off

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
 # the signal processors are up: each one the manifest expects, running (REMOTEPROCS: name:component)
 . /usr/lib/lpoco-health/lib.sh
 [ -n "${REMOTEPROCS:-}" ] || { say remoteprocs kernel skip "the manifest names no signal processors"; exit 0; }

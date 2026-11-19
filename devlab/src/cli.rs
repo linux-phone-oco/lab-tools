@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! lpoco-lab's invocation surface, declared once with argenv: its commands, their arguments and the
 //! environment variables it reads (backlog lpoco-lab-argenv; devlab is the same program under its old
 //! name). The words are the ones clap gave it; the dispatcher in main.rs builds its commands from this.

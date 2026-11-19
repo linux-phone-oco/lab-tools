@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
 # display and input: a panel connected and lit, a touchscreen, a vibration motor
 . /usr/lib/lpoco-health/lib.sh
 if absent display; then say panel-connected display-panel skip "the manifest says this phone has no panel"; else

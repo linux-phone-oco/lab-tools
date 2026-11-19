@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
 # a suspended phone is quiet: the interrupts counted across one s2idle cycle (15 s, ended by an RTC wake
 # alarm) stay under the manifest's threshold ([health] suspend_irq_max); over it, the check fails and names
 # the three sources that counted most. Not measured - skipped, saying why - when there is no threshold (it

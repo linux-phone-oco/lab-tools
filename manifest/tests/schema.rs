@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! device.toml declared once: a misspelling is refused, the committed schema is the projection, the lab's
 //! manifests validate.
 

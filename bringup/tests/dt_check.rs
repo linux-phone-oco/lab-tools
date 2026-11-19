@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! lpoco-bringup-dt-check: `dt-check binding|dtbs` runs the kernel's devicetree checks in a container with
 //! nothing Python on the host (docs research upstream-forks/2026-11-19/dt-checks-in-a-container.md). The
 //! docker program is a stand-in (tests/fixtures/dt-check/fake-docker.sh) that records its arguments, so the

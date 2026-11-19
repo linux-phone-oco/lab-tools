@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! The family's pin: a device manifest says which lpoco family version it follows, `[tools] lpoco = "X.Y"`
 //! (decision 2026-11-17-bringup-in-lab-tools). A program of another version stops with one line.
 

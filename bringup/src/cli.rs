@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! lpoco-bringup's invocation surface, declared once with argenv: its commands, their arguments and the
 //! environment variables it reads. Run as `lpoco bringup ...`.
 //!

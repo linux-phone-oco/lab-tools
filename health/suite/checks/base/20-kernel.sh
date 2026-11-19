@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
 # kernel and system: no oops or panic, no new warning, no processor crashing, no unit failed - each
 # known exception named in the manifest with its reason
 . /usr/lib/lpoco-health/lib.sh

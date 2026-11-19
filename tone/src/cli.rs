@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! lpoco-tone's invocation surface, declared once with argenv (backlog lpoco-tone-argenv): its commands,
 //! their arguments and the environment it reads (none). The words are those it has always had.
 //!

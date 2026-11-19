@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! lpoco-bringup: the host side of bringing a phone up (run as `lpoco bringup ...`). It makes files on the
 //! host; devlab puts them on the phone. See cli.rs for the invocation surface.
 

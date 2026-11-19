@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! `lpoco-health awake` (backlog lpoco-awake): the lab phone's keep-awake - the kernel wake lock `lpoco-awake`.
 //! Run here against a made-up phone under LPOCO_HEALTH_ROOT, one step at a time (`--once`): the lock is held
 //! always; with /etc/lpoco/allow-autosleep it is held only while the UDC is configured or a gate the manifest

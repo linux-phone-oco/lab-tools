@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! The family's pin and the manifest's step hooks: a manifest's `[tools] lpoco = "X.Y"` stops a different
 //! family version in one line; a `[boot.hooks]` step runs an executable on the parts before they are packed.
 

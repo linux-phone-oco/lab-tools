@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! What root is for, from lpoco's roof (decision of the author, 2026-11-18: no standing root). Every root need of
 //! the lpoco tools is declared here once, as a `RootNeed`; plan, prepare and check read the same list, so what
 //! `lpoco host plan` prints and what the lab holds cannot drift apart.

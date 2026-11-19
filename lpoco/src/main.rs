@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! `lpoco` - one front door for the linux-phone-oco tools. `lpoco NAME args...` finds `lpoco-NAME`
 //! beside this program or on PATH and runs it, returning its exit code. The family is released
 //! together, so a program whose `--version` differs from lpoco's is refused, naming both versions.

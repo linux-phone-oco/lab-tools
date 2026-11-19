@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Flashing a phone, for any device: the image copied, the manifest's fixes baked into the copy (files,
 //! masked services, services enabled on first boot), then fastboot. The bake needs no root and no mount: the
 //! image's two partitions are written in place with e2fsprogs' `debugfs` (the ext4 root) and mtools (the

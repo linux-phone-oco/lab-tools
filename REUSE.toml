@@ -1,0 +1,30 @@
+# Who may use which file, and under what (REUSE: https://reuse.software/spec-3.3/#reusetoml). The source files (.rs, .sh)
+# say it themselves, in an SPDX-License-Identifier header; this says it for the rest, by path.
+# Decision 2026-11-19-licences-for-our-repositories (linux-phone-oco/docs): our tools are MIT OR Apache-2.0 (LICENSE-MIT,
+# LICENSE-APACHE); what we carry of others keeps its own licence. .github/licence-check keeps every new file covered:
+# it is ideal-agent's scripts/licence-check, copied as it is (grenudi/ideal-agent#101). It reads one `path = [...]` per
+# line, and `*` for it crosses folders, so a path is written in REUSE's own sense too: `*.md` for the root's, `**/*.md` below it.
+version = 1
+
+# Our manifests, prose, data and fixtures, by kind and by place. A source file is not here: it carries its header.
+[[annotations]]
+path = ["*.md", "**/*.md", "*.toml", "**/*.toml", "*.lock", "*.nix", "*.json", "**/*.json", "*.yml", "**/*.yml", "*.regex", "**/*.regex", "*.service", "**/*.service", "*.timer", "**/*.timer", "*.conf", "**/*.conf", "*.script", "**/*.script", "*.txt", "**/*.txt", "*.wav", "**/*.wav", "**/*.pub", ".gitignore", ".github/licence-check", "bringup/tests/fixtures/**", "ffs-acm/tests/c-probe-blobs.bin", "packaging/alpine/**"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 grenudi"
+SPDX-License-Identifier = "MIT OR Apache-2.0"
+
+# The device-tree fixture and the image compiled from it: the dts carries its header; named here too, so the check holds
+# the texts of its licences. (They come after the fixtures above, and win where they overlap.)
+[[annotations]]
+path = ["bringup/tests/fixtures/appended.dts", "bringup/tests/fixtures/appended.dtb"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 grenudi"
+SPDX-License-Identifier = "GPL-2.0-only OR BSD-2-Clause"
+
+# Third-party packaging keeps its own licence: the sxmo-utils lab apk is sxmo-utils', AGPL-3.0-only (its APKBUILD names it).
+# This annotates it; it does not relicense it. It wins over the kinds above where they overlap (a .conf, a .toml).
+[[annotations]]
+path = ["packaging/sxmo-utils/**"]
+precedence = "override"
+SPDX-FileCopyrightText = "sxmo-utils contributors"
+SPDX-License-Identifier = "AGPL-3.0-only"

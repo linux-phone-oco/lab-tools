@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! bringup-cpio-matches-gen-init-cpio: `lpoco-bringup initramfs build` writes, from a gen_init_cpio spec,
 //! the very archive the kernel's `gen_init_cpio -t 0` makes (newc, byte for byte), compressed with the codec
 //! the device names, the same bytes twice; the gadget address is a variable, and a build that leaves the old

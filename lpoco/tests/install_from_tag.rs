@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! A lab host installs the family from the release tags with cargo, nothing else (proof
 //! bringup-installs-from-tag, decision 2026-11-17-bringup-installs-from-tag): into a clean root,
 //! `lpoco` from its tag and `lpoco-bringup` from its own (release-plz tags per package), then the

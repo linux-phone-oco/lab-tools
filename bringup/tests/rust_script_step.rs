@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! A device repository's rust-script step can use lpoco-bringup as a library: examples/step.rs, run by
 //! rust-script (its git dependency pointed at this very checkout so the test needs no network), packs the
 //! same image the command does.

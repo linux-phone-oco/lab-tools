@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! A test kernel beside the stock one, tried once, never stranding the phone - proven on surya:
 //! - boot counting: the entry is pmos-NAME+1-0.conf, sorted ahead of stock; systemd-boot counts the
 //!   try down on the ESP, an entry with no tries left sorts last, so the next boot is stock; the test

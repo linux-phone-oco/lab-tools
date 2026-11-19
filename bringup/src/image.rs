@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Boot images, header v0: packed byte for byte as mkbootimg writes them, read back, and counted against what
 //! the device's manifest ([boot]) says they must be.
 //!

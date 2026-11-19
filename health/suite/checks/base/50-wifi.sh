@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
 # Wi-Fi: an interface, joined with an address, and the gateway answers
 . /usr/lib/lpoco-health/lib.sh
 absent wifi && { say wifi-interface wifi skip "the manifest says this phone has no Wi-Fi"; exit 0; }

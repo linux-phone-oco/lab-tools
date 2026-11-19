@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! lpoco-lab reads its declared environment through the argenv contract, not std::env::var (backlog
 //! lpoco-lab-env-through-argenv, proof lpoco-lab-env-read-once): no source file but cli.rs reads a
 //! declared variable itself, and a value the contract refuses exits 2 with the usage.

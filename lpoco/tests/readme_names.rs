@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! The README's commands use the lpoco names (proof: lpoco-names-sweep, README slice).
 //! A command is an indented line or an inline code span that starts with an old program
 //! name; the sentences that say what the old names are stay, so they are not commands.

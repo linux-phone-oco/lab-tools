@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! The switches: tests chosen off, each with its reason, who set it and when. They live in the suite's own
 //! settings on the phone (/etc/lpoco-health/switches), one tab-separated line a switch:
 //!

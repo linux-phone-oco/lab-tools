@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Health: the device's checks, and what they say against everything that has worked before.
 //! The baseline is every check that has ever passed; a regression is a baseline check that no
 //! longer passes. Checks that never passed are known gaps, not alarms; a check that newly passes

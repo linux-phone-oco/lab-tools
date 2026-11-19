@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
 # What a stock OS does for a part, read from the running phone: run as a shell script on the phone
 # (lpoco-bringup reference capture --via "adb shell su 0 sh" sends it on standard input).
 # Output: "@@dt PATH" then the property file as hex bytes, one section per property of /proc/device-tree;

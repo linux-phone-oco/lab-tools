@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! A stale phone-side piece is named by `lpoco host check`, from the phone's last gathered report - no phone.
 use lpoco_host::{blob_id, parse_device, stale_pieces, Stale};
 use std::path::Path;

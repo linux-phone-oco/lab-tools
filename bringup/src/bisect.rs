@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Bisect: the series of swaps a file declares, built from one control and counted. Each image is the control
 //! with the parts its entry names replaced (see swap.rs), optionally with the kernel put in an lz4 frame as the
 //! stock one is (lz4 is wrapped, like avbtool: independent 4 MiB blocks, content checksum, level 9) and

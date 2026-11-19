@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! ffs-acm (Rust): a serial console for a phone through FunctionFS. The same steps as the C probe
 //! build/ffs-acm/ffs-acm.c (walleye decision 2026-11-17-walleye-ffs-acm-single-interface; moved here from google-walleye-lab build/ffs-acm-rs): one interface class 2/2/1 with
 //! interrupt-in, bulk-out, bulk-in and no CDC functional descriptors; descriptors then strings go to ep0 first, only then

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! `lpoco-bringup --help` and `-h` print the usage and exit 0 (proof: lpoco-host-help-prints-usage).
 
 use std::process::Command;

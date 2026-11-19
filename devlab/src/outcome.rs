@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! What a test kernel's try came to, said by the phone itself. The try is started, the phone's boot id
 //! is watched until a new boot answers, and then the phone is asked which kernel runs, what the test
 //! entry's counter shows, and whether the boot timeout left a log - so nobody waits for a phone to go

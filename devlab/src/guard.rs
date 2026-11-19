@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! The phone's way, held for agents: Claude Code's PreToolUse hook on the lab calls `devlab guard tool`,
 //! so that changing the phone outside devlab is refused when it is tried, not remembered. The hook's JSON
 //! comes on standard input; a refused command exits 2 and says why on standard error (Claude Code gives

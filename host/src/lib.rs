@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! What the lab host needs, worked out from declarations and changed only by `prepare now`.
 //! Two declarations: the lab's own (`lab.toml`: its devices, its root prefix, its tools at pins) and each
 //! device's `[host]` table in its `device.toml` (decision 2026-11-17-lpoco-host).

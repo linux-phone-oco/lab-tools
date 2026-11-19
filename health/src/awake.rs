@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! `lpoco-health awake`: the lab phone's keep-awake (backlog lpoco-awake), the kernel wake lock `lpoco-awake`.
 //! WORKAROUND(sxmo-autosuspend-backoff): the lock stands in for sxmo backing off a failed suspend; without the fix its retry every second drops the lab's USB link.
 //!

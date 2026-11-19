@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
 # deep sleep: the SoC reached its lowest power state this boot, as the SoC itself counts it - on Qualcomm
 # (qcom_stats, from the rpmh-stats or rpm-stats memory), CX collapse (cxsd) or the always-on subsystem's
 # sleep (aosd). A phone that never suspended this boot (a wake lock held - on USB the lab keeps one) has
