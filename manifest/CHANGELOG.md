@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-manifest-v0.27.0...lpoco-manifest-v0.27.1) - 2026-11-19
+
+### Added
+
+- *(layer)* apk -boot package with mkinitfs module globs and a feature scriptlet ([#231](https://github.com/linux-phone-oco/lab-tools/pull/231))
+
 ## [0.27.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-manifest-v0.26.1...lpoco-manifest-v0.27.0) - 2026-11-19
 
 ### Added
