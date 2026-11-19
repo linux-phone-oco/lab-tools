@@ -5,7 +5,7 @@
 //!
 //! ```cargo
 //! [dependencies]
-//! lpoco-bringup = { git = "https://github.com/linux-phone-oco/lab-tools", tag = "lpoco-v0.28.1" }
+//! lpoco-bringup = { git = "https://github.com/linux-phone-oco/lab-tools", tag = "lpoco-v0.28.3" }
 //! ```
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
