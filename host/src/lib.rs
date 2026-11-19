@@ -1041,6 +1041,7 @@ mod one_per_codename_tests {
             access: vec![Access::Block],
             net_name: None,
             net_address: None,
+            usb_id: None,
         });
         Device {
             path: path.into(),

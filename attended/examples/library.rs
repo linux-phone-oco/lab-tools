@@ -9,8 +9,8 @@
 
 use lpoco_attended::prelude::*;
 use lpoco_attended::steps::{
-    back_to_known_good, boot_once, check_probe, dmesg_clean, read_dmesg, wait_for_phone,
-    wait_for_usb,
+    back_to_known_good, boot_once, check_probe, dmesg_clean, read_dmesg, wait_for_gadget,
+    wait_for_phone, wait_for_usb,
 };
 
 fn main() {
@@ -21,6 +21,7 @@ fn main() {
         Ok("probe-bound") => run_step(check_probe("bound_drv")),
         Ok("dmesg-has") => run_step(read_dmesg("pmic_glink: probed")),
         Ok("usb-seen") => run_step(wait_for_usb("18d1:4ee0", 2, 0)),
+        Ok("gadget-seen") => run_step(wait_for_gadget(2, 0)),
         Ok("dmesg-empty") => run_step(read_dmesg(" ")),
         Ok("usb-late") => run_step(wait_for_usb("18d1:4ee0", 6, 1)),
         Ok("usb-bad") => run_step(wait_for_usb("18d1:4ee", 3, 0)),
