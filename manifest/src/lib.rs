@@ -5,11 +5,16 @@
 //! projected from these types (`schema()`), committed as `device.schema.json` and checked against them.
 
 pub mod boot;
+pub mod layer;
 
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 pub use boot::{Boot, BootGadget, Console, ShellWord};
+pub use layer::{
+    BootMethod, FileKind, FirmwareMethod, Layer, LayerBoot, LayerFile, LayerFirmware,
+    LayerInitramfs, LayerKernel,
+};
 
 /// The whole manifest. A program asks for the tables it needs; a table nobody declared is an error.
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, JsonSchema)]
@@ -43,6 +48,8 @@ pub struct Manifest {
     pub host: HostTable,
     /// The header facts of the phone's boot image
     pub boot: Option<Boot>,
+    /// The device layer: what each package format is generated from
+    pub layer: Option<Layer>,
     /// The tools this device's lab pins
     pub tools: Option<Tools>,
 }
@@ -55,6 +62,16 @@ impl Manifest {
                 return Err(format!("user_config {} is declared twice", c.path));
             }
             c.validate()?;
+        }
+        if let Some(l) = &m.layer {
+            l.validate()?;
+            if l.boot
+                .as_ref()
+                .is_some_and(|b| b.method == BootMethod::AndroidBootimg)
+                && m.boot.is_none()
+            {
+                return Err("layer boot method android-bootimg needs a [boot] table".into());
+            }
         }
         Ok(m)
     }
