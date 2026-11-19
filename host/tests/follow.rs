@@ -672,3 +672,70 @@ fn prepare_refuses_while_another_run_holds_the_lock_and_gives_it_back_when_done(
     assert!(!text(&o).contains("holds the lock"), "{}", text(&o));
     assert!(lock_is_free(&l), "prepare still holds its lock");
 }
+
+/// A lab.toml that is not at the default place must be the one the timer's service reads, or the timer follows a
+/// different lab than the one it was prepared from.
+#[test]
+fn the_service_reads_the_lab_it_was_prepared_from_when_that_is_not_the_default_one() {
+    let l = lab("servicelab", "[follow]\nevery = \"15min\"\n\n");
+    let other = l.dir.join("other lab%1/lab.toml");
+    fs::create_dir_all(other.parent().unwrap()).unwrap();
+    fs::copy(l.dir.join("home/Projects/lab-machine/lab.toml"), &other).unwrap();
+    let plan_with = |lab: &Path| {
+        let o = Command::new(env!("CARGO_BIN_EXE_lpoco-host"))
+            .arg("plan")
+            .env_clear()
+            .env("HOME", l.dir.join("home"))
+            .env("PATH", l.dir.join("stubs"))
+            .env("LPOCO_LAB", lab)
+            .env("LPOCO_FS_ROOT", l.dir.join("fs"))
+            .output()
+            .unwrap();
+        text(&o)
+    };
+    let s = plan_with(&other);
+    let want = format!(
+        "ExecStart=%h/.local/bin/lpoco-host follow now --lab \"{}\"",
+        other.display().to_string().replace('%', "%%")
+    );
+    assert!(s.contains(&want), "{want}\n{s}");
+    let d = plan_with(&l.dir.join("home/Projects/lab-machine/lab.toml"));
+    assert!(
+        d.contains("ExecStart=%h/.local/bin/lpoco-host follow now\n") && !d.contains("--lab"),
+        "{d}"
+    );
+}
+
+/// A relative lab path is made absolute: the user service does not start where `prepare` was run. A `$` and a quote
+/// in the path reach the unit escaped; the clones service reads the same lab.
+#[test]
+fn a_relative_lab_path_reaches_the_units_absolute_and_escaped_for_both_services() {
+    let l = lab(
+        "relative",
+        "[follow]\nevery = \"15min\"\n\n[clones]\nfolders = [\"~/a\"]\nevery = \"1h\"\n\n",
+    );
+    let dir = l.dir.join("here/a$b\"c");
+    fs::create_dir_all(&dir).unwrap();
+    fs::copy(
+        l.dir.join("home/Projects/lab-machine/lab.toml"),
+        dir.join("lab.toml"),
+    )
+    .unwrap();
+    let o = Command::new(env!("CARGO_BIN_EXE_lpoco-host"))
+        .args(["plan", "--lab", "lab.toml"])
+        .current_dir(&dir)
+        .env_clear()
+        .env("HOME", l.dir.join("home"))
+        .env("PATH", l.dir.join("stubs"))
+        .env("LPOCO_FS_ROOT", l.dir.join("fs"))
+        .output()
+        .unwrap();
+    let s = text(&o);
+    let abs = format!("{}/lab.toml", dir.display())
+        .replace('$', "$$")
+        .replace('"', "\\\"");
+    for verb in ["follow", "clones"] {
+        let want = format!("lpoco-host {verb} now --lab \"{abs}\"");
+        assert!(s.contains(&want), "{want}\n{s}");
+    }
+}

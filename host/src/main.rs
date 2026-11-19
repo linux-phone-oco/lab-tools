@@ -58,11 +58,29 @@ struct State {
     release_base: Option<String>,
 }
 
+/// Where lab.toml is when none is given.
+fn default_lab(home: &str) -> String {
+    expand_home("~/Projects/lab-machine/lab.toml", home)
+}
+
+/// A path as the current folder reaches it: the units run elsewhere, so they are given it whole.
+fn absolute(p: &str) -> String {
+    if p.starts_with('/') {
+        return p.to_string();
+    }
+    match std::env::current_dir() {
+        Ok(d) => d.join(p).display().to_string(),
+        Err(_) => p.to_string(),
+    }
+}
+
 fn load(r: &Resolution) -> Result<State, String> {
     let home = Contract::HOME.get_from(r).ok_or("HOME is not set")?;
-    let lab_path = Contract::LAB
-        .get_from(r)
-        .unwrap_or_else(|| expand_home("~/Projects/lab-machine/lab.toml", &home));
+    let lab_path = absolute(
+        &Contract::LAB
+            .get_from(r)
+            .unwrap_or_else(|| default_lab(&home)),
+    );
     let (lab_text, lab_how) = declared_text(Path::new(&lab_path))?;
     let lab = parse_lab(Path::new(&lab_path), &lab_text)?;
     let root = Contract::ROOT
@@ -1664,8 +1682,13 @@ fn follow_units(st: &State) -> Option<(Vec<FileChange>, Vec<Vec<String>>)> {
         follow::FOLLOW_TIMER,
         follow::FOLLOW_SERVICE,
         follow::timer_text(every),
-        follow::service_text(),
+        follow::service_text(service_lab(st)),
     ))
+}
+
+/// The lab a user service is told to read: none when it is the default one.
+fn service_lab(st: &State) -> Option<&str> {
+    (st.lab_path != default_lab(&st.home)).then_some(st.lab_path.as_str())
 }
 
 /// The user units that run `clones`, when lab.toml declares `[clones]`.
@@ -1676,7 +1699,7 @@ fn clones_units(st: &State) -> Option<(Vec<FileChange>, Vec<Vec<String>>)> {
         clones::TIMER,
         clones::SERVICE,
         clones::timer_text(every),
-        clones::service_text(),
+        clones::service_text(service_lab(st)),
     ))
 }
 
