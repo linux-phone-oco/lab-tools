@@ -3,6 +3,7 @@
 //! Two declarations: the lab's own (`lab.toml`: its devices, its root prefix, its tools at pins) and each
 //! device's `[host]` table in its `device.toml` (decision 2026-11-17-lpoco-host).
 
+pub mod clones;
 pub mod follow;
 pub mod share;
 
@@ -74,6 +75,17 @@ pub struct Lab {
     pub tools: BTreeMap<String, ToolPin>,
     /// `[follow]`: the host follows the family's releases by itself (`lpoco host follow`, run by a user timer).
     pub follow: Option<Follow>,
+    /// `[clones]`: the shared clones kept at origin/main by a user timer (`lpoco host clones`).
+    pub clones: Option<Clones>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct Clones {
+    /// Folders under the lab user's home (`~/Projects/linux-phone-oco`): each is a clone, or holds clones.
+    pub folders: Vec<String>,
+    /// How often the timer looks, as systemd says it: `15min`.
+    pub every: String,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -1134,7 +1146,10 @@ fn full_version(v: &str) -> bool {
 
 fn validate_lab(lab: &Lab) -> Result<(), String> {
     if let Some(f) = &lab.follow {
-        follow::valid_every(&f.every)?;
+        follow::valid_every("[follow]", &f.every)?;
+    }
+    if let Some(c) = &lab.clones {
+        clones::valid(c)?;
     }
     if let Some(g) = &lab.gadget_group {
         safe_word("gadget_group", g)?;

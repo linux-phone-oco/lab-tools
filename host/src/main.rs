@@ -21,7 +21,7 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 fn main() {
     let r = Contract::parse_and_lint(OnProblems::FailOnError);
     if Contract::HELP.get_from(&r).unwrap_or(false) {
-        print!("{}", cli::usage("lpoco-host", "The lab host prepared from declarations (run as lpoco host). Commands: plan (the default; changes nothing on the host, only fetches each declaration's clone), prepare now (changes only what differs), follow [now] (a newer family release installed when no keeper holds a phone, checked, its pin landed), check (reads, and exercises the share as the lab user), revoke now (removes the standing grant once the check passes)."));
+        print!("{}", cli::usage("lpoco-host", "The lab host prepared from declarations (run as lpoco host). Commands: plan (the default; changes nothing on the host, only fetches each declaration's clone), prepare now (changes only what differs), follow [now] (a newer family release installed when no keeper holds a phone, checked, its pin landed), clones [now] (the shared clones under lab.toml [clones] fast-forwarded when clean and on main, any other named), check (reads, and exercises the share as the lab user), revoke now (removes the standing grant once the check passes)."));
         return;
     }
     if Contract::VERSION.get_from(&r).unwrap_or(false) {
@@ -326,6 +326,7 @@ fn run(r: &Resolution) -> Result<i32, String> {
         }
         Command::Check => check(&st),
         Command::Follow => follow(&st, Contract::NOW.get_from(r).as_deref() == Some("now")),
+        Command::Clones => clones(&st, Contract::NOW.get_from(r).as_deref() == Some("now")),
         Command::Revoke => {
             if Contract::NOW.get_from(r).as_deref() != Some("now") {
                 return Err("revoke removes the standing grant: say `lpoco host revoke now` (it refuses unless the check passes)".into());
@@ -528,6 +529,18 @@ fn plan(st: &State) {
             println!("    {}", c.join(" "));
         }
     }
+    if let Some((files, cmds)) = clones_units(st) {
+        println!("\nclones (user timer, no root; `lpoco host clones now` fast-forwards each clean main checkout under the declared folders and names the others):");
+        for f in &files {
+            println!("    {} ({})", f.dst, f.state());
+            for l in f.diff() {
+                println!("        {l}");
+            }
+        }
+        for c in &cmds {
+            println!("    {}", c.join(" "));
+        }
+    }
     println!("\ntools:");
     for t in tools {
         let found = t.found_text();
@@ -610,7 +623,7 @@ fn prepare(st: &State) -> Result<i32, String> {
         replace_file(&unit.dst, unit.content.as_bytes(), 0o644)
             .map_err(|e| format!("cannot write {}: {e}", unit.dst))?;
     }
-    if let Some((files, cmds)) = follow_units(st) {
+    for (files, cmds) in [follow_units(st), clones_units(st)].into_iter().flatten() {
         for f in files.iter().filter(|f| f.changed()) {
             if let Some(d) = Path::new(&f.dst).parent() {
                 fs::create_dir_all(d).map_err(|e| format!("cannot make {}: {e}", d.display()))?;
@@ -1626,6 +1639,35 @@ fn land_pin(st: &State, pinned: &str, newest: &str) -> Result<(), String> {
 /// user commands (no root) that make them known and start the timer.
 fn follow_units(st: &State) -> Option<(Vec<FileChange>, Vec<Vec<String>>)> {
     let every = &st.lab.follow.as_ref()?.every;
+    Some(timer_units(
+        st,
+        follow::FOLLOW_TIMER,
+        follow::FOLLOW_SERVICE,
+        follow::timer_text(every),
+        follow::service_text(),
+    ))
+}
+
+/// The user units that run `clones`, when lab.toml declares `[clones]`.
+fn clones_units(st: &State) -> Option<(Vec<FileChange>, Vec<Vec<String>>)> {
+    let every = &st.lab.clones.as_ref()?.every;
+    Some(timer_units(
+        st,
+        clones::TIMER,
+        clones::SERVICE,
+        clones::timer_text(every),
+        clones::service_text(),
+    ))
+}
+
+/// A user timer and the service it starts, as files to write and the user commands (no root) that make them known.
+fn timer_units(
+    st: &State,
+    timer: &str,
+    service: &str,
+    timer_text: String,
+    service_text: String,
+) -> (Vec<FileChange>, Vec<Vec<String>>) {
     let dir = format!("{}/.config/systemd/user", st.home);
     let unit = |name: &str, content: String| {
         let dst = format!("{dir}/{name}");
@@ -1636,24 +1678,55 @@ fn follow_units(st: &State) -> Option<(Vec<FileChange>, Vec<Vec<String>>)> {
             dst,
         }
     };
-    let files = vec![
-        unit(follow::FOLLOW_TIMER, follow::timer_text(every)),
-        unit(follow::FOLLOW_SERVICE, follow::service_text()),
-    ];
+    let files = vec![unit(timer, timer_text), unit(service, service_text)];
     let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
     let mut cmds = Vec::new();
     if files.iter().any(FileChange::changed) {
         cmds.push(s(&["systemctl", "--user", "daemon-reload"]));
     }
-    let wanted = format!("{dir}/timers.target.wants/{}", follow::FOLLOW_TIMER);
+    let wanted = format!("{dir}/timers.target.wants/{timer}");
     if files.iter().any(FileChange::changed) || !Path::new(&wanted).exists() {
-        cmds.push(s(&[
-            "systemctl",
-            "--user",
-            "enable",
-            "--now",
-            follow::FOLLOW_TIMER,
-        ]));
+        cmds.push(s(&["systemctl", "--user", "enable", "--now", timer]));
     }
-    Some((files, cmds))
+    (files, cmds)
+}
+
+/// `clones [now]`: each shared clone under `[clones] folders` that is clean and on main is fast-forwarded to
+/// origin/main; any other is left as it is and named with why. Without `now` it only says what it would do.
+fn clones(st: &State, now: bool) -> Result<i32, String> {
+    let Some(c) = &st.lab.clones else {
+        println!("no [clones] declared in lab.toml: nothing to keep fresh");
+        return Ok(0);
+    };
+    let (mut unreadable, mut fetched, mut fetch_failed) = (false, 0, 0);
+    for folder in &c.folders {
+        let folder = PathBuf::from(expand_home(folder, &st.home));
+        let found = match clones::clones_in(&folder) {
+            Ok(f) => f,
+            Err(said) => {
+                println!("{said}");
+                unreadable = true;
+                continue;
+            }
+        };
+        if found.is_empty() {
+            println!("{}: holds no clone", folder.display());
+        }
+        for dir in found {
+            let name = dir.file_name().map_or_else(
+                || dir.display().to_string(),
+                |n| n.to_string_lossy().into_owned(),
+            );
+            let outcome = clones::freshen(&dir, now);
+            match outcome {
+                clones::Outcome::FetchFailed(_) => fetch_failed += 1,
+                clones::Outcome::UpToDate | clones::Outcome::Behind(_) => fetched += 1,
+                clones::Outcome::Left(_) => {}
+            }
+            println!("{}", clones::line(&name, &outcome, now));
+        }
+    }
+    // a clone left alone is named, not a failed unit; a run that could reach nothing, or a folder that is not
+    // there, is: the unit shows failed
+    Ok(i32::from(unreadable || (fetch_failed > 0 && fetched == 0)))
 }
