@@ -80,3 +80,30 @@ fn a_missing_nfpm_is_named_with_the_config_it_left() {
         "{e}"
     );
 }
+
+#[test]
+fn the_boot_package_is_packed_with_the_postinstall_the_run_wrote() {
+    // the stand-in copies its --config to its --target, so the test reads what nfpm was told
+    let (dir, nfpm) = setup("post", "#!/bin/sh\ncp \"$5\" \"$7\"\n");
+    fs::create_dir_all(dir.join("units")).unwrap();
+    fs::write(dir.join("units/a.service"), "[Unit]\n").unwrap();
+    let toml = format!(
+        "{DEVICE}\n[[layer.file]]\nfrom = \"units/a.service\"\nto = \"/usr/lib/systemd/system/a.service\"\nkind = \"unit\"\n"
+    );
+    fs::write(dir.join("device.toml"), toml).unwrap();
+    let o = pack(&dir, &nfpm, "deb");
+    assert_eq!(
+        o.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+    let script = dir.join("out/stage/xiaomi-surya-boot/scripts/postinstall");
+    let body = fs::read_to_string(&script).unwrap();
+    assert!(body.contains("systemctl preset a.service"), "{body}");
+    let packed = fs::read_to_string(dir.join("out/xiaomi-surya-boot_0.1.0_all.deb")).unwrap();
+    assert!(
+        packed.contains(&format!("postinstall: \"{}\"", script.display())),
+        "{packed}"
+    );
+}
