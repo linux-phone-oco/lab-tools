@@ -123,8 +123,31 @@ pub fn timer_text(every: &str) -> String {
     format!("[Unit]\nDescription=lpoco host follow: look for a newer family release\n\n[Timer]\nOnBootSec=5min\nOnUnitActiveSec={every}\n\n[Install]\nWantedBy=timers.target\n")
 }
 
-pub fn service_text() -> String {
-    "[Unit]\nDescription=lpoco host follow: install a newer family release in a lease-free window, check it, land the pin\n\n[Service]\nType=oneshot\nExecStart=%h/.local/bin/lpoco-host follow now\n".to_string()
+/// The service. `lab` is the lab.toml the host was prepared from when that is not the default one: the service reads
+/// that file, not the default place.
+pub fn service_text(lab: Option<&str>) -> String {
+    let args = lab
+        .map(|l| format!(" --lab {}", unit_quoted(l)))
+        .unwrap_or_default();
+    format!("[Unit]\nDescription=lpoco host follow: install a newer family release in a lease-free window, check it, land the pin\n\n[Service]\nType=oneshot\nExecStart=%h/.local/bin/lpoco-host follow now{args}\n")
+}
+
+/// A word of an ExecStart line in double quotes, with what systemd reads inside them escaped: backslash, quote,
+/// newline, `%` specifiers and `$` variables.
+pub fn unit_quoted(s: &str) -> String {
+    let mut out = String::from("\"");
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '%' => out.push_str("%%"),
+            '$' => out.push_str("$$"),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
 }
 
 #[cfg(test)]
@@ -162,6 +185,14 @@ mod tests {
             Some(vec!["install a b".to_string()])
         );
         assert_eq!(plan_root_commands("no such section"), None);
+    }
+
+    #[test]
+    fn a_word_in_an_exec_line_is_quoted_so_systemd_reads_it_back_whole() {
+        assert_eq!(unit_quoted("/a b/lab.toml"), "\"/a b/lab.toml\"");
+        assert_eq!(unit_quoted("a%h$X\"\\\n"), "\"a%%h$$X\\\"\\\\\\n\"");
+        assert!(service_text(None).ends_with("follow now\n"));
+        assert!(service_text(Some("/x y")).ends_with("follow now --lab \"/x y\"\n"));
     }
 
     #[test]

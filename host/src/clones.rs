@@ -28,8 +28,11 @@ pub fn timer_text(every: &str) -> String {
     format!("[Unit]\nDescription=lpoco host clones: fast-forward the shared clones\n\n[Timer]\nOnBootSec=3min\nOnUnitActiveSec={every}\n\n[Install]\nWantedBy=timers.target\n")
 }
 
-pub fn service_text() -> String {
-    "[Unit]\nDescription=lpoco host clones: fast-forward each clean main checkout to origin/main, name the others\n\n[Service]\nType=oneshot\nTimeoutStartSec=10min\nExecStart=%h/.local/bin/lpoco-host clones now\n".to_string()
+pub fn service_text(lab: Option<&str>) -> String {
+    let args = lab
+        .map(|l| format!(" --lab {}", crate::follow::unit_quoted(l)))
+        .unwrap_or_default();
+    format!("[Unit]\nDescription=lpoco host clones: fast-forward each clean main checkout to origin/main, name the others\n\n[Service]\nType=oneshot\nTimeoutStartSec=10min\nExecStart=%h/.local/bin/lpoco-host clones now{args}\n")
 }
 
 /// A declaration that cannot reach a unit file or leave the lab user's home.
