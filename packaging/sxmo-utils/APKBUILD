@@ -4,6 +4,7 @@
 # surya's sensors (decision 2026-11-18-upstream-forks). pkgver 1.18.1_pYYYYMMDD sorts above Alpine's
 # 1.18.1-rN, so with the lab repository tagged (sxmo-utils@lab) `apk upgrade` keeps this one.
 # Checked by .github/check-sxmo-utils-apk.sh.
+# Origin: sxmo-utils by ~mil on sr.ht (https://git.sr.ht/~mil/sxmo-utils); APKBUILD from Alpine aports community/sxmo-utils 1.18.1-r5; source our fork grenudi/sxmo-utils at the lab tag
 # Contributor: Anjandev Momi <anjan@momi.ca>
 # Contributor: Maarten van Gompel <proycon@anaproy.nl>
 # Maintainer: Willow Barraco <contact@willowbarraco.fr>
