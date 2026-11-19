@@ -52,6 +52,8 @@ pub struct Manifest {
     pub layer: Option<Layer>,
     /// The tools this device's lab pins
     pub tools: Option<Tools>,
+    /// The kernels `lpoco lab kernel` keeps on the phone beside stock
+    pub kernels: Option<Kernels>,
 }
 
 impl Manifest {
@@ -73,6 +75,9 @@ impl Manifest {
                 }
                 id.make_ascii_lowercase();
             }
+        }
+        if let Some(k) = &m.kernels {
+            k.validate()?;
         }
         for (i, c) in m.user_config.iter().enumerate() {
             if m.user_config[..i].iter().any(|o| o.path == c.path) {
@@ -102,6 +107,46 @@ pub fn schema() -> String {
     let mut text = serde_json::to_string_pretty(&s).expect("a schema is JSON");
     text.push('\n');
     text
+}
+
+/// `[kernels]`: the test kernels kept on the phone as boot entries beside stock (`lpoco lab kernel try NAME`), and
+/// the one kept as the default. A procedure reads the names from here instead of carrying them.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Kernels {
+    /// the test kernels by name (lowercase letters, digits and `-`: devlab's rule; `+` is systemd-boot's try counter)
+    #[serde(default)]
+    pub test: Vec<String>,
+    /// the test kernel kept as the default (it must be listed in `test`); none means stock is the default
+    pub kept: Option<String>,
+}
+
+/// A kernel entry's name: lowercase letters, digits and `-` (devlab's rule; `+` is systemd-boot's try counter).
+pub fn is_kernel_name(n: &str) -> bool {
+    !n.is_empty()
+        && n.chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+impl Kernels {
+    fn validate(&self) -> Result<(), String> {
+        for (i, n) in self.test.iter().chain(self.kept.iter()).enumerate() {
+            if !is_kernel_name(n) {
+                return Err(format!(
+                    "kernels: {n:?} is not a kernel name (lowercase letters, digits and -)"
+                ));
+            }
+            if i < self.test.len() && self.test[..i].contains(n) {
+                return Err(format!("kernels: test lists {n:?} twice"));
+            }
+        }
+        if let Some(k) = &self.kept {
+            if !self.test.contains(k) {
+                return Err(format!("kernels: kept {k:?} is not listed in test"));
+            }
+        }
+        Ok(())
+    }
 }
 
 /// `[tools]`: the pins of this device's lab.
