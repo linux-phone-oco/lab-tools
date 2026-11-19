@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.35.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-layer-v0.35.0...lpoco-layer-v0.35.1) - 2026-11-19
+
+### Added
+
+- *(lab)* a try that no new boot answers reports the host's USB timeline for the phone ([#291](https://github.com/linux-phone-oco/lab-tools/pull/291))
+
 ## [0.35.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-layer-v0.34.2...lpoco-layer-v0.35.0) - 2026-11-19
 
 ### Added
