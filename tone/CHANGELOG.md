@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.3](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-tone-v0.27.2...lpoco-tone-v0.27.3) - 2026-11-19
+
+### Added
+
+- *(layer)* apk gets Nura's /etc/deviceinfo from [boot] and [device] ([#235](https://github.com/linux-phone-oco/lab-tools/pull/235)) ([#235](https://github.com/linux-phone-oco/lab-tools/pull/235))
+
 ## [0.27.2](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-tone-v0.27.1...lpoco-tone-v0.27.2) - 2026-11-19
 
 ### Added
