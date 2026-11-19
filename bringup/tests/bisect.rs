@@ -189,11 +189,16 @@ dtb = "dtb2"
     assert!(o.status.success(), "{}", text(&o.stderr));
     let blob = fs::read(un.join("kernel")).unwrap();
     assert_eq!(blob[..4], LZ4_MAGIC);
+    // the frame alone: lz4 -dc on the frame plus the dtb behind it exits on that trailing garbage and (lz4 1.11, async
+    // output) may drop what it decoded, empty at random under load; so the dtb is cut off before decoding
+    let dtb_len = fs::metadata(un.join("appended.dtb")).unwrap().len() as usize;
+    let framed = un.join("frame.lz4");
+    fs::write(&framed, &blob[..blob.len() - dtb_len]).unwrap();
     let plain = Command::new("lz4")
-        .args(["-dc", s(&un.join("kernel"))])
+        .args(["-dc", s(&framed)])
         .output()
         .unwrap();
-    // lz4 -dc stops at the frame's end; the appended dtb follows as trailing garbage it reports on
+    assert!(plain.status.success(), "lz4 -dc: {}", text(&plain.stderr));
     assert_eq!(&plain.stdout[..9000], &vec![0x4Du8; 9000][..]);
     assert_eq!(
         fs::read(un.join("appended.dtb")).unwrap(),
