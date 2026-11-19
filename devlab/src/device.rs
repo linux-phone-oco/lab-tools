@@ -26,6 +26,8 @@ pub struct Device {
     /// What must never be touched on this phone, whoever asks: a command devlab carries to the phone
     /// (phone sh|root, the MCP door) that names one is refused, saying why
     pub hazard: Vec<Hazard>,
+    /// Config files the phone keeps outside any git: the health suite reports their blobs, the lab compares
+    pub user_config: Vec<lpoco_manifest::UserConfig>,
 }
 
 impl Device {
@@ -67,7 +69,20 @@ impl Device {
         }
         files.sort();
         files.dedup();
-        Ok(format!("PIECE_FILES='{}'\n", files.join(" ")))
+        let mut env = format!("PIECE_FILES='{}'\n", files.join(" "));
+        if !self.user_config.is_empty() {
+            // PATH, or PATH=DEFAULT when declared against the package default (the manifest refuses a space, quote or '=')
+            let configs: Vec<String> = self
+                .user_config
+                .iter()
+                .map(|c| match &c.expect {
+                    Some(e) => format!("{}={e}", c.path),
+                    None => c.path.clone(),
+                })
+                .collect();
+            env.push_str(&format!("PIECE_CONFIGS='{}'\n", configs.join(" ")));
+        }
+        Ok(env)
     }
 
     pub fn parse(text: &str) -> Result<Device> {
@@ -89,6 +104,7 @@ impl Device {
             hear: m.hear,
             health: m.health,
             hazard: m.hazard,
+            user_config: m.user_config,
         })
     }
 
@@ -183,6 +199,19 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_declared_user_config_is_named_to_the_phone_with_its_package_default_when_it_has_one() {
+        let d = Device::parse(
+            "[device]\ncodename = \"p\"\n[connection]\nuser = \"u\"\naddresses = [\"a\"]\n\
+             [[user_config]]\npath = \"/home/u/hook.sh\"\nexpect = \"/usr/share/x/hook.sh\"\n\
+             [[user_config]]\npath = \"/home/u/profile\"\nfrom = \"config/profile\"\n",
+        )
+        .unwrap();
+        assert_eq!(
+            d.pieces_env(&[]).unwrap(),
+            "PIECE_FILES=''\nPIECE_CONFIGS='/home/u/hook.sh=/usr/share/x/hook.sh /home/u/profile'\n"
+        );
+    }
     #[test]
     fn a_command_that_touches_a_hazard_is_refused_saying_why() {
         let d = Device::parse(

@@ -34,6 +34,9 @@ pub struct Manifest {
     /// What must never be touched on this phone, whoever asks
     #[serde(default)]
     pub hazard: Vec<Hazard>,
+    /// Config files the phone keeps outside any git, which the lab names when they drift (lpoco host check)
+    #[serde(default)]
+    pub user_config: Vec<UserConfig>,
     /// What the lab host needs for this device
     #[serde(default)]
     pub host: HostTable,
@@ -45,7 +48,14 @@ pub struct Manifest {
 
 impl Manifest {
     pub fn parse(text: &str) -> Result<Manifest, String> {
-        toml::from_str(text).map_err(|e| e.to_string())
+        let m: Manifest = toml::from_str(text).map_err(|e| e.to_string())?;
+        for (i, c) in m.user_config.iter().enumerate() {
+            if m.user_config[..i].iter().any(|o| o.path == c.path) {
+                return Err(format!("user_config {} is declared twice", c.path));
+            }
+            c.validate()?;
+        }
+        Ok(m)
     }
 }
 
@@ -457,5 +467,58 @@ impl Hear {
                 component: default_component(),
             })
             .collect()
+    }
+}
+
+/// A config file on the phone, outside any git, that the lab compares at each check: declared either against
+/// the default its package ships (`expect`, a phone path) or against a copy kept in the base (`from`, a path
+/// in the device repository) - exactly one. A deliberate change then lives in the base or in the package.
+#[derive(Debug, Clone, Deserialize, PartialEq, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct UserConfig {
+    /// The file's absolute path on the phone
+    pub path: String,
+    /// The package default's absolute path on the phone, e.g. /usr/share/sxmo/...
+    #[serde(default)]
+    pub expect: Option<String>,
+    /// The copy kept in the device repository, relative to the manifest
+    #[serde(default)]
+    pub from: Option<String>,
+}
+
+impl UserConfig {
+    fn validate(&self) -> Result<(), String> {
+        let word = |p: &str| {
+            p.starts_with('/') && !p.contains(char::is_whitespace) && !p.contains(['\'', '='])
+        };
+        if !word(&self.path) || !self.expect.as_deref().is_none_or(word) {
+            return Err(format!(
+                "user_config {}: a phone path is absolute, with no space, quote or '='",
+                self.path
+            ));
+        }
+        if self.expect.as_deref() == Some(self.path.as_str()) {
+            return Err(format!(
+                "user_config {}: expect is the file itself",
+                self.path
+            ));
+        }
+        if self
+            .from
+            .as_deref()
+            .is_some_and(|f| f.starts_with('/') || f.split('/').any(|s| s == ".."))
+        {
+            return Err(format!(
+                "user_config {}: from is relative to the manifest, with no ..",
+                self.path
+            ));
+        }
+        if self.expect.is_some() == self.from.is_some() {
+            return Err(format!(
+                "user_config {}: declare exactly one of expect (the package default) and from (the base's copy)",
+                self.path
+            ));
+        }
+        Ok(())
     }
 }
