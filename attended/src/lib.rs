@@ -155,6 +155,8 @@ struct Config {
     dry: bool,
     until_first_prompt: bool,
     part: Option<String>,
+    /// start at the step of this name; the steps before it are skipped
+    from: Option<String>,
     /// the device.toml of the procedure's device, the one devlab is handed
     device: std::path::PathBuf,
     /// what that file declares: steps read their keys from it
@@ -177,6 +179,12 @@ struct State {
     n: u32,
     /// the step being run: what the phone says is filed under it
     step: String,
+    /// every step name this run has met, for the names `--from` is checked against
+    seen: Vec<String>,
+    /// whether the step `--from` names has come
+    from_reached: bool,
+    /// how many steps `--from` skipped
+    skipped: u32,
 }
 
 static CONFIG: OnceLock<Config> = OnceLock::new();
@@ -186,6 +194,9 @@ static STATE: Mutex<State> = Mutex::new(State {
     log: None,
     n: 0,
     step: String::new(),
+    seen: Vec::new(),
+    from_reached: false,
+    skipped: 0,
 });
 
 fn config() -> &'static Config {
@@ -260,6 +271,21 @@ impl Drop for Run {
             );
             return;
         }
+        let (seen, reached) = {
+            let st = STATE.lock().unwrap_or_else(|e| e.into_inner());
+            (st.seen.clone(), st.from_reached)
+        };
+        if let (Some(from), false) = (c.from.as_deref(), reached) {
+            eprintln!(
+                "{}: no step is called {from:?} (--from); the steps are: {}",
+                c.name,
+                seen.iter()
+                    .map(|s| format!("{s:?}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+            std::process::exit(2);
+        }
         note(
             "end",
             "",
@@ -281,7 +307,7 @@ impl Drop for Run {
     }
 }
 
-/// Begin the procedure: read the arguments (`--dry-run`, `--log FILE`, `--device FILE`, `--until FIRST_PROMPT`, `--part NAME`, `--help`), load the device's manifest, open the log. Call it once,
+/// Begin the procedure: read the arguments (`--dry-run`, `--log FILE`, `--device FILE`, `--until FIRST_PROMPT`, `--part NAME`, `--from STEP`, `--help`), load the device's manifest, open the log. Call it once,
 /// first, and keep what it returns until the end of main. Exits 0 for `--help`; 1 for a wrong argument (as
 /// argenv does in every lpoco program); 2 when the device's device.toml is missing, invalid or another phone's (even in a dry run; only its schema and codename are checked, devlab judges the rest), when the log cannot be written, or when `--part` names a part the procedure has not got (a run stopped by `--until` exits 0 and leaves the log without an `end` line).
 pub fn procedure(name: &str, device: &str) -> Run {
@@ -309,6 +335,7 @@ pub fn procedure(name: &str, device: &str) -> Run {
         });
     let until_first_prompt = cli::Contract::UNTIL.get_from(&r).as_deref() == Some("FIRST_PROMPT");
     let part = cli::Contract::PART.get_from(&r);
+    let from = cli::Contract::FROM.get_from(&r);
     let devlab = cli::Contract::DEVLAB
         .get_from(&r)
         .unwrap_or_else(|| "devlab".into());
@@ -337,6 +364,7 @@ pub fn procedure(name: &str, device: &str) -> Run {
         dry,
         until_first_prompt,
         part,
+        from,
         device: device_file,
         manifest,
         raw,
@@ -376,17 +404,46 @@ pub fn run_step(s: Step) {
         st.n
     };
     let (kind, name) = (s.kind.word(), s.name.clone());
+    // whether an earlier step has this very name: a --from would then start at the earlier one
+    let repeated = {
+        let mut st = STATE.lock().unwrap_or_else(|e| e.into_inner());
+        let repeated = st.seen.contains(&s.name);
+        st.seen.push(s.name.clone());
+        repeated
+    };
+    if let Some(from) = c.from.as_deref() {
+        let mut st = STATE.lock().unwrap_or_else(|e| e.into_inner());
+        if !st.from_reached && s.name != from {
+            st.step.clear();
+            st.skipped += 1;
+            drop(st);
+            println!("{kind} {n}: {name} - skipped (before --from)");
+            note("skip", &name, "before --from");
+            return;
+        }
+        st.from_reached = true;
+    }
     if s.prompts() && c.until_first_prompt {
+        let skipped = STATE.lock().unwrap_or_else(|e| e.into_inner()).skipped;
+        let resume = if repeated {
+            format!("no --from resumes here: an earlier step is also called {name:?}")
+        } else {
+            let part = c
+                .part
+                .as_deref()
+                .map_or(String::new(), |p| format!(" --part {p}"));
+            format!("resume with{part} --from {name:?}")
+        };
         note(
             "stop",
             &name,
-            "--until FIRST_PROMPT: the author is left alone",
+            &format!("--until FIRST_PROMPT: the author is left alone; {resume}"),
         );
         println!(
-            "{}: stopped before the first prompt ({:?}) after {} step(s){}",
+            "{}: stopped before the first prompt ({:?}) after {} step(s){}; {resume}",
             c.name,
             name,
-            n - 1,
+            n - 1 - skipped,
             if c.dry {
                 " (dry run: nothing was done)"
             } else {

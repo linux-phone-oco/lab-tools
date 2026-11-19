@@ -120,6 +120,14 @@ contract! {
         summary: "run: the longest one call to the phone may take, in seconds (none when not given).",
         ..Input::EMPTY
     };
+    FROM: String = Input {
+        key: "from",
+        ty: Type::String,
+        arg: Some(Arg { value_name: "STEP", ..Arg::long("from") }),
+        summary: "run: start at the step of this name; the steps before it are skipped (said and logged as skipped), so a run that ended at --until resumes without repeating what it did. A name no step has exits 2 listing the names there are.",
+        ..Input::EMPTY
+    };
+
     PART: String = Input {
         key: "part",
         ty: Type::String,

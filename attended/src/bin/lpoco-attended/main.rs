@@ -89,6 +89,7 @@ fn passed_on(r: &Resolution) -> Vec<String> {
         ("--device", Contract::DEVICE.get_from(r)),
         ("--until", Contract::UNTIL.get_from(r)),
         ("--part", Contract::PART.get_from(r)),
+        ("--from", Contract::FROM.get_from(r)),
         ("--call-limit", Contract::CALL_LIMIT.get_from(r)),
         ("--answer-limit", Contract::ANSWER_LIMIT.get_from(r)),
     ] {
