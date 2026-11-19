@@ -5,9 +5,9 @@
 //! device.toml / [layer], never hard-coded.
 
 use crate::bench::{self, Act, ActKind};
+use crate::prompt::Prompt;
 use crate::{Kind, Step};
 use lpoco_manifest::is_kernel_name;
-use std::io::BufRead;
 
 /// The author does something and looks at something ("what to do / what to check"); "ok" goes on, anything
 /// else is what was seen and stops the run; nobody answering stops it too. The same as [`confirm`].
@@ -73,32 +73,32 @@ pub fn act(act: Act) -> Step {
     }
 }
 
-/// The person is told what to do and what to check, answers `ok` or says what was seen.
+/// The person is told what to do and what to check, answers `ok` or says what was seen: on the terminal or in the
+/// answer file, whichever comes first.
 fn person(act: &Act) -> Result<(), String> {
     let (to_do, to_check) = (act.to_do(), act.to_check());
     println!("  ATTENDED - please {to_do}.");
     println!("  Check that {to_check}. Answer ok, or say what you saw instead:");
-    let mut line = String::new();
-    let mut got = 1;
-    while got > 0 && line.trim().is_empty() {
-        line.clear();
-        got = std::io::stdin().lock().read_line(&mut line).unwrap_or(0);
-    }
-    let answer = line.trim();
-    if got > 0 {
-        crate::note(
-            "asked",
-            &act.name(),
-            &format!("check: {to_check}; answer: {answer}"),
-        );
-    }
-    if got == 0 {
-        Err("nobody answered".to_string())
-    } else if answer.eq_ignore_ascii_case("ok") {
+    let prompt = Prompt {
+        step: &act.name(),
+        to_do: &to_do,
+        to_check: &to_check,
+    };
+    let answer = crate::ask_person(&prompt)?;
+    crate::note(
+        "asked",
+        &act.name(),
+        &format!(
+            "check: {to_check}; answer: {}; by: {}",
+            answer.text, answer.who
+        ),
+    );
+    if answer.text.eq_ignore_ascii_case("ok") {
         Ok(())
     } else {
         Err(format!(
-            "expected that {to_check}, the author saw: {answer}"
+            "expected that {to_check}, the author saw: {}",
+            answer.text
         ))
     }
 }

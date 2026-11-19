@@ -90,6 +90,7 @@ fn passed_on(r: &Resolution) -> Vec<String> {
         ("--until", Contract::UNTIL.get_from(r)),
         ("--part", Contract::PART.get_from(r)),
         ("--call-limit", Contract::CALL_LIMIT.get_from(r)),
+        ("--answer-limit", Contract::ANSWER_LIMIT.get_from(r)),
     ] {
         if let Some(v) = v {
             a.push(flag.to_string());
