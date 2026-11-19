@@ -454,6 +454,14 @@
           },
           "default": []
         },
+        "suspend_stop": {
+          "description": "Systemd services stopped before the controlled suspend cycle (lpoco-health suspend cycle) and started\nagain after it, last stopped first: the daemons a suspend would crash or leave stopped (surya: sensorspd)",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
         "awake_gates": {
           "description": "Gates that hold the keep-awake lock (lpoco-health awake) while autosleep is allowed, named by token:\nbluetooth-not-up (hci0 not UP, or an rfkill stuck in D state). The package knows the tokens; an unknown one is refused",
           "type": "array",

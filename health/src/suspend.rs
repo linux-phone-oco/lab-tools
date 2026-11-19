@@ -4,7 +4,7 @@
 //! What surya's keeper did by hand (surya-lab sleep/way-back.sh cycle) as a verb of the suite. The device's
 //! manifest ([health]) declares the way back - `suspend_guard`, a command that succeeds while the phone's
 //! watchdog is armed, so a suspend that does not return resets the phone - and the wake sources to quiet for
-//! the cycle (`suspend_quiet`, wakeup files). Without a way back the cycle is refused and nothing suspends.
+//! the cycle (`suspend_quiet`, wakeup files) and the services to stop for it (`suspend_stop`, started again after). Without a way back the cycle is refused and nothing suspends.
 //! The cycle reads, before and after: the SoC's own sleep counters (qcom_stats), the suspend counter, the cpu
 //! idle states (cluster states among them) and the wakeup sources; it puts every quieted source back; it keeps
 //! the report as this boot's cycle, which the check soc-sleeps reads.
@@ -36,6 +36,8 @@ pub struct Ask {
 struct Declared {
     guard: String,
     quiet: Vec<String>,
+    /// services stopped before the suspend and started after it (systemd units, in the order named)
+    stop: Vec<String>,
 }
 
 /// The value of a line `KEY='...'` as devlab writes it (`'` inside is `'\''`): one pair of quotes off, the
@@ -57,6 +59,7 @@ fn declared(env_text: &str) -> Declared {
         match k.trim() {
             "SUSPEND_GUARD" => d.guard = unquote(v),
             "SUSPEND_QUIET" => d.quiet = unquote(v).split_whitespace().map(String::from).collect(),
+            "SUSPEND_STOP" => d.stop = unquote(v).split_whitespace().map(String::from).collect(),
             _ => {}
         }
     }
@@ -197,6 +200,77 @@ fn refusals(root: &Path, d: &Declared, seconds: u64) -> Vec<String> {
     r
 }
 
+/// Services stopped for the cycle, and started again however the cycle ends (the reverse of the order stopped).
+/// Only a unit that was active is stopped, and only that is owed a start; the owed ones are kept in
+/// `stopped.json`, so a cycle cut off hard is made good by the next.
+struct Stopped {
+    owed: Vec<String>,
+    /// units whose stop failed: said in the report
+    not_stopped: Vec<String>,
+    kept: PathBuf,
+}
+
+fn systemctl(args: &[&str], unit: &str) -> bool {
+    Command::new("systemctl")
+        .args(args)
+        .args(["--", unit])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
+}
+
+impl Stopped {
+    fn keep(&self) {
+        let _ = std::fs::create_dir_all(self.kept.parent().unwrap());
+        let _ = std::fs::write(&self.kept, json!(self.owed).to_string());
+    }
+
+    fn stop(root: &Path, units: &[String]) -> Stopped {
+        let kept = root.join(OUT).join("stopped.json");
+        let mut s = Stopped {
+            owed: serde_json::from_str::<Vec<String>>(
+                &std::fs::read_to_string(&kept).unwrap_or_default(),
+            )
+            .unwrap_or_default(),
+            not_stopped: Vec::new(),
+            kept,
+        };
+        s.start_back(); // what a cut-off cycle left stopped, first
+        for u in units {
+            if !systemctl(&["is-active", "--quiet"], u) {
+                continue;
+            }
+            // owed a start once a stop was tried, whether or not the stop said it worked
+            s.owed.push(u.clone());
+            s.keep();
+            if !systemctl(&["stop"], u) {
+                s.not_stopped.push(u.clone());
+            }
+        }
+        s
+    }
+
+    /// Start them again, last stopped first; the ones that would not start are returned.
+    fn start_back(&mut self) -> Vec<String> {
+        let mut failed = Vec::new();
+        for u in self.owed.drain(..).rev() {
+            if !systemctl(&["start"], &u) {
+                failed.push(u);
+            }
+        }
+        let _ = std::fs::remove_file(&self.kept);
+        failed
+    }
+}
+
+impl Drop for Stopped {
+    fn drop(&mut self) {
+        self.start_back();
+    }
+}
+
 fn load_declared(ask: &Ask) -> Declared {
     declared(&std::fs::read_to_string(ask.root.join(ENV)).unwrap_or_default())
 }
@@ -269,7 +343,7 @@ pub fn plan(ask: &Ask) -> (i32, Value) {
     (
         0,
         json!({"verb": "plan", "would_cycle": why.is_empty(), "refusals": why,
-               "seconds": ask.seconds, "quiet": d.quiet, "way_back": d.guard, "before": snapshot(&c)}),
+               "seconds": ask.seconds, "quiet": d.quiet, "stop": d.stop, "way_back": d.guard, "before": snapshot(&c)}),
     )
 }
 
@@ -281,11 +355,14 @@ pub fn cycle(ask: &Ask) -> (i32, Value) {
         return (2, json!({"verb": "cycle", "refused": why}));
     }
     let root = &ask.root;
-    let before = read_counters(root);
     let alarm = root.join("sys/class/rtc/rtc0/wakealarm");
-    let target = before.rtc.unwrap_or(0) + ask.seconds;
     let quieted = Quieted::quiet(root, &d.quiet);
     let not_quieted = quieted.not_quieted.clone();
+    // stopped before the alarm is armed: a slow stop must not eat the sleep
+    let mut stopped = Stopped::stop(root, &d.stop);
+    let not_stopped = stopped.not_stopped.clone();
+    let before = read_counters(root);
+    let target = before.rtc.unwrap_or(0) + ask.seconds;
     let _ = std::fs::write(&alarm, "0");
     let armed = std::fs::write(&alarm, target.to_string()).is_ok();
     if !armed || text(&alarm) != target.to_string() {
@@ -299,6 +376,7 @@ pub fn cycle(ask: &Ask) -> (i32, Value) {
     std::thread::sleep(Duration::from_secs(ask.settle));
     let after = read_counters(root);
     let _ = std::fs::write(&alarm, "0");
+    let not_started = stopped.start_back();
     drop(quieted);
 
     let suspended = after.suspends.unwrap_or(0) > before.suspends.unwrap_or(0);
@@ -356,6 +434,9 @@ pub fn cycle(ask: &Ask) -> (i32, Value) {
         "woke_early": woke_early,
         "soc_slept": suspended && slept && !woke_early,
         "not_quieted": not_quieted,
+        "stopped": d.stop,
+        "not_started": not_started,
+        "not_stopped": not_stopped,
         "asleep_s": asleep,
         "soc": soc,
         "idle": idle,
@@ -372,7 +453,14 @@ pub fn cycle(ask: &Ask) -> (i32, Value) {
     if let Err(e) = kept {
         report["kept"] = json!(format!("not kept: {e}"));
     }
-    (if report["soc_slept"] == true { 0 } else { 1 }, report)
+    (
+        if report["soc_slept"] == true && not_started.is_empty() {
+            0
+        } else {
+            1
+        },
+        report,
+    )
 }
 
 #[cfg(test)]

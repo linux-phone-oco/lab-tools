@@ -63,6 +63,13 @@ impl Rig {
             "enabled\n",
         );
         put(&root, "armed", "");
+        put(&root, "bin/systemctl", FAKE_SYSTEMCTL);
+        assert!(Command::new("chmod")
+            .arg("+x")
+            .arg(root.join("bin/systemctl"))
+            .status()
+            .unwrap()
+            .success());
         // after the cycle (what the fake phone puts in place when it "suspends")
         put(&root, "after/cxsd", &stat(3, 1600));
         put(&root, "after/aosd", &stat(3, 1600));
@@ -93,6 +100,7 @@ impl Rig {
 cat "$1/sys/power/state" > "$1/seen_state"
 echo "$(cat "$1/sys/class/wakeup/wakeup1/event_count" | tr -d '\n')" > "$1/serial_before"
 cat "$1/sys/bus/platform/devices/88c000.serial/power/wakeup" > "$1/wakeup_during"
+cat "$1/systemctl.log" > "$1/systemctl_during" 2>/dev/null
 cp "$1/after/cxsd" "$1/sys/kernel/debug/qcom_stats/cxsd"
 cp "$1/after/aosd" "$1/sys/kernel/debug/qcom_stats/aosd"
 cp "$1/after/state1usage" "$1/sys/devices/system/cpu/cpu0/cpuidle/state1/usage"
@@ -112,6 +120,14 @@ echo 1005 > "$1/sys/class/rtc/rtc0/since_epoch"
             .arg(env!("CARGO_BIN_EXE_lpoco-health"))
             .args(args)
             .env("LPOCO_HEALTH_ROOT", r)
+            .env(
+                "PATH",
+                format!(
+                    "{}:{}",
+                    r.join("bin").display(),
+                    std::env::var("PATH").unwrap()
+                ),
+            )
             .output()
             .unwrap();
         if let Some(mut c) = reader {
@@ -124,6 +140,10 @@ echo 1005 > "$1/sys/class/rtc/rtc0/since_epoch"
 fn text(b: &[u8]) -> String {
     String::from_utf8_lossy(b).into_owned()
 }
+
+/// A systemctl that writes down "verb unit" (not is-active), says every unit is active unless a file
+/// `inactive` beside the root names it, and fails for the verb in `fail` when there is one.
+const FAKE_SYSTEMCTL: &str = "#!/bin/sh\nfor a; do u=$a; done\ngrep -qx \"$u\" \"$LPOCO_HEALTH_ROOT/inactive\" 2>/dev/null && [ \"$1\" = is-active ] && exit 1\n[ \"$1\" = is-active ] && exit 0\necho \"$1 $u\" >> \"$LPOCO_HEALTH_ROOT/systemctl.log\"\n[ \"$1\" != \"$(cat \"$LPOCO_HEALTH_ROOT/fail\" 2>/dev/null)\" ]\n";
 
 const ARMED: &str = "SUSPEND_GUARD='test -e $LPOCO_HEALTH_ROOT/armed'\nSUSPEND_QUIET='/sys/bus/platform/devices/88c000.serial/power/wakeup'\n";
 
@@ -322,5 +342,107 @@ fn sources_left_quiet_by_a_cut_off_cycle_are_put_back_by_the_next() {
         rig.read(w).trim(),
         "enabled",
         "the original, not 'disabled', is what comes back"
+    );
+}
+
+#[test]
+fn the_services_the_manifest_names_are_stopped_before_the_suspend_and_started_after() {
+    let rig = Rig::new(
+        "stop",
+        &format!("{ARMED}SUSPEND_STOP='sensorspd hexagonrpcd'\n"),
+    );
+    let plan = rig.run(&["suspend", "plan"], false);
+    let p: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
+    assert_eq!(p["stop"][0], "sensorspd", "plan names them: {p}");
+    assert_eq!(rig.read("systemctl.log"), "", "plan stops nothing");
+    let o = rig.run(
+        &["suspend", "cycle", "--seconds", "5", "--settle", "1"],
+        true,
+    );
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o.stdout));
+    assert_eq!(
+        rig.read("systemctl_during"),
+        "stop sensorspd\nstop hexagonrpcd\n",
+        "stopped, in order, before the phone went down"
+    );
+    assert_eq!(
+        rig.read("systemctl.log"),
+        "stop sensorspd\nstop hexagonrpcd\nstart hexagonrpcd\nstart sensorspd\n",
+        "started again after, in the reverse order"
+    );
+    let v: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap();
+    assert_eq!(v["stopped"][1], "hexagonrpcd", "{v}");
+    assert_eq!(v["not_started"].as_array().unwrap().len(), 0, "{v}");
+    assert!(!rig.p("var/lib/lpoco-health/suspend/stopped.json").exists());
+}
+
+#[test]
+fn a_unit_that_was_not_running_is_left_alone() {
+    let rig = Rig::new("idle", &format!("{ARMED}SUSPEND_STOP='sensorspd gone'\n"));
+    put(&rig.root, "inactive", "gone\n");
+    let o = rig.run(
+        &["suspend", "cycle", "--seconds", "5", "--settle", "1"],
+        true,
+    );
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o.stdout));
+    assert_eq!(
+        rig.read("systemctl.log"),
+        "stop sensorspd\nstart sensorspd\n",
+        "the inactive one is neither stopped nor started"
+    );
+}
+
+#[test]
+fn a_service_that_would_not_start_again_is_named_and_fails_the_run() {
+    let rig = Rig::new("nostart", &format!("{ARMED}SUSPEND_STOP='sensorspd'\n"));
+    put(&rig.root, "fail", "start");
+    let o = rig.run(
+        &["suspend", "cycle", "--seconds", "5", "--settle", "1"],
+        true,
+    );
+    assert_eq!(o.status.code(), Some(1), "a dead daemon is not a pass");
+    let v: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap();
+    assert_eq!(v["not_started"][0], "sensorspd", "{v}");
+}
+
+#[test]
+fn a_service_that_would_not_stop_is_named() {
+    let rig = Rig::new("nostop", &format!("{ARMED}SUSPEND_STOP='sensorspd'\n"));
+    put(&rig.root, "fail", "stop");
+    let o = rig.run(
+        &["suspend", "cycle", "--seconds", "5", "--settle", "1"],
+        true,
+    );
+    let v: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap();
+    assert_eq!(v["not_stopped"][0], "sensorspd", "{v}");
+}
+
+#[test]
+fn a_refused_cycle_stops_nothing() {
+    let un = Rig::new(
+        "unarmed-stop",
+        &format!("{ARMED}SUSPEND_STOP='sensorspd'\n"),
+    );
+    fs::remove_file(un.p("armed")).unwrap();
+    let o = un.run(&["suspend", "cycle"], false);
+    assert_eq!(o.status.code(), Some(2));
+    assert_eq!(un.read("systemctl.log"), "", "refused: nothing stopped");
+}
+
+#[test]
+fn services_left_stopped_by_a_cut_off_cycle_are_started_by_the_next() {
+    let rig = Rig::new("stale-stop", &format!("{ARMED}SUSPEND_STOP='sensorspd'\n"));
+    put(
+        &rig.root,
+        "var/lib/lpoco-health/suspend/stopped.json",
+        "[\"hexagonrpcd\"]",
+    );
+    let _ = rig.run(
+        &["suspend", "cycle", "--seconds", "5", "--settle", "1"],
+        true,
+    );
+    assert_eq!(
+        rig.read("systemctl.log"),
+        "start hexagonrpcd\nstop sensorspd\nstart sensorspd\n"
     );
 }

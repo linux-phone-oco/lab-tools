@@ -284,6 +284,11 @@ mod tests {
             .env("p")
             .contains("SUSPEND_QUIET='/a/power/wakeup /b/power/wakeup'\n"));
         assert!(e.contains("SUSPEND_QUIET=''\n"));
+        let ss: Health = toml::from_str("suspend_stop = [\"sensorspd\", \"hexagonrpcd\"]").unwrap();
+        assert!(ss
+            .env("p")
+            .contains("SUSPEND_STOP='sensorspd hexagonrpcd'\n"));
+        assert!(e.contains("SUSPEND_STOP=''\n"));
         assert!(e.contains("AWAKE_GATES=''\n"), "no gate unless named");
         let ag: Health = toml::from_str("awake_gates = [\"bluetooth-not-up\"]").unwrap();
         assert!(ag.env("p").contains("AWAKE_GATES='bluetooth-not-up'\n"));

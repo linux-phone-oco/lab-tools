@@ -310,6 +310,10 @@ pub struct Health {
     /// (lpoco-health suspend cycle) and put back after: the wake sources that would end s2idle at once
     #[serde(default)]
     pub suspend_quiet: Vec<String>,
+    /// Systemd services stopped before the controlled suspend cycle (lpoco-health suspend cycle) and started
+    /// again after it, last stopped first: the daemons a suspend would crash or leave stopped (surya: sensorspd)
+    #[serde(default)]
+    pub suspend_stop: Vec<String>,
     /// Gates that hold the keep-awake lock (lpoco-health awake) while autosleep is allowed, named by token:
     /// bluetooth-not-up (hci0 not UP, or an rfkill stuck in D state). The package knows the tokens; an unknown one is refused
     #[serde(default)]
@@ -328,7 +332,7 @@ impl Health {
         format!(
             "# written by devlab from the device's manifest ([health]) - do not edit here\n\
              DEVICE={}\nSOUND_CARDS={}\nREMOTEPROCS={}\nKNOWN_WARNINGS={}\nKNOWN_FAILED_UNITS={}\n\
-             ABSENT={}\nGAPS={}\nDATA_BUDGET_MB={}\nSUSPEND_IRQ_MAX={}\nSUSPEND_GUARD={}\nSUSPEND_QUIET={}\nAWAKE_GATES={}\n",
+             ABSENT={}\nGAPS={}\nDATA_BUDGET_MB={}\nSUSPEND_IRQ_MAX={}\nSUSPEND_GUARD={}\nSUSPEND_QUIET={}\nSUSPEND_STOP={}\nAWAKE_GATES={}\n",
             q(codename),
             q(&self.sound_cards.join(";")),
             q(&procs.join(" ")),
@@ -343,6 +347,7 @@ impl Health {
                 .unwrap_or_default()),
             q(self.suspend_guard.as_deref().unwrap_or("")),
             q(&self.suspend_quiet.join(" ")),
+            q(&self.suspend_stop.join(" ")),
             q(&self.awake_gates.join(" ")),
         )
     }
