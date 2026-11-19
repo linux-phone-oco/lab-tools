@@ -50,5 +50,39 @@ fn main() {
             })),
         ],
     ));
+    // with settle-here: a group that puts the phone back (settling), then a step that can still fail
+    if std::path::Path::new("settle-here").exists() {
+        run_group(
+            group(
+                "put the phone back",
+                [Step::new(Kind::Do, "put it back", || {
+                    phone().sh("test ! -e fail-settling")
+                })],
+            )
+            .settling(),
+        );
+        step("work after settling", || phone().sh("test ! -e fail-after"));
+    }
+    // with settle-nested: the settling group sits one level deeper, inside a group that is still open
+    if std::path::Path::new("settle-nested").exists() {
+        run_group(
+            group(
+                "wrap up",
+                [
+                    Item::from(
+                        group(
+                            "put the phone back",
+                            [Step::new(Kind::Do, "put it back", || phone().sh("true"))],
+                        )
+                        .settling(),
+                    ),
+                    Item::from(Step::new(Kind::Do, "work after settling", || {
+                        phone().sh("test ! -e fail-after")
+                    })),
+                ],
+            )
+            .way_back(marks("wrapper")),
+        );
+    }
     step("all done", || phone().sh("true"));
 }

@@ -337,7 +337,8 @@ pub fn phone_ready(kernel: &str) -> crate::Group {
 }
 
 /// Leave the phone on its known good ([`back_to_known_good`]): reboot into the default kernel, see the phone go down
-/// (the old instance still answers for a moment), then see it answer again.
+/// (the old instance still answers for a moment), then see it answer again. The group is settling: once it has passed,
+/// the way backs of the groups before it (`phone_ready`) are settled and a later failure does not reboot again.
 pub fn leave_known_good() -> crate::Group {
     crate::group(
         "leave the phone on its known good",
@@ -355,6 +356,7 @@ pub fn leave_known_good() -> crate::Group {
             wait_for_phone(60, 5),
         ],
     )
+    .settling()
 }
 
 /// The `vendor:product` of every device under a sysfs USB devices folder.
