@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-health-v0.22.0...lpoco-health-v0.22.1) - 2026-11-19
+
+### Fixed
+
+- *(bringup)* dt-check's verdict comes from the schema's output, defconfig first, tools baked in ([#205](https://github.com/linux-phone-oco/lab-tools/pull/205))
+
+### Other
+
+- MIT OR Apache-2.0 with LICENSE texts, SPDX headers, REUSE.toml and a licence check ([#203](https://github.com/linux-phone-oco/lab-tools/pull/203))
+
 ## [0.22.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-health-v0.21.2...lpoco-health-v0.22.0) - 2026-11-19
 
 ### Added
