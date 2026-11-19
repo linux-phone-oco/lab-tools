@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-ffs-acm-v0.22.2...lpoco-ffs-acm-v0.23.0) - 2026-11-19
+
+### Added
+
+- *(health)* suspend cycle stops and restarts [health] suspend_stop services ([#209](https://github.com/linux-phone-oco/lab-tools/pull/209))
+
 ## [0.22.2](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-ffs-acm-v0.22.1...lpoco-ffs-acm-v0.22.2) - 2026-11-19
 
 ### Added
