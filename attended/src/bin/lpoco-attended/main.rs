@@ -3,6 +3,7 @@
 //! dry-run by name (decision 2026-11-19-procedures-one-shape). See cli.rs for the invocation surface.
 
 mod cli;
+mod lift;
 mod repo;
 mod template;
 
@@ -38,14 +39,15 @@ fn run(r: &Resolution) -> Result<i32, String> {
         return Err(format!("{extra:?} is one word too many: usage: lpoco attended new NAME | run NAME [--dry-run] | check [--host]"));
     }
     let device = Contract::DEVICE.get_from(r);
-    let repo = repo::find(device.as_deref())?;
+    let repo = || repo::find(device.as_deref());
     let rust_script = Contract::RUST_SCRIPT
         .get_from(r)
         .unwrap_or_else(|| "rust-script".into());
     match verb {
-        Verb::New => new(r, &repo),
-        Verb::Run => run_one(r, &repo, &rust_script),
-        Verb::Check => check(r, &repo, &rust_script, device.as_deref()),
+        Verb::New => new(r, &repo()?),
+        Verb::Run => run_one(r, &repo()?, &rust_script),
+        Verb::Check => check(r, &repo()?, &rust_script, device.as_deref()),
+        Verb::Lift => lift_verb(r),
     }
 }
 
@@ -242,4 +244,20 @@ fn host_ready(devlab: &str, manifest: &Path) -> Result<String, String> {
         manifest.display(),
         said.trim()
     ))
+}
+
+/// `lift`: every named repo's steps beside the library, as a table (it needs no one device).
+fn lift_verb(r: &Resolution) -> Result<i32, String> {
+    let repos = Contract::REPOS
+        .get_from(r)
+        .ok_or("lift needs --repos DIR,DIR: the device repos whose procedures/steps to read")?;
+    let repos: Vec<std::path::PathBuf> = repos
+        .split(',')
+        .filter(|d| !d.is_empty())
+        .map(std::path::PathBuf::from)
+        .collect();
+    let library = Contract::LIBRARY.get_from(r).map(std::path::PathBuf::from);
+    let (mine, lib) = lift::read(&repos, library.as_deref())?;
+    print!("{}", lift::csv(&lift::lift(&mine, &lib)));
+    Ok(0)
 }

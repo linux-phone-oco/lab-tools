@@ -16,10 +16,11 @@ pub enum Verb {
     New,
     Run,
     Check,
+    Lift,
 }
 
 impl Verb {
-    pub const TOKENS: &'static [&'static str] = &["new", "run", "check"];
+    pub const TOKENS: &'static [&'static str] = &["new", "run", "check", "lift"];
 }
 
 impl FromRaw for Verb {
@@ -28,6 +29,7 @@ impl FromRaw for Verb {
             "new" => Verb::New,
             "run" => Verb::Run,
             "check" => Verb::Check,
+            "lift" => Verb::Lift,
             _ => return None,
         })
     }
@@ -39,7 +41,7 @@ contract! {
         ty: Type::Enum,
         allowed: Verb::TOKENS,
         arg: Some(Arg::positional(0)),
-        summary: "What to do: new (scaffold a procedure), run (one by name) or check (dry-run them all).",
+        summary: "What to do: new (scaffold a procedure), run (one by name), check (dry-run them all) or lift (list every repo's steps beside the library, flag near-duplicates).",
         ..Input::EMPTY
     };
 
@@ -139,6 +141,31 @@ contract! {
         ty: Type::String,
         env: Some(Env::new("LPOCO_ATTENDED_LIB")),
         summary: "new: depend on the lpoco-attended checkout at this path instead of this release's git tag (working on lab-tools itself).",
+        ..Input::EMPTY
+    };
+
+    REPOS: String = Input {
+        key: "repos",
+        ty: Type::String,
+        arg: Some(Arg { value_name: "DIR,DIR", ..Arg::long("repos") }),
+        summary: "lift: the device repos to read, their procedures/steps, folders joined by commas.",
+        ..Input::EMPTY
+    };
+
+    LIBRARY: String = Input {
+        key: "library",
+        ty: Type::String,
+        arg: Some(Arg { value_name: "DIR", ..Arg::long("library") }),
+        summary: "lift: the folder of the library steps (its .rs files); a repo step with a library step's body is flagged use-library.",
+        ..Input::EMPTY
+    };
+
+    FORMAT: String = Input {
+        key: "format",
+        ty: Type::Enum,
+        allowed: &["csv"],
+        arg: Some(Arg { value_name: "FORMAT", ..Arg::long("format") }),
+        summary: "lift: how the table is written (csv: kind, step, places).",
         ..Input::EMPTY
     };
 
