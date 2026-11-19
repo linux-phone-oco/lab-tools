@@ -51,6 +51,8 @@ struct State {
     reads: Vec<String>,
     lab: Lab,
     fs_root: String,
+    /// where release assets are fetched from; None when this host fits none (then cargo builds)
+    release_base: Option<String>,
 }
 
 fn load(r: &Resolution) -> Result<State, String> {
@@ -87,6 +89,11 @@ fn load(r: &Resolution) -> Result<State, String> {
     Ok(State {
         path: Contract::PATH.get_from(r).unwrap_or_default(),
         fs_root: Contract::FS_ROOT.get_from(r).unwrap_or_default(),
+        release_base: asset_fits(std::env::consts::OS, std::env::consts::ARCH).then(|| {
+            Contract::RELEASE_BASE
+                .get_from(r)
+                .unwrap_or_else(|| format!("{FAMILY_URL}/releases/download"))
+        }),
         user: Contract::USER.get_from(r),
         home,
         root: root.split_whitespace().map(String::from).collect(),
@@ -378,6 +385,7 @@ fn tool_plans(st: &State) -> Vec<ToolPlan> {
                 .map(|s| s.trim().to_string())
         },
         &|n| on_path(&format!("{}/.local/bin:{}", st.home, st.path), n).is_some(),
+        st.release_base.as_deref(),
     )
 }
 
@@ -592,6 +600,13 @@ fn prepare(st: &State) -> Result<i32, String> {
                         return Err(format!("{} failed ({status})", s.show()));
                     }
                 }
+                Step::Release {
+                    url,
+                    sha_url,
+                    to,
+                    also,
+                    fallback,
+                } => install_release(st, url, sha_url, to, also, fallback)?,
                 Step::Stamp { to, rev } => {
                     if let Some(d) = Path::new(to).parent() {
                         fs::create_dir_all(d)
@@ -1086,4 +1101,135 @@ fn print_stale_pieces(d: &Device) {
         Ok(lines) => lines.iter().for_each(|l| println!("{l}")),
         Err(e) => println!("{} phone pieces: not measured, {e}", d.codename),
     }
+}
+
+/// Fetches `url` with curl into `to_file`: Ok(true) when it came, Ok(false) when the release has no such file
+/// (HTTP 404 or 410, or a `file://` that is not there), Err for any other failure (an outage, a timeout, no curl).
+fn fetch(url: &str, to_file: &Path) -> Result<bool, String> {
+    let o = Proc::new("curl")
+        .args([
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--location",
+            "--proto",
+            "=https,file",
+            "--connect-timeout",
+            "20",
+            "--max-time",
+            "300",
+            "--write-out",
+            "%{http_code}",
+            url,
+            "--output",
+        ])
+        .arg(to_file)
+        .output()
+        .map_err(|e| format!("cannot run curl for {url}: {e}"))?;
+    let code = String::from_utf8_lossy(&o.stdout);
+    if o.status.success() {
+        Ok(true)
+    } else if matches!(code.trim(), "404" | "410") || o.status.code() == Some(37) {
+        Ok(false)
+    } else {
+        Err(format!(
+            "cannot fetch {url} (HTTP {}, {}): not installed, not built",
+            code.trim(),
+            o.status
+        ))
+    }
+}
+
+/// The hash a `.sha256` file names: its first word, as `sha256sum` writes it.
+fn named_hash(text: &str) -> Option<String> {
+    let word = text.split_whitespace().next()?.to_ascii_lowercase();
+    (word.len() == 64 && word.bytes().all(|b| b.is_ascii_hexdigit())).then_some(word)
+}
+
+fn hex_sha256(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+/// Installs a program from its release asset after the hash matches (`to`, and `also` under the old names). A
+/// release without the asset or its hash runs `fallback` (cargo); a hash that does not match, or one that cannot be
+/// read, installs nothing and fails, and never falls back: the next run asks again.
+fn install_release(
+    st: &State,
+    url: &str,
+    sha_url: &str,
+    to: &str,
+    also: &[String],
+    fallback: &[String],
+) -> Result<(), String> {
+    let work = format!("{}/.cache/lpoco-host/asset-{}", st.home, std::process::id());
+    let _ = fs::remove_dir_all(&work);
+    fs::create_dir_all(&work).map_err(|e| format!("cannot make {work}: {e}"))?;
+    let (file, sum) = (
+        Path::new(&work).join("asset"),
+        Path::new(&work).join("sha256"),
+    );
+    let got = fetch(url, &file);
+    let result = if got.as_ref().is_ok_and(|g| *g) {
+        match fetch(sha_url, &sum) {
+            Ok(true) => {}
+            Ok(false) => {
+                return finish(
+                    &work,
+                    Err(format!("{url} has no .sha256 beside it: not installed")),
+                )
+            }
+            Err(e) => return finish(&work, Err(e)),
+        }
+        let bytes = fs::read(&file).map_err(|e| format!("cannot read {url}: {e}"));
+        let named = fs::read_to_string(&sum)
+            .ok()
+            .and_then(|t| named_hash(&t))
+            .ok_or_else(|| format!("{sha_url} names no sha256"));
+        match (bytes, named) {
+            (Ok(bytes), Ok(named)) => {
+                let have = hex_sha256(&bytes);
+                if have != named {
+                    Err(format!(
+                        "{to}: sha256 of {url} is {have}, the release says {named}: not installed"
+                    ))
+                } else {
+                    also.iter()
+                        .map(String::as_str)
+                        .chain(std::iter::once(to))
+                        .try_for_each(|dst| {
+                            if let Some(d) = Path::new(dst).parent() {
+                                fs::create_dir_all(d)
+                                    .map_err(|e| format!("cannot make {}: {e}", d.display()))?;
+                            }
+                            replace_file(dst, &bytes, 0o755)
+                                .map_err(|e| format!("cannot write {dst}: {e}"))
+                        })
+                }
+            }
+            (Err(e), _) | (_, Err(e)) => Err(e),
+        }
+    } else if let Err(e) = got {
+        Err(e)
+    } else {
+        println!("no release asset at {url}: building with cargo");
+        let status = Proc::new(&fallback[0])
+            .args(&fallback[1..])
+            .status()
+            .map_err(|e| format!("cannot run {}: {e}", fallback[0]));
+        status.and_then(|s| {
+            s.success()
+                .then_some(())
+                .ok_or_else(|| format!("{} failed ({s})", fallback.join(" ")))
+        })
+    };
+    finish(&work, result)
+}
+
+fn finish(work: &str, result: Result<(), String>) -> Result<(), String> {
+    let _ = fs::remove_dir_all(work);
+    result
 }
