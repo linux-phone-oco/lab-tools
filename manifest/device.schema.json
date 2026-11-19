@@ -90,6 +90,17 @@
         }
       ]
     },
+    "layer": {
+      "description": "The device layer: what each package format is generated from",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Layer"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "tools": {
       "description": "The tools this device's lab pins",
       "anyOf": [
@@ -792,6 +803,194 @@
       "enum": [
         "acm",
         "ffs"
+      ]
+    },
+    "Layer": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "the packages' stem: NAME-config, NAME-boot, linux-NAME",
+          "type": "string"
+        },
+        "needs": {
+          "description": "dependency tokens (\"qrtr\", \"tqftpserv>=1.2\"); a token map names each per base",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "kernel": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LayerKernel"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "boot": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LayerBoot"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "firmware": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LayerFirmware"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "initramfs": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LayerInitramfs"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "file": {
+          "description": "the files the layer installs, each with its kind and a destination under /usr",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/LayerFile"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ]
+    },
+    "LayerKernel": {
+      "description": "`[layer.kernel]`: where the kernel comes from and what it builds.",
+      "type": "object",
+      "properties": {
+        "tree": {
+          "description": "the git tree",
+          "type": "string"
+        },
+        "tag": {
+          "description": "the tag built",
+          "type": "string"
+        },
+        "config": {
+          "description": "a config fragment over the architecture's defconfig, relative to the manifest",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dtbs": {
+          "description": "device trees installed, relative to the kernel's dts directory",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "tree",
+        "tag"
+      ]
+    },
+    "LayerBoot": {
+      "type": "object",
+      "properties": {
+        "method": {
+          "$ref": "#/definitions/BootMethod"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "method"
+      ]
+    },
+    "BootMethod": {
+      "description": "How the phone's kernel is started; `android-bootimg` takes its addresses from `[boot]`.",
+      "type": "string",
+      "enum": [
+        "efi-kernel-install",
+        "android-bootimg"
+      ]
+    },
+    "LayerFirmware": {
+      "type": "object",
+      "properties": {
+        "method": {
+          "$ref": "#/definitions/FirmwareMethod"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "method"
+      ]
+    },
+    "FirmwareMethod": {
+      "description": "Where firmware comes from: the OEM's is never packaged, only extracted from the phone's own partitions.",
+      "type": "string",
+      "enum": [
+        "extract-from-partitions",
+        "files"
+      ]
+    },
+    "LayerInitramfs": {
+      "description": "`[layer.initramfs]`: one module list, a drop-in per initramfs tool.",
+      "type": "object",
+      "properties": {
+        "modules": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      },
+      "additionalProperties": false
+    },
+    "LayerFile": {
+      "description": "`[[layer.file]]`",
+      "type": "object",
+      "properties": {
+        "from": {
+          "description": "relative to the manifest",
+          "type": "string"
+        },
+        "to": {
+          "description": "absolute, under /usr, no `..`",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/definitions/FileKind"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to",
+        "kind"
+      ]
+    },
+    "FileKind": {
+      "type": "string",
+      "enum": [
+        "data",
+        "config",
+        "unit",
+        "script"
       ]
     },
     "Tools": {

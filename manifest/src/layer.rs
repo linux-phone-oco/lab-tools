@@ -1,0 +1,157 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! The `[layer]` table of a device's manifest (device.toml): the phone's device layer - kernel, dtbs, firmware,
+//! UCM, config and boot glue - declared once, so each package format is generated from it, not rewritten by hand
+//! (decision 2026-11-19-device-layer-declared-once). Every table is declared in lib.rs.
+
+use schemars::JsonSchema;
+use serde::Deserialize;
+
+#[derive(Debug, Clone, Deserialize, PartialEq, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Layer {
+    /// the packages' stem: NAME-config, NAME-boot, linux-NAME
+    pub name: String,
+    /// dependency tokens ("qrtr", "tqftpserv>=1.2"); a token map names each per base
+    #[serde(default)]
+    pub needs: Vec<String>,
+    pub kernel: Option<LayerKernel>,
+    pub boot: Option<LayerBoot>,
+    pub firmware: Option<LayerFirmware>,
+    pub initramfs: Option<LayerInitramfs>,
+    /// the files the layer installs, each with its kind and a destination under /usr
+    #[serde(default)]
+    pub file: Vec<LayerFile>,
+}
+
+/// `[layer.kernel]`: where the kernel comes from and what it builds.
+#[derive(Debug, Clone, Deserialize, PartialEq, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct LayerKernel {
+    /// the git tree
+    pub tree: String,
+    /// the tag built
+    pub tag: String,
+    /// a config fragment over the architecture's defconfig, relative to the manifest
+    pub config: Option<String>,
+    /// device trees installed, relative to the kernel's dts directory
+    #[serde(default)]
+    pub dtbs: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct LayerBoot {
+    pub method: BootMethod,
+}
+
+/// How the phone's kernel is started; `android-bootimg` takes its addresses from `[boot]`.
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum BootMethod {
+    EfiKernelInstall,
+    AndroidBootimg,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct LayerFirmware {
+    pub method: FirmwareMethod,
+}
+
+/// Where firmware comes from: the OEM's is never packaged, only extracted from the phone's own partitions.
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum FirmwareMethod {
+    ExtractFromPartitions,
+    Files,
+}
+
+/// `[layer.initramfs]`: one module list, a drop-in per initramfs tool.
+#[derive(Debug, Clone, Deserialize, PartialEq, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct LayerInitramfs {
+    #[serde(default)]
+    pub modules: Vec<String>,
+}
+
+/// `[[layer.file]]`
+#[derive(Debug, Clone, Deserialize, PartialEq, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct LayerFile {
+    /// relative to the manifest
+    pub from: String,
+    /// absolute, under /usr, no `..`
+    pub to: String,
+    pub kind: FileKind,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum FileKind {
+    Data,
+    Config,
+    Unit,
+    Script,
+}
+
+impl Layer {
+    pub fn validate(&self) -> Result<(), String> {
+        let ok_name = !self.name.is_empty()
+            && self
+                .name
+                .starts_with(|c: char| c.is_ascii_lowercase() || c.is_ascii_digit())
+            && self
+                .name
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || "+._-".contains(c));
+        if !ok_name {
+            return Err(format!(
+                "layer name {:?} is not a package name ([a-z0-9][a-z0-9+._-]*)",
+                self.name
+            ));
+        }
+        if self.needs.iter().any(|n| n.trim().is_empty()) {
+            return Err("layer needs holds an empty token".into());
+        }
+        if let Some(i) = &self.initramfs {
+            if i.modules.iter().any(|m| m.trim().is_empty()) {
+                return Err("layer initramfs modules holds an empty name".into());
+            }
+        }
+        let relative = |what: &str, p: &str| -> Result<(), String> {
+            if p.is_empty() || p.starts_with('/') || p.split('/').any(|s| s == ".." || s.is_empty())
+            {
+                return Err(format!(
+                    "layer {what} {p:?} is not a plain path relative to the manifest"
+                ));
+            }
+            Ok(())
+        };
+        if let Some(k) = &self.kernel {
+            if let Some(c) = &k.config {
+                relative("kernel config", c)?;
+            }
+            for d in &k.dtbs {
+                relative("kernel dtb", d)?;
+            }
+        }
+        for (i, f) in self.file.iter().enumerate() {
+            relative("file from", &f.from)?;
+            let rest = f.to.strip_prefix("/usr/").unwrap_or("");
+            if rest.is_empty()
+                || rest
+                    .split('/')
+                    .any(|s| s.is_empty() || s == "." || s == "..")
+            {
+                return Err(format!(
+                    "layer file {}: destination {} is not a plain path under /usr",
+                    f.from, f.to
+                ));
+            }
+            if self.file[..i].iter().any(|o| o.to == f.to) {
+                return Err(format!("layer file destination {} is declared twice", f.to));
+            }
+        }
+        Ok(())
+    }
+}
