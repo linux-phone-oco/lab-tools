@@ -175,12 +175,50 @@ fn shell_running() -> String {
     "none".into()
 }
 
+/// Which layer the phone booted - "test" (the hardware-test layer: the image at multi-user.target, no phone
+/// shell; its boot entry says so on the kernel command line), "shell", or "unknown" (not known yet).
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Booted {
+    Test,
+    Shell,
+    Unknown,
+}
+
+impl Booted {
+    fn as_str(self) -> &'static str {
+        match self {
+            Booted::Test => "test",
+            Booted::Shell => "shell",
+            Booted::Unknown => "unknown",
+        }
+    }
+}
+
+fn booted_layer(cmdline: &str, shell: &str) -> Booted {
+    if cmdline
+        .split_whitespace()
+        .any(|w| w == "systemd.unit=multi-user.target")
+    {
+        Booted::Test
+    } else if shell != "none" {
+        Booted::Shell
+    } else {
+        Booted::Unknown
+    }
+}
+
 /// Runs one check with a time limit; (output, timed out, exit code).
-fn run_check(path: &Path, layer: &str, conditions: &str) -> (String, bool, Option<i32>) {
+fn run_check(
+    path: &Path,
+    layer: &str,
+    conditions: &str,
+    booted: Booted,
+) -> (String, bool, Option<i32>) {
     let mut child = match Command::new("sh")
         .arg(path)
         .env("LAYER", layer)
         .env("LPOCO_CONDITIONS", conditions)
+        .env("LPOCO_BOOTED", booted.as_str())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -320,7 +358,7 @@ fn prune(out: &Path) {
 fn conditions() -> String {
     let mut found = String::new();
     for script in checks_in(&Path::new(LIB).join("conditions")) {
-        let (text, _, _) = run_check(&script, "conditions", "");
+        let (text, _, _) = run_check(&script, "conditions", "", Booted::Unknown);
         for line in text.lines() {
             let mut w = line.splitn(2, ' ');
             if let (Some(name), Some(detail)) = (w.next(), w.next()) {
@@ -532,13 +570,16 @@ fn main() {
         .map(|d| d.as_secs())
         .unwrap_or(0);
     let (run, at) = stamps(secs);
+    let shell = shell_running();
+    let booted = booted_layer(&read("/proc/cmdline"), &shell);
     let facts = json!({
         "run": run,
         "device": device,
         "boot": read("/proc/sys/kernel/random/boot_id"),
         "at": at,
         "kernel": read("/proc/sys/kernel/osrelease"),
-        "shell": shell_running(),
+        "shell": shell,
+        "booted": booted.as_str(),
     });
 
     let found = conditions();
@@ -550,7 +591,7 @@ fn main() {
                     .file_stem()
                     .map(|s| s.to_string_lossy().into_owned())
                     .unwrap_or_default();
-                let (text, timed_out, code) = run_check(&check, layer, &found);
+                let (text, timed_out, code) = run_check(&check, layer, &found, booted);
                 findings.extend(findings_of(layer, &name, &text, timed_out, code));
             }
         }
@@ -696,6 +737,32 @@ mod tests {
         let (s, well) = verdict(&[f("pass", "a"), f("fail", "c")], &[], "E");
         assert!(!well);
         assert_eq!(s, "UNHEALTHY: 1 failing of 2 - wifi/c (d); evidence in E");
+    }
+
+    #[test]
+    fn the_runner_gives_a_check_the_layer_the_phone_booted() {
+        let dir = std::env::temp_dir().join(format!("booted-seam-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let script = dir.join("c.sh");
+        std::fs::write(&script, "echo \"booted=$LPOCO_BOOTED\"\n").unwrap();
+        let (out, _, code) = run_check(&script, "base", "", Booted::Test);
+        assert_eq!((out.trim(), code), ("booted=test", Some(0)));
+    }
+
+    #[test]
+    fn the_booted_layer_is_read_from_the_command_line_then_the_shell_that_runs() {
+        let cmd = "console=ttyMSM0 root=/dev/sda1 systemd.unit=multi-user.target quiet";
+        assert_eq!(
+            booted_layer(cmd, "sxmo"),
+            Booted::Test,
+            "the entry decides, a left-over session link does not"
+        );
+        assert_eq!(booted_layer("root=/dev/sda1", "sxmo"), Booted::Shell);
+        assert_eq!(booted_layer("root=/dev/sda1", "none"), Booted::Unknown);
+        assert_eq!(
+            booted_layer("x systemd.unit=multi-user.target.wants", "none"),
+            Booted::Unknown
+        );
     }
 
     #[test]
