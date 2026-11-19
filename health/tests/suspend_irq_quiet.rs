@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! The suite check suspend-irq-quiet (backlog suspend-irq-quiet-check, proof suspend-irq-quiet): one
 //! 15 s s2idle cycle with an RTC wake alarm and the guard armed; the interrupts across it stay under the
 //! manifest's threshold, or the check fails naming the top three sources. Run here against a made-up

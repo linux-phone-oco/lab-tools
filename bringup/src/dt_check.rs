@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! The kernel's devicetree checks (`dt_binding_check`, `CHECK_DTBS=y`) in a throwaway container, so the host
 //! needs no Python: dtschema lives only in the image. The image is named by digest, never a tag, so a later
 //! release of dtschema cannot change a result unseen. The source is mounted read-only and the output goes to

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! The suite check lab-pieces (backlog health-reports-pieces): the phone reports what lab pieces it holds -
 //! each declared file's git blob id and each lab-tools package's version, one row apiece, reading only.
 //! Run here against a made-up phone under LPOCO_HEALTH_ROOT with a made-up `apk`; the blob id is the one

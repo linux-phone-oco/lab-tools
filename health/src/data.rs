@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! `lpoco-health data plan|spent`: what mobile data a check may spend, and what it spent - a ledger
 //! of the month, so a phone that boots fifty times a day never eats its SIM's allowance.
 //!

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! bringup-bisect-runs-declared-series: `lpoco-bringup image bisect FILE --out DIR` builds the series of swaps a
 //! file declares (walleye's s0, s0n, s1, s2, s3) from one control, writes DIR/boot-NAME.img for each, counts
 //! that each image differs from the control in exactly the parts it declares (and its AVB footer verifies, or is

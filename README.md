@@ -294,3 +294,10 @@ into `~/.local/bin` and stamps the rev in `~/.local/share/lpoco-host/rev-NAME`: 
 and is listed as "not known yet". Codenames, serials, module and tool names that reach a root command or a file name are
 refused unless letters, digits, `.`, `_`, `-`. `/etc/udev/rules.d/51-android.rules` is named as a wide rule and kept:
 prepare never edits or removes it. An old `devlab`/`tone` first on PATH that is off the pin is named by plan and check.
+
+## Licence
+
+Our tools are MIT OR Apache-2.0, at your option: [`LICENSE-MIT`](LICENSE-MIT), [`LICENSE-APACHE`](LICENSE-APACHE). Source files say so in
+an `SPDX-License-Identifier` header; the rest is annotated by path in [`REUSE.toml`](REUSE.toml), and `.github/licence-check` (run by CI)
+keeps new files covered. Third-party packaging keeps its own licence: `packaging/sxmo-utils` is AGPL-3.0-only, as its APKBUILD says.
+The device-tree fixture is GPL-2.0-only OR BSD-2-Clause, the kernel's dual licence for device trees. Texts of the other licences: `LICENSES/`.

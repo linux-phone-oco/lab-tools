@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! lpoco-lab and devlab are one program under two names (backlog lpoco-rename-lab-tone, proof
 //! lpoco-lab-and-devlab-are-one-program): the same code answers to both, and `lpoco list` shows the
 //! family under one version.

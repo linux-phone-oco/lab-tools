@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
 # the modem: seen by ModemManager; with a SIM, registered (without one, calls, messages and data
 # cannot be shown - unknown, not broken)
 . /usr/lib/lpoco-health/lib.sh

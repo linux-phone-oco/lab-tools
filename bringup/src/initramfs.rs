@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! The bringup initramfs: a reproducible newc cpio made from a gen_init_cpio spec, the gadget address a
 //! variable, compressed with the codec the device names. Replaces build-initramfs.sh.
 //!

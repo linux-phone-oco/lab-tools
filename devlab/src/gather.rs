@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Gathering: every report the phone keeps that the lab does not have yet, brought into the device's
 //! lab repository (tests/results/RUN.jsonl, as each run was written), and every run not yet filed,
 //! filed into the tables of the device's own base (the lab repository, when it has a devicebase.toml: test_results,

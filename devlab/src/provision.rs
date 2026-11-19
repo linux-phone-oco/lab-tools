@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Provisioning a freshly flashed phone, for any device: the manifest's packages over the lab
 //! machine's internet connection (a new phone has no network of its own), files the manifest names
 //! (installed when their condition holds on the phone), then the user's Wi-Fi from private files.

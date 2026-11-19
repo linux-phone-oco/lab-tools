@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! One change to the phone at a time, whoever asks - every session on the lab, the command line and the
 //! MCP door alike: an exclusive lock on STATE/phone.lock, held until the command ends (the lock goes with
 //! the process). A second change waits for the first, and says that it waits. Reading needs no hold.

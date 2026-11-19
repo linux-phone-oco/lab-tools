@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! bringup-pack-matches-mkbootimg: `lpoco-bringup image pack` writes, for walleye's header facts (device.toml
 //! [boot]), the very bytes mkbootimg writes; `image check` fails a wrong ramdisk offset and passes the right one.
 //! mkbootimg (android-tools) is the oracle; where it is absent the test says "not measured: no mkbootimg".

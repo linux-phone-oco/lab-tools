@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! lpoco-manifest's invocation surface, declared once with argenv:
 //!
 //!   lpoco-manifest schema     print the JSON Schema of device.toml, projected from the types

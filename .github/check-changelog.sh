@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: MIT OR Apache-2.0
 # check-changelog.sh BASE HEAD - a changelog never changes without a version (release-tags-every-change).
 # For every CHANGELOG.md the change touches, its package must either bump its [package] version in
 # the same change, or the change must complete a version the package already carries: it adds the

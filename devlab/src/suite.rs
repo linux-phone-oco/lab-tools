@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! The phone's own health suite (lab-tools/health): put onto the phone from the device's manifest, run
 //! there, and its reports read back. The generic checks are built into devlab; a phone's own checks
 //! come from its lab repository ([health] checks); what the phone is expected to have is [health].

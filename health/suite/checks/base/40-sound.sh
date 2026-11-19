@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
 # sound cards: every card the manifest expects is registered (SOUND_CARDS: names, ;-separated)
 . /usr/lib/lpoco-health/lib.sh
 [ -n "${SOUND_CARDS:-}" ] || { say sound-card audio-speaker skip "the manifest names no sound card"; exit 0; }

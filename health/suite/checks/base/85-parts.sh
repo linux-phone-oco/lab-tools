@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
 # the other parts, as far as the kernel exposes them: NFC, USB role switch, headset jack, fingerprint
 # reader, camera sensors (motion, light and proximity: 87-sensors.sh) - each absent part named in the manifest is skipped
 . /usr/lib/lpoco-health/lib.sh

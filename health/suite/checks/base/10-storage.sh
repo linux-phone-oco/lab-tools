@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
 # storage: the system fills its partition (a first boot can grow the partition and leave the
 # filesystem at the image's size), has room, and can be written
 . /usr/lib/lpoco-health/lib.sh

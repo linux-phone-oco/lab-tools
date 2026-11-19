@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! The lab's ear: a tone played on each of the phone's speakers, heard through a microphone in the
 //! lab and measured - so "the speaker works" is something a machine heard, not only a driver that
 //! loaded. The microphone belongs to the lab, not the device: it is named in the lab's private

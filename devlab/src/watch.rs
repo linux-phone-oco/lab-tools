@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Watching the phone from the lab machine. After every new boot the phone measures its own health
 //! (lpoco-health.timer); the watch waits for that report and says the phone's own verdict in its journal -
 //! silent while all is well, one line naming what is unhealthy when not, one when well again - and

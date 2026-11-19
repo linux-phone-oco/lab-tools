@@ -1,4 +1,5 @@
 #!/bin/busybox sh
+# SPDX-License-Identifier: MIT OR Apache-2.0
 # The bring-up initramfs, made by `lpoco-bringup initramfs init` from the device's [boot.gadget]: no storage, no
 # display. It raises a USB gadget (ACM serial console + ECM network, and RNDIS in a second configuration for
 # Windows hosts), gives the phone 172.16.42.1, hands out 172.16.42.2 by DHCP and answers on telnet (no password:

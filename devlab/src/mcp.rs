@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! devlab's structured door, over the Model Context Protocol (stdio): the phone for any agent, without
 //! a person and without a shell's quoting layer. Each tool calls the same function the command line
 //! does - one door each, two doors to one thing (agent access, aa-two-doors).

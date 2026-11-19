@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! What `image unpack` writes packs back to the very image it came from (no mkbootimg needed), and a manifest
 //! without a [boot] table is refused in words.
 

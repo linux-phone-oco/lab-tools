@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! A device's manifest, `device.toml`, declared once: every table, every field, its doc beside it.
 //! devlab, host and bringup read these types; a table or field not declared here is refused everywhere,
 //! never ignored (decision 2026-11-18-device-manifest-schema-from-rust). The JSON Schema of the manifest is

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! tone: make a test tone, and find it in a recording. See cli.rs for the invocation surface.
 //!
 //!   lpoco-tone make --freq 1000 --secs 3 --level -20 tone.wav

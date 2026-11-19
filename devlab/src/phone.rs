@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Reaching the phone over SSH: commands travel as a script on standard input (`sh -s`), never
 //! inside quotes on a command line, so quotes, pipes and $ in them need no escaping.
 

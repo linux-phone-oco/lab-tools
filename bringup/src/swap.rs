@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Image swap: a control image with one part replaced - ramdisk, kernel, device tree or command line - the
 //! header's other facts kept and the AVB hash footer rebuilt over the new image (avbtool add_hash_footer,
 //! algorithm NONE, the control's partition size, name, salt and properties; no Rust crate writes it, so it is

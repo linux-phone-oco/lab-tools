@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! lpoco-host: the lab host prepared from declarations (run as `lpoco host ...`). `plan` (the default) changes
 //! nothing; `prepare now` changes only what differs; `check` reads. See cli.rs for the invocation surface.
 

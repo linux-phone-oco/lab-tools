@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! The `[boot]` table of a device's manifest (device.toml): the header facts of the phone's boot image,
 //! in postmarketOS deviceinfo's words. Every table is declared in lib.rs.
 

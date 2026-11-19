@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: MIT OR Apache-2.0
 # Build lpoco-health, the runner that goes onto phones: static, for the phone's architecture.
 #   health/build.sh aarch64-unknown-linux-musl
 # On the lab machine the standard library for the target comes from a toolchain kept beside the

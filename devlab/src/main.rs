@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! lpoco-lab (devlab): the device lab for Linux phones - for any device, from its manifest (device.toml).
 //!
 //!   devlab phone find              which address answers

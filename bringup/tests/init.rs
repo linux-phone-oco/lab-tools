@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! bringup-generic-init: `lpoco-bringup initramfs init` writes the bring-up init from the device's
 //! `[boot.gadget]` table - the configfs gadget (ACM, ECM, RNDIS), the address, DHCP, telnet and the ACM
 //! shell - with none of the device's own init files. The phone's name, serial and product are its data.

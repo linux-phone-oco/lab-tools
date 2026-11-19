@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! bringup-swap-s0-reproduces-control: `lpoco-bringup image swap` replaces parts of a control image and keeps
 //! its AVB hash footer. Swapping nothing (s0) reproduces the control except the header id and the footer's
 //! digest; swapping the ramdisk changes the ramdisk, the header sizes, the id and the footer, and nothing else.

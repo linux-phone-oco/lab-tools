@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! `lpoco-health suspend plan|cycle` (backlog health-suspend-cycle): one controlled suspend and wake.
 //! Run here against a made-up phone under LPOCO_HEALTH_ROOT: sysfs, the RTC, the power state (a fifo: whoever
 //! reads it "suspends" the phone and the counters change), the manifest's env file. The phone proof is surya's.

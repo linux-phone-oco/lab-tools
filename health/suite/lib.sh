@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
 # The health suite's words, sourced by every check (POSIX sh - BusyBox's or not). A check prints one
 # line per test:  pass|fail|skip TEST COMPONENT detail...  - lpoco-health makes the report of them.
 # COMPONENT is a linux-phone-oco/docs component id. A skip says what could not be measured and why:

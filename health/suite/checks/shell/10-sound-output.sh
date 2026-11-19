@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
 # the shell's sound: a sound server runs, and its default output is a real card - not a loopback or
 # dummy (once, a loopback card became the default at boot and nothing was heard)
 . /usr/lib/lpoco-health/lib.sh

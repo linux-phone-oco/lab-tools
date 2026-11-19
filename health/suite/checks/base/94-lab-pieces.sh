@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
 # What lab pieces this phone holds, as facts the lab compares (lpoco host check, phone-pieces-drift-named):
 # (and, further down, one row per declared user config)
 # one row per file the manifest declares (PIECE_FILES in health.env: the flash overlays, provision installs

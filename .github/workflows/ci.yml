@@ -26,4 +26,7 @@ jobs:
           tool: release-plz@0.4.3
       # the sxmo-utils lab apk (packaging/sxmo-utils): its declaration and what its source tag carries
       - run: .github/check-sxmo-utils-apk.sh
+      # every tracked file is under a licence (a header or REUSE.toml) and every licence named has its text;
+      # ideal-agent's scripts/licence-check, copied as it is (grenudi/ideal-agent#101)
+      - run: sh .github/licence-check
       - run: cargo test --workspace

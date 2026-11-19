@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! lpoco's own invocation surface, declared once with argenv. Only the dispatcher's built-ins are
 //! declared here; anything else is `lpoco NAME args...`, handed whole to `lpoco-NAME` (whose own
 //! declaration is its own), so the arguments after NAME are never read by lpoco.

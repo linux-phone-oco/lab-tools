@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! The repository's mark and the health service's description say lpoco, not the old names
 //! (proof: lpoco-names-sweep, marks slice). Files that name the old programs on purpose
 //! (aliases, the packaging `replaces`) are not read here.

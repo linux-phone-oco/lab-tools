@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! The dispatcher's behaviour, through the built binary: `lpoco NAME args...` runs `lpoco-NAME`.
 
 use std::fs;

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! A changelog never changes without a version, but a follow-up release PR may complete a version
 //! the family already carries (proof: release-tags-every-change). The rule lives in
 //! .github/check-changelog.sh; these tests run it on small throwaway repositories.

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Step hooks: a device's manifest names an executable for a step (`[boot.hooks] parts = "hook.sh"`), and the
 //! step calls it with the part paths as arguments. A hook that is missing or exits non-zero stops the job.
 

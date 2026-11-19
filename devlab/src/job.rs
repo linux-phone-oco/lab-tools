@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! A long job that must outlive the session that started it - a kernel build, an image, a sleep test -
 //! is a user unit of the lab's own, `lpoco-job-NAME.service`, started with `systemd-run --user`. The
 //! unit holds the lab awake (an idle and sleep inhibitor, held by the job's own process) for as long as

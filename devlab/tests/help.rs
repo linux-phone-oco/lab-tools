@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! lpoco-lab's command line is declared once with argenv (backlog lpoco-lab-argenv): every command and
 //! subcommand answers `--help` with the arguments clap gave it, and a misspelt flag is refused.
 //!

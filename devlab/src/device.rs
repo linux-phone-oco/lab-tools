@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! A device's manifest, `device.toml`, kept in its lab repository: what the tools need to know about
 //! the phone. Secrets and what is learned at run time stay outside the repository.
 

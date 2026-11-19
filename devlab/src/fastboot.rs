@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! A phone reached over fastboot - before Linux runs on it, or while it sits in its bootloader - by its
 //! manifest's `[fastboot] serial`, never "whichever phone is in fastboot" (a lab may hold two).
 //!   devlab fastboot state             is it in fastboot now, what its bootloader says, and its slots' flags

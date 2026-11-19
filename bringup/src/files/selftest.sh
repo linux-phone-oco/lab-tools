@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: MIT OR Apache-2.0
 # The host side of the gadget, in the same kernel (dummy_hcd): find the other usb interface, move it into a
 # network namespace (else the kernel answers 172.16.42.1 from its own table), get a lease from the init's
 # udhcpd, ping and speak telnet to 172.16.42.1. Prints SELFTEST lines; the last says PASS.

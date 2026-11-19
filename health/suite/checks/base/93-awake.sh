@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
 # A lab phone does not idle-suspend: sxmo's autosuspend loop (sxmo_autosuspend.sh -> rtcwake -m mem) drops
 # USB and Wi-Fi and the phone looks hung. It cannot suspend while the kernel wake lock `lpoco-awake` is held,
 # and the unit holding it (lpoco-awake.service, from this package: lpoco-health awake) must run.

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! The plan changes nothing (decision 2026-11-17-lpoco-host): from a device's `[host]` it names the udev rule and
 //! the modules file and the exact root commands; from the lab's `[tools]` it names each tool at its pin, what is
 //! found, and the command that would fix it. The root prefix is a stub that records its calls, the tools are stubs.

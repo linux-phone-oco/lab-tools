@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
 # Detected conditions are worked out on the phone at every run, never typed into docs or settings: a line
 # "NAME detail" says a condition holds right now; what needs it says "skip: detail" - unknown, not broken.
 . /usr/lib/lpoco-health/lib.sh

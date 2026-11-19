@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! The family releases as one: every release bumps the version and tags what landed (proof:
 //! release-tags-every-change). A release PR that only rewrites a changelog leaves the code that
 //! landed under no tag, so the checks refuse what lets that happen.

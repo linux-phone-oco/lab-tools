@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! The phone's keeper: the one session that owns the phone's flow, taking up its queue (docs: tad q
 //! phone-queue) one change at a time. devlab still holds the phone for every change (hold.rs); the lease
 //! says which session is the keeper, so that two keepers never run - one taken by a waker that finds the

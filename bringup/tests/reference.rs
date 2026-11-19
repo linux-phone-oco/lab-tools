@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! reference-capture-diff: `lpoco-bringup reference capture` saves a normalised snapshot of what a stock OS
 //! does (device tree, debugfs, interrupts, drivers) taken over a transport (adb, ssh); `reference diff PART`
 //! names every difference between two snapshots for one part. Walleye's UFS case (research

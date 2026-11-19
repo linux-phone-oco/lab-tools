@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! `lpoco-health suspend plan|cycle`: one controlled suspend and wake, counted.
 //!
 //! What surya's keeper did by hand (surya-lab sleep/way-back.sh cycle) as a verb of the suite. The device's

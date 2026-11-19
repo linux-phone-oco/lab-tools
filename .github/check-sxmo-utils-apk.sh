@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: MIT OR Apache-2.0
 # check-sxmo-utils-apk.sh - the sxmo-utils lab apk (packaging/sxmo-utils) is what decision
 # 2026-11-18-upstream-forks says: Alpine's APKBUILD with every subpackage, its source our fork's
 # lab tag, a version above Alpine's own (so `apk upgrade` keeps it), every checksum true, the
