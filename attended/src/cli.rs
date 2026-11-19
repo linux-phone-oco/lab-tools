@@ -33,6 +33,14 @@ contract! {
         ..Input::EMPTY
     };
 
+    SYSFS_USB: String = Input {
+        key: "sysfs_usb",
+        ty: Type::String,
+        env: Some(Env::new("LPOCO_ATTENDED_SYSFS_USB")),
+        summary: "The folder of the computer's USB devices wait_for_usb reads (/sys/bus/usb/devices when none is given); a test points it at a fake.",
+        ..Input::EMPTY
+    };
+
     HELP: bool = Input {
         key: "help",
         ty: Type::Bool,

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! The library's steps: small, device-agnostic functions that return a [`Step`]; a lane's procedure only chains
-//! them with its own values. Here: ask, dmesg_clean, check_probe, wait_for_phone. More come as a second device needs one (boot_once, read_dmesg,
-//! wait_for_usb, back_to_known_good), each keyed to its bring-up step id and taking its device values from
+//! them with its own values. Here: ask, dmesg_clean, check_probe, wait_for_phone, read_dmesg, wait_for_usb. More come as a second device needs one (boot_once,
+//! back_to_known_good), each keyed to its bring-up step id and taking its device values from
 //! device.toml / [layer], never hard-coded.
 
 use crate::{Kind, Step};
@@ -109,6 +109,72 @@ pub fn wait_for_phone(tries: u32, every: u64) -> Step {
     Step::new(Kind::Check, "the phone answers", move || {
         crate::retry(tries, every, || crate::phone().sh("true"))
     })
+}
+
+/// The kernel log (as root) holds a line with this text; the failure names the text. A positive look at what the
+/// kernel said, as `check_probe` is for a driver (bring-up steps read it for their own message).
+pub fn read_dmesg(text: &str) -> Step {
+    let text = text.to_string();
+    Step::new(Kind::Check, &format!("dmesg says \"{text}\""), move || {
+        if text.trim().is_empty() {
+            return Err("not a dmesg text: it is empty".into());
+        }
+        let log = crate::phone().root("dmesg")?;
+        if log.contains(&text) {
+            Ok(())
+        } else {
+            Err(format!("no dmesg line holds \"{text}\""))
+        }
+    })
+}
+
+/// The phone is on this computer's USB bus as `vendor:product` (four hex digits each, e.g. `18d1:4ee0`), tried
+/// `tries` times `every` seconds apart. The host's own view (sysfs), so it needs no phone answer: it tells a
+/// phone that booted to a gadget from one that did not. `LPOCO_ATTENDED_SYSFS_USB` points at another bus folder
+/// (the tests' fake).
+pub fn wait_for_usb(id: &str, tries: u32, every: u64) -> Step {
+    let id = id.to_ascii_lowercase();
+    Step::new(
+        Kind::Check,
+        &format!("USB device {id} is on the bus"),
+        move || {
+            let ok = id.split_once(':').is_some_and(|(v, p)| {
+                [v, p]
+                    .iter()
+                    .all(|h| h.len() == 4 && h.chars().all(|c| c.is_ascii_hexdigit()))
+            });
+            if !ok {
+                return Err(format!("not a USB id (vendor:product): {id:?}"));
+            }
+            let root = crate::sysfs_usb();
+            crate::retry(tries, every, || {
+                usb_ids(root)?
+                    .contains(&id)
+                    .then_some(())
+                    .ok_or(format!("{id} is not on the USB bus"))
+            })
+        },
+    )
+}
+
+/// The `vendor:product` of every device under a sysfs USB devices folder.
+fn usb_ids(root: &str) -> Result<Vec<String>, String> {
+    let read = |d: &std::path::Path, f: &str| {
+        std::fs::read_to_string(d.join(f))
+            .ok()
+            .map(|s| s.trim().to_ascii_lowercase())
+    };
+    let dir = std::fs::read_dir(root).map_err(|e| format!("cannot read {root}: {e}"))?;
+    Ok(dir
+        .flatten()
+        .filter_map(|e| {
+            Some(format!(
+                "{}:{}",
+                read(&e.path(), "idVendor")?,
+                read(&e.path(), "idProduct")?
+            ))
+        })
+        .collect())
 }
 
 #[cfg(test)]

@@ -188,7 +188,12 @@ fn help_lists_what_the_library_reads() {
     let o = run(&dir, &devlab, &["--help"], "");
     let t = said(&o);
     assert_eq!(o.status.code(), Some(0), "{t}");
-    for w in ["--dry-run", "--log", "LPOCO_ATTENDED_DEVLAB"] {
+    for w in [
+        "--dry-run",
+        "--log",
+        "LPOCO_ATTENDED_DEVLAB",
+        "LPOCO_ATTENDED_SYSFS_USB",
+    ] {
         assert!(t.contains(w), "{w} not in the usage: {t}");
     }
 }
@@ -342,4 +347,111 @@ fn wait_for_phone_passes_when_the_phone_answers_late_and_fails_when_it_never_doe
     assert_eq!(late.status.code(), Some(0), "{}", said(&late));
     let never = library(&tmp("wait-never"), "wait", "", 9);
     assert_eq!(never.status.code(), Some(1), "{}", said(&never));
+}
+
+#[test]
+fn read_dmesg_needs_the_line_in_the_log_and_names_what_was_missing() {
+    let has = library(
+        &tmp("rd-has"),
+        "dmesg-has",
+        "[3.0] pmic_glink: probed ok",
+        0,
+    );
+    assert_eq!(has.status.code(), Some(0), "{}", said(&has));
+    let lacks = library(&tmp("rd-lacks"), "dmesg-has", "[3.0] something else", 0);
+    assert_eq!(lacks.status.code(), Some(1), "{}", said(&lacks));
+    assert!(
+        said(&lacks).contains("pmic_glink: probed"),
+        "{}",
+        said(&lacks)
+    );
+}
+
+/// A fake /sys/bus/usb/devices with one device of this vendor:product (or none).
+fn usb_tree(dir: &Path, id: Option<(&str, &str)>) -> PathBuf {
+    let root = dir.join("sysusb");
+    fs::create_dir_all(root.join("usb1")).unwrap();
+    fs::write(root.join("usb1/idVendor"), "1d6b\n").unwrap();
+    fs::write(root.join("usb1/idProduct"), "0002\n").unwrap();
+    if let Some((v, p)) = id {
+        fs::create_dir_all(root.join("1-2")).unwrap();
+        fs::write(root.join("1-2/idVendor"), format!("{v}\n")).unwrap();
+        fs::write(root.join("1-2/idProduct"), format!("{p}\n")).unwrap();
+    }
+    root
+}
+
+fn usb(dir: &Path, root: &Path) -> Output {
+    Command::new("rust-script")
+        .arg(example_named(dir, "library"))
+        .env("CASE", "usb-seen")
+        .env("LPOCO_ATTENDED_SYSFS_USB", root)
+        .current_dir(dir)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn wait_for_usb_passes_when_the_id_is_on_the_bus_and_fails_naming_the_id_when_not() {
+    let dir = tmp("usb-seen");
+    let root = usb_tree(&dir, Some(("18d1", "4ee0")));
+    let o = usb(&dir, &root);
+    assert_eq!(o.status.code(), Some(0), "{}", said(&o));
+    let dir = tmp("usb-absent");
+    let root = usb_tree(&dir, Some(("18d1", "4ee7")));
+    let o = usb(&dir, &root);
+    assert_eq!(o.status.code(), Some(1), "{}", said(&o));
+    let err = String::from_utf8_lossy(&o.stderr).to_string();
+    assert!(err.contains("18d1:4ee0 is not on the USB bus"), "{err}");
+}
+
+#[test]
+fn wait_for_usb_sees_a_device_that_arrives_late_refuses_a_bad_id_and_names_an_unreadable_folder() {
+    let dir = tmp("usb-late");
+    let root = usb_tree(&dir, None);
+    fs::create_dir_all(root.join("1-2:1.0")).unwrap();
+    let child = Command::new("rust-script")
+        .arg(example_named(&dir, "library"))
+        .env("CASE", "usb-late")
+        .env("LPOCO_ATTENDED_SYSFS_USB", &root)
+        .current_dir(&dir)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let late = root.join("1-2");
+    for _ in 0..200 {
+        if std::fs::read_to_string(dir.join("attended-library-steps.log")).is_ok() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    fs::create_dir_all(&late).unwrap();
+    fs::write(late.join("idVendor"), "18D1\n").unwrap();
+    fs::write(late.join("idProduct"), "4EE0\n").unwrap();
+    let o = child.wait_with_output().unwrap();
+    assert_eq!(o.status.code(), Some(0), "{}", said(&o));
+    let dir = tmp("usb-bad");
+    let bad = Command::new("rust-script")
+        .arg(example_named(&dir, "library"))
+        .env("CASE", "usb-bad")
+        .env("LPOCO_ATTENDED_SYSFS_USB", dir.join("none"))
+        .current_dir(&dir)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert_eq!(bad.status.code(), Some(1));
+    assert!(
+        String::from_utf8_lossy(&bad.stderr).contains("not a USB id"),
+        "{}",
+        said(&bad)
+    );
+    let gone = usb(&dir, &dir.join("none"));
+    assert!(
+        String::from_utf8_lossy(&gone.stderr).contains("cannot read"),
+        "{}",
+        said(&gone)
+    );
 }
