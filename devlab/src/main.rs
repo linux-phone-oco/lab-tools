@@ -127,6 +127,7 @@ enum KernelCmd {
     Try {
         name: String,
         dtb: Option<PathBuf>,
+        cmdline: Option<String>,
     },
     Log,
     Remove {
@@ -436,6 +437,7 @@ fn parse() -> Cli {
             action: KernelCmd::Try {
                 name: arg!(C::NAME, "NAME"),
                 dtb: C::DTB.get_from(&r).map(PathBuf::from),
+                cmdline: C::CMDLINE.get_from(&r),
             },
         },
         ["kernel", "log"] => Cmd::Kernel {
@@ -661,10 +663,14 @@ fn main() -> Result<()> {
                     modules,
                     cmdline,
                 } => kernel::install(&p, &name, &vmlinuz, &dtb, &modules, &cmdline)?,
-                KernelCmd::Try { name, dtb } => {
-                    let name = match dtb {
-                        Some(dtb) => kernel::with_dtb(&p, &name, &dtb)?,
-                        None => name,
+                KernelCmd::Try { name, dtb, cmdline } => {
+                    let name = match (dtb, cmdline) {
+                        (Some(_), Some(_)) => bail!(
+                            "--dtb and --cmdline cannot be given together: try one, then the other"
+                        ),
+                        (Some(dtb), None) => kernel::with_dtb(&p, &name, &dtb)?,
+                        (None, Some(args)) => kernel::with_cmdline(&p, &name, &args)?,
+                        (None, None) => name,
                     };
                     println!("{}", outcome::try_and_report(&dev, &p, &name)?);
                     // the boot the try came to - the test kernel or stock - is measured like any other

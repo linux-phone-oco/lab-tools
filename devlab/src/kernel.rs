@@ -35,6 +35,8 @@ pub const TIMEOUT_HOOK: &str = r#"#!/bin/sh
 /// A name for files on the ESP: lowercase letters, digits and dashes.
 pub fn valid_name(name: &str) -> bool {
     !name.is_empty()
+        && !name.ends_with("-cl")
+        && !name.ends_with("-dt")
         && name
             .chars()
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
@@ -123,7 +125,7 @@ pub fn install(
         bail!("extra kernel options must be one line, without $ or backquotes");
     }
     if !valid_name(name) {
-        bail!("{name:?}: a test kernel's name is lowercase letters, digits and dashes");
+        bail!("{}", name_refusal(name));
     }
     let listing = run(Command::new("tar").arg("tzf").arg(mods))?;
     let release = release_from_listing(&listing)
@@ -249,7 +251,7 @@ pub fn with_dtb_script(name: &str, dtb: &str) -> String {
 /// Sets up a device-tree try of installed kernel NAME; the try is then NAME-dt's.
 pub fn with_dtb(phone: &Phone, name: &str, dtb: &Path) -> Result<String> {
     if !valid_name(name) {
-        bail!("{name:?}: not a test kernel name");
+        bail!("{}", name_refusal(name));
     }
     let file = dtb
         .file_name()
@@ -271,9 +273,72 @@ pub fn with_dtb(phone: &Phone, name: &str, dtb: &Path) -> Result<String> {
     Ok(format!("{name}-dt"))
 }
 
+/// Why a test kernel's name is refused: the label is free, but a + is systemd-boot's try counter
+/// in the entry file name (pmos-NAME+1-0.conf) and removal globs pmos-NAME+*.conf.
+pub fn name_refusal(name: &str) -> String {
+    if name.ends_with("-cl") || name.ends_with("-dt") {
+        format!("{name:?}: -cl and -dt end the name of a try entry (a command-line or device-tree try of another kernel); pick another label")
+    } else if name.contains('+') {
+        format!("{name:?}: + is systemd-boot's try counter in the entry name; the label is free, e.g. calls4")
+    } else {
+        format!("{name:?}: a test kernel's name is lowercase letters, digits and dashes")
+    }
+}
+
+/// What `--cmdline` may be: one line with something in it (it is read from a file on the phone and
+/// never spliced into a shell string, so quotes and $ are fine).
+pub fn check_cmdline(args: &str) -> Result<()> {
+    if args.trim().is_empty() {
+        bail!("--cmdline is empty: give the kernel options to add");
+    }
+    if args.contains('\n') || args.contains('\r') {
+        bail!("--cmdline must be one line");
+    }
+    Ok(())
+}
+
+/// What a root shell does to set up a command-line try of installed kernel NAME: an entry NAME-cl with
+/// one try, NAME's kernel, initramfs, device tree and release, its options followed by the words in
+/// /tmp/te-cmdline, bless masked; the next boot is stock (or the kept kernel).
+pub fn with_cmdline_script(name: &str) -> String {
+    format!(
+        "set -e\ncd /boot/loader/entries\n\
+         from=$(ls pmos-{name}.conf pmos-{name}+*.conf 2>/dev/null | head -n1)\n\
+         [ -n \"$from\" ] || {{ echo 'pmos-{name} is not installed' >&2; rm -f /tmp/te-cmdline; exit 1; }}\n\
+         A=$(cat /tmp/te-cmdline); rm -f /tmp/te-cmdline\n\
+         grep -q '^options ' \"$from\" || {{ echo 'pmos-{name} has no options line to extend' >&2; exit 1; }}\n\
+         rm -f pmos-{name}-cl.conf pmos-{name}-cl+*.conf\n\
+         export A\n\
+         awk '/^options /{{ sub(/ systemd.mask=systemd-bless-boot.service/, \"\"); print $0 \" \" ENVIRON[\"A\"] \" systemd.mask=systemd-bless-boot.service\"; next }} \
+         /^title /{{ print \"title postmarketOS (test command line: {name})\"; next }} \
+         /^sort-key /{{ print \"sort-key 0-test-{name}-cl\"; next }} {{ print }}' \"$from\" > 'pmos-{name}-cl+1-0.conf'\n\
+         sync\necho 'installed: pmos-{name}-cl+1-0.conf (one try): the kernel of pmos-{name} with its command line extended'\n"
+    )
+}
+
+/// Sets up a command-line try of installed kernel NAME; the try is then NAME-cl's.
+pub fn with_cmdline(phone: &Phone, name: &str, args: &str) -> Result<String> {
+    if !valid_name(name) {
+        bail!("{}", name_refusal(name));
+    }
+    check_cmdline(args)?;
+    let w = tempdir()?;
+    let local = w.join("te-cmdline");
+    std::fs::write(&local, args.trim())?;
+    let put = phone.put(local.to_str().context("path")?, "/tmp/te-cmdline");
+    let _ = std::fs::remove_file(&local);
+    put?;
+    let (ok, out) = phone.root(&with_cmdline_script(name))?;
+    eprint!("{out}");
+    if !ok {
+        bail!("setting up the command-line try failed");
+    }
+    Ok(format!("{name}-cl"))
+}
+
 pub fn try_once(phone: &Phone, name: &str) -> Result<()> {
     if !valid_name(name) {
-        bail!("{name:?}: not a test kernel name");
+        bail!("{}", name_refusal(name));
     }
     let (ok, out) = phone.root(&format!(
         "set -e\nls /boot/loader/entries/ | grep -q '^pmos-{name}+[1-9]' || {{ echo 'pmos-{name} has no try left: install it again' >&2; exit 1; }}\n\
@@ -327,7 +392,7 @@ pub fn unkeep_script(name: &str) -> String {
 
 pub fn keep(phone: &Phone, name: &str) -> Result<()> {
     if !valid_name(name) {
-        bail!("{name:?}: not a test kernel name");
+        bail!("{}", name_refusal(name));
     }
     let (ok, out) = phone.root(&keep_script(name))?;
     eprint!("{out}");
@@ -339,7 +404,7 @@ pub fn keep(phone: &Phone, name: &str) -> Result<()> {
 
 pub fn unkeep(phone: &Phone, name: &str) -> Result<()> {
     if !valid_name(name) {
-        bail!("{name:?}: not a test kernel name");
+        bail!("{}", name_refusal(name));
     }
     let (ok, out) = phone.root(&unkeep_script(name))?;
     eprint!("{out}");
@@ -357,7 +422,7 @@ pub fn log(phone: &Phone) -> Result<()> {
 
 pub fn remove(phone: &Phone, name: &str) -> Result<()> {
     if !valid_name(name) {
-        bail!("{name:?}: not a test kernel name");
+        bail!("{}", name_refusal(name));
     }
     let (ok, out) = phone.root(&remove_script(name))?;
     eprint!("{out}");
@@ -382,14 +447,14 @@ pub fn remove_script(name: &str) -> String {
          if [ -n \"$release\" ]; then\n\
          [ \"$(uname -r)\" != \"$release\" ] || keep=\"the running kernel is $release\"\n\
          for e in *.conf; do\n\
-         case \"$e\" in pmos-{name}.conf|pmos-{name}+*|pmos.conf) continue ;; esac\n\
+         case \"$e\" in pmos-{name}.conf|pmos-{name}+*|pmos-{name}-cl.conf|pmos-{name}-cl+*|pmos-{name}-dt.conf|pmos-{name}-dt+*|pmos.conf) continue ;; esac\n\
          r=$(sed -n 's/^{RELEASE_MARK}//p' \"$e\")\n\
          if [ \"$r\" = \"$release\" ]; then keep=\"$e boots with it\"; elif [ -z \"$r\" ] && [ -z \"$keep\" ]; then keep=\"$e does not say which release it boots with\"; fi\n\
          done\n\
          apk info -q --who-owns \"/lib/modules/$release\" >/dev/null 2>&1 && keep=\"a package owns them\"\n\
          fi\n\
-         rm -f pmos-{name}.conf pmos-{name}+*.conf /boot/vmlinuz-{name} /boot/initramfs-{name} /boot/test-boot.log /boot/test-boot.dmesg\n\
-         rm -rf /boot/dtbs-{name}\n\
+         rm -f pmos-{name}.conf pmos-{name}+*.conf pmos-{name}-cl.conf pmos-{name}-cl+*.conf pmos-{name}-dt.conf pmos-{name}-dt+*.conf /boot/vmlinuz-{name} /boot/initramfs-{name} /boot/test-boot.log /boot/test-boot.dmesg\n\
+         rm -rf /boot/dtbs-{name} /boot/dtbs-{name}-dt\n\
          if [ -z \"$release\" ]; then echo 'removed: pmos-{name} (no modules of its own found)'\n\
          elif [ -n \"$keep\" ]; then echo \"removed: pmos-{name}; the modules of $release stay: $keep\"\n\
          else rm -rf \"/lib/modules/$release\"; echo \"removed: pmos-{name} and the modules of $release\"; fi\n"
@@ -519,6 +584,46 @@ mod tests {
     }
 
     #[test]
+    fn removing_a_kernel_takes_its_try_entries_and_their_files_and_names_end_not_in_a_try_suffix() {
+        let root = std::env::temp_dir().join(format!("devlab-remove-try-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let e = root.join("boot/loader/entries");
+        std::fs::create_dir_all(&e).unwrap();
+        std::fs::create_dir_all(root.join("lib/modules/7.1.0-calls4")).unwrap();
+        std::fs::create_dir_all(root.join("boot/dtbs-calls4-dt/qcom")).unwrap();
+        std::fs::write(e.join("pmos.conf"), "title postmarketOS\n").unwrap();
+        for f in [
+            "pmos-calls4+0-1.conf",
+            "pmos-calls4-cl+0-1.conf",
+            "pmos-calls4-dt+0-1.conf",
+        ] {
+            std::fs::write(
+                e.join(f),
+                "# devlab release 7.1.0-calls4\nsort-key 0-test-calls4\n",
+            )
+            .unwrap();
+        }
+        let (ok, said) = removed(&root, "calls4", "6.1-stock");
+        assert!(
+            ok && said.contains("and the modules of 7.1.0-calls4"),
+            "{said}"
+        );
+        let left: Vec<_> = std::fs::read_dir(&e)
+            .unwrap()
+            .map(|x| x.unwrap().file_name())
+            .collect();
+        assert_eq!(left.len(), 1, "only stock's entry is left: {left:?}");
+        assert!(!root.join("boot/dtbs-calls4-dt").exists());
+        let _ = std::fs::remove_dir_all(&root);
+        for bad in ["calls4-cl", "calls4-dt"] {
+            assert!(
+                !valid_name(bad),
+                "{bad}: it would clash with calls4's try entry"
+            );
+        }
+        assert!(valid_name("calls4") && valid_name("cl-2") && valid_name("dt"));
+    }
+    #[test]
     fn a_device_tree_try_reuses_the_kernel_once() {
         let s = with_dtb_script("mic", "sm7150-xiaomi-surya-huaxing.dtb");
         assert!(s.contains("> 'pmos-mic-dt+1-0.conf'"), "one try");
@@ -539,6 +644,97 @@ mod tests {
         );
     }
 
+    /// Runs with_cmdline_script in a fake root holding /boot/loader/entries with `entries` (file, text)
+    /// and the arguments file; returns (ok, said, the new entry's text if written).
+    fn cmdline_try(
+        root: &Path,
+        entries: &[(&str, &str)],
+        args: &str,
+    ) -> (bool, String, Option<String>) {
+        let r = root.to_string_lossy();
+        let dir = root.join("boot/loader/entries");
+        std::fs::create_dir_all(&dir).unwrap();
+        for (f, t) in entries {
+            std::fs::write(dir.join(f), t).unwrap();
+        }
+        std::fs::write(root.join("te-cmdline"), args).unwrap();
+        let script = with_cmdline_script("calls4")
+            .replace("/boot/", &format!("{r}/boot/"))
+            .replace("/tmp/te-cmdline", &format!("{r}/te-cmdline"));
+        let out = Command::new("sh").arg("-c").arg(&script).output().unwrap();
+        let said = String::from_utf8_lossy(&out.stdout).into_owned()
+            + &String::from_utf8_lossy(&out.stderr);
+        let made = std::fs::read_to_string(dir.join("pmos-calls4-cl+1-0.conf")).ok();
+        (out.status.success(), said, made)
+    }
+
+    const KERNEL_ENTRY: &str = "# devlab release 7.1.0-calls4\ntitle postmarketOS (test kernel: calls4)\nsort-key 0-test-calls4\nlinux vmlinuz-calls4\ninitrd initramfs\ndevicetree dtbs-calls4/qcom/x.dtb\noptions root=UUID=1 quiet systemd.mask=systemd-bless-boot.service\n";
+
+    #[test]
+    fn a_cmdline_try_extends_the_options_once_and_never_blesses() {
+        let root = std::env::temp_dir().join(format!("devlab-cl-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let (ok, said, made) = cmdline_try(
+            &root,
+            &[("pmos-calls4+3-0.conf", KERNEL_ENTRY)],
+            "initcall_debug dyndbg=\"file a/b.c +p\" x='$HOME'",
+        );
+        assert!(ok, "{said}");
+        let made = made.expect("the one-try entry");
+        assert!(made.contains("\noptions root=UUID=1 quiet initcall_debug dyndbg=\"file a/b.c +p\" x='$HOME' systemd.mask=systemd-bless-boot.service\n"), "{made}");
+        assert!(
+            made.contains("sort-key 0-test-calls4-cl\n") && made.contains("linux vmlinuz-calls4\n"),
+            "{made}"
+        );
+        assert!(
+            made.starts_with("# devlab release 7.1.0-calls4\n"),
+            "removing it keeps the modules"
+        );
+        assert!(
+            root.join("boot/loader/entries/pmos-calls4+3-0.conf")
+                .exists(),
+            "the kernel's own entry stays"
+        );
+        assert!(
+            !root.join("te-cmdline").exists(),
+            "the arguments file is not left behind"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_cmdline_try_of_an_entry_without_options_or_an_absent_kernel_is_refused() {
+        let root = std::env::temp_dir().join(format!("devlab-cl2-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let bare = KERNEL_ENTRY
+            .lines()
+            .filter(|l| !l.starts_with("options"))
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n";
+        let (ok, said, made) = cmdline_try(&root, &[("pmos-calls4+3-0.conf", &bare)], "x");
+        assert!(
+            !ok && made.is_none() && said.contains("no options line to extend"),
+            "{said}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        let (ok, said, made) = cmdline_try(&root, &[], "x");
+        assert!(
+            !ok && made.is_none() && said.contains("pmos-calls4 is not installed"),
+            "{said}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_cmdline_of_more_than_one_line_or_none_is_refused_and_a_plus_in_a_name_says_why() {
+        assert!(check_cmdline("a b=\"c d\" +p").is_ok());
+        for bad in ["a\nb", "a\r", "", "   "] {
+            assert!(check_cmdline(bad).is_err(), "{bad:?}");
+        }
+        let why = name_refusal("calls+");
+        assert!(why.contains("systemd-boot's try counter"), "{why}");
+    }
     #[test]
     fn names_are_safe_for_the_esp() {
         assert!(valid_name("wcd") && valid_name("wcd-2"));
