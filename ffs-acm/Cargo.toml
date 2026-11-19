@@ -1,7 +1,7 @@
 [package]
 name = "lpoco-ffs-acm"
 # the family is released together: one version (release-plz.toml, version_group)
-version = "0.28.0"
+version = "0.28.1"
 edition = "2021"
 description = "lpoco-ffs-acm: a serial console for a phone through FunctionFS (one class-2 interface, a pty shell bridged to the bulk endpoints)"
 license = "MIT OR Apache-2.0"
