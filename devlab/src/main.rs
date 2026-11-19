@@ -95,6 +95,7 @@ enum Cmd {
     Kernel {
         action: KernelCmd,
     },
+    ManifestCheck,
 }
 
 enum JobCmd {
@@ -421,6 +422,7 @@ fn parse() -> Cli {
         ["keeper", "status"] => Cmd::Keeper {
             action: KeeperCmd::Status,
         },
+        ["manifest", "check"] => Cmd::ManifestCheck,
         ["guard", "tool"] => Cmd::Guard {
             event: GuardCmd::Tool,
         },
@@ -483,6 +485,11 @@ fn main() -> Result<()> {
             JobCmd::List => job::list()?,
         };
         println!("{said}");
+        return Ok(());
+    }
+    if let Cmd::ManifestCheck = &cli.cmd {
+        let file = device::Device::locate(cli.device.as_deref(), &std::env::current_dir()?)?;
+        println!("{}", device::Device::check(&file, VERSION)?);
         return Ok(());
     }
     let (dev, file) = device::Device::load(cli.device.as_deref(), &std::env::current_dir()?)?;
@@ -652,7 +659,9 @@ fn main() -> Result<()> {
             KeeperCmd::Release { name } => println!("{}", keeper::release(&dev, &name)?),
             KeeperCmd::Status => println!("{}", keeper::status(&dev)),
         },
-        Cmd::Guard { .. } | Cmd::Job { .. } => unreachable!("answered before the manifest is read"),
+        Cmd::Guard { .. } | Cmd::Job { .. } | Cmd::ManifestCheck => {
+            unreachable!("answered before the manifest is read")
+        }
         Cmd::Kernel { action } => {
             let p = phone::Phone::find(&dev)?;
             match action {
