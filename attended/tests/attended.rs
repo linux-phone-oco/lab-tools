@@ -578,3 +578,24 @@ fn a_reboot_that_was_not_scheduled_fails_the_step_and_a_dry_boot_once_reaches_no
     assert_eq!(o.status.code(), Some(0), "{}", said(&o));
     assert!(!dir.join("args").exists(), "a dry run reached devlab");
 }
+
+#[test]
+fn wait_for_usb_is_keyed_to_the_bring_up_step_gadget_enumerates() {
+    let dir = tmp("usb-keyed");
+    let log = dir.join("k.log");
+    let o = Command::new("rust-script")
+        .arg(example_named(&dir, "library"))
+        .args(["--dry-run", "--log", log.to_str().unwrap()])
+        .env("CASE", "usb-seen")
+        .current_dir(&dir)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(0), "{}", said(&o));
+    let l = fs::read_to_string(&log).unwrap();
+    assert!(
+        l.contains("USB device 18d1:4ee0 is on the bus")
+            && l.contains("(bring-up step gadget-enumerates)"),
+        "{l}"
+    );
+}

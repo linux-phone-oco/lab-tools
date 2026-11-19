@@ -131,7 +131,8 @@ pub fn read_dmesg(text: &str) -> Step {
 /// The phone is on this computer's USB bus as `vendor:product` (four hex digits each, e.g. `18d1:4ee0`), tried
 /// `tries` times `every` seconds apart. The host's own view (sysfs), so it needs no phone answer: it tells a
 /// phone that booted to a gadget from one that did not. `LPOCO_ATTENDED_SYSFS_USB` points at another bus folder
-/// (the tests' fake).
+/// (the tests' fake). Keyed to bring-up step gadget-enumerates, but it proves only the vendor:product: the serial
+/// half of that step is not checked, and the id is the lane's to give (our own kernel's gadget, not the stock one).
 pub fn wait_for_usb(id: &str, tries: u32, every: u64) -> Step {
     let id = id.to_ascii_lowercase();
     Step::new(
@@ -155,6 +156,7 @@ pub fn wait_for_usb(id: &str, tries: u32, every: u64) -> Step {
             })
         },
     )
+    .keyed("gadget-enumerates")
 }
 
 /// Boot the named test kernel once, through devlab's `kernel try` (never around it): devlab refuses an entry with
