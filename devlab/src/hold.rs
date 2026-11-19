@@ -6,14 +6,20 @@
 use crate::device::Device;
 use anyhow::Result;
 use std::fs::{File, OpenOptions};
+use std::path::Path;
 
 pub fn hold(device: &Device) -> Result<File> {
-    std::fs::create_dir_all(device.state_dir())?;
+    hold_in(&device.state_dir())
+}
+
+/// The same hold on the lock file under DIR (the test gives it a folder of its own).
+fn hold_in(dir: &Path) -> Result<File> {
+    std::fs::create_dir_all(dir)?;
     let f = OpenOptions::new()
         .create(true)
         .truncate(false)
         .write(true)
-        .open(device.state_dir().join("phone.lock"))?;
+        .open(dir.join("phone.lock"))?;
     if f.try_lock().is_err() {
         eprintln!("devlab: another change to the phone is under way - waiting for it to end");
         f.lock()?;
@@ -27,14 +33,12 @@ mod tests {
 
     #[test]
     fn the_phone_is_held_by_one_change_at_a_time() {
-        let d = Device::parse(
-            "[device]\ncodename = \"devlab-hold-guard\"\n[connection]\nuser = \"u\"\naddresses = [\"a\"]",
-        )
-        .unwrap();
-        let first = hold(&d).unwrap();
+        // a folder of its own: the lab user's real state folder may be held by another run of these tests
+        let dir = std::env::temp_dir().join(format!("devlab-hold-guard-{}", std::process::id()));
+        let first = hold_in(&dir).unwrap();
         let second = OpenOptions::new()
             .write(true)
-            .open(d.state_dir().join("phone.lock"))
+            .open(dir.join("phone.lock"))
             .unwrap();
         assert!(
             second.try_lock().is_err(),
@@ -42,6 +46,6 @@ mod tests {
         );
         drop(first);
         assert!(second.try_lock().is_ok(), "free once it ends");
-        let _ = std::fs::remove_dir_all(d.state_dir());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
