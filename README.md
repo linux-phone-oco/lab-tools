@@ -315,3 +315,12 @@ Our tools are MIT OR Apache-2.0, at your option: [`LICENSE-MIT`](LICENSE-MIT), [
 an `SPDX-License-Identifier` header; the rest is annotated by path in [`REUSE.toml`](REUSE.toml), and `.github/licence-check` (run by CI)
 keeps new files covered.
 The device-tree fixture is GPL-2.0-only OR BSD-2-Clause, the kernel's dual licence for device trees. Texts of the other licences: `LICENSES/`.
+
+## Attended procedures: `lpoco_bringup::attended`
+
+A procedure a person attends (flash, power-cycle, look at the screen) is a short entry file of named steps,
+not a program: `examples/attended.rs` is the one to copy. `step(name, sh(..) | phone(..) | phone_root(..))` runs,
+`check(..)` looks, `ask_author(to_do, to_check)` waits for "ok" (anything else stops the run and is logged);
+the first failing step stops the run and is named, `--dry-run` walks the list and touches nothing, `--log FILE`
+is the log a lane files. The phone is reached through `lpoco lab phone sh|root` (the program devlab) (`LPOCO_ATTENDED_DEVLAB` names another).
+Not covered yet: a step that hangs (no time limit; the log names the step that began). The log is appended to.

@@ -9,7 +9,9 @@
 //! - [`image::read`], [`image::check`]: an image read back, and counted against the manifest;
 //! - [`pin::check`]: stop when the manifest pins another family version;
 //! - [`hooks::run`]: call a manifest-named step executable.
+//! - [`attended`]: an attended procedure as a plain list of named steps (example: `examples/attended.rs`).
 
+pub mod attended;
 pub mod bisect;
 pub mod boot;
 pub mod dt_check;
