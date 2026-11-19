@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.3](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-lab-v0.24.2...lpoco-lab-v0.24.3) - 2026-11-19
+
+### Other
+
+- lpoco layer pack run against a stand-in nfpm ([#221](https://github.com/linux-phone-oco/lab-tools/pull/221))
+
 ## [0.24.2](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-lab-v0.24.1...lpoco-lab-v0.24.2) - 2026-11-19
 
 ### Added
