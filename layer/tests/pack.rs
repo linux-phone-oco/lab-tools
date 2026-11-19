@@ -3,7 +3,9 @@
 //! per package and format - the declared files and kernel-install's devicetree the same in every format, the
 //! format's own glue (systemd preset, initramfs module list) in a boot package that apk does not get.
 
-use lpoco_layer::{check, materialize, nfpm_yaml, packages, post_install, stale, Format};
+use lpoco_layer::{
+    check, kernel_package, materialize, nfpm_yaml, packages, post_install, stale, Format,
+};
 use lpoco_manifest::Manifest;
 use std::fs;
 use std::path::PathBuf;
@@ -245,12 +247,12 @@ fn a_boot_package_an_earlier_run_left_is_named_when_this_format_makes_none() {
     let old = dir.join(Format::Deb.file_name("xiaomi-surya-boot", "0.1.0"));
     fs::write(&old, "x").unwrap();
     // the same format still makes -boot: nothing is stale
-    assert!(stale(layer, Format::Deb, "0.1.0", &dir).is_empty());
+    assert!(stale(layer, Format::Deb, "0.1.0", &dir, false).is_empty());
     // a layer that no longer has boot glue leaves it stale
     let mut l = layer.clone();
     l.initramfs = None;
     l.file.retain(|f| f.kind != lpoco_manifest::FileKind::Unit);
-    assert_eq!(stale(&l, Format::Deb, "0.1.0", &dir), vec![old]);
+    assert_eq!(stale(&l, Format::Deb, "0.1.0", &dir, false), vec![old]);
 }
 
 #[test]
@@ -371,4 +373,135 @@ fn a_name_map_for_a_token_the_layer_does_not_need_is_refused() {
         "[layer.names.deb]\nqrtr = \"qrtr>=1\"\n\n[layer.kernel]",
     );
     assert!(Manifest::parse(&device).is_err());
+}
+
+/// A finished kernel build as `lpoco layer pack --kernel-build` reads it: Image, kernel.release, the declared
+/// dtbs under dtbs/, and the module tree (what belongs in /usr/lib/modules/RELEASE) under modules/.
+fn kernel_build(tag: &str, release: &str) -> PathBuf {
+    let b = fixture(tag).0.join("kbuild");
+    fs::create_dir_all(b.join("dtbs/qcom")).unwrap();
+    fs::create_dir_all(b.join("modules/kernel")).unwrap();
+    fs::write(b.join("Image"), "image").unwrap();
+    fs::write(b.join("kernel.release"), format!("{release}\n")).unwrap();
+    for d in ["sm7150-xiaomi-surya-huaxing", "sm7150-xiaomi-surya-tianma"] {
+        fs::write(b.join(format!("dtbs/qcom/{d}.dtb")), "dtb").unwrap();
+    }
+    fs::write(b.join("modules/modules.order"), "").unwrap();
+    b
+}
+
+#[test]
+fn the_kernel_package_lays_out_what_kernel_install_reads_and_is_arm64() {
+    let b = kernel_build("k1", "7.1.0-surya");
+    let (dir, stage) = fixture("k1b");
+    let m = Manifest::parse(DEVICE).unwrap();
+    let layer = m.layer.as_ref().unwrap();
+    let p = kernel_package(layer, &b).unwrap();
+    assert_eq!(p.name, "linux-xiaomi-surya");
+    assert_eq!(p.arch, Some("arm64"));
+    let mut dst: Vec<String> = materialize(&p, &dir, &stage)
+        .unwrap()
+        .into_iter()
+        .map(|e| e.dst)
+        .collect();
+    dst.sort();
+    assert_eq!(
+        dst,
+        [
+            "/usr/lib/modules/7.1.0-surya",
+            "/usr/lib/modules/7.1.0-surya/dtb/qcom/sm7150-xiaomi-surya-huaxing.dtb",
+            "/usr/lib/modules/7.1.0-surya/dtb/qcom/sm7150-xiaomi-surya-tianma.dtb",
+            "/usr/lib/modules/7.1.0-surya/vmlinuz",
+        ]
+    );
+    let es = materialize(&p, &dir, &stage).unwrap();
+    let y = nfpm_yaml(&p, Format::Deb, "0.1.0", &es, None).unwrap();
+    assert!(y.contains("arch: arm64\n"), "{y}");
+    assert!(y.contains("type: tree"), "{y}");
+    // each format writes the architecture its own way, in the file name too
+    assert_eq!(
+        Format::Deb.file_name_for("linux-x", "1", Some("arm64")),
+        "linux-x_1_arm64.deb"
+    );
+    assert_eq!(
+        Format::Rpm.file_name_for("linux-x", "1", Some("arm64")),
+        "linux-x-1-1.aarch64.rpm"
+    );
+    assert_eq!(
+        Format::Archlinux.file_name_for("linux-x", "1", Some("arm64")),
+        "linux-x-1-1-aarch64.pkg.tar.zst"
+    );
+    assert_eq!(
+        Format::Apk.file_name_for("linux-x", "1", Some("arm64")),
+        "linux-x-1-r0.apk"
+    );
+}
+
+#[test]
+fn a_kernel_build_that_cannot_be_packed_right_is_refused_and_says_why() {
+    let m = Manifest::parse(DEVICE).unwrap();
+    let layer = m.layer.as_ref().unwrap();
+    // a declared dtb the build lacks
+    let b = kernel_build("k2", "7.1.0");
+    fs::remove_file(b.join("dtbs/qcom/sm7150-xiaomi-surya-tianma.dtb")).unwrap();
+    let e = kernel_package(layer, &b).unwrap_err();
+    assert!(e.contains("sm7150-xiaomi-surya-tianma.dtb"), "{e}");
+    // no Image
+    let b = kernel_build("k3", "7.1.0");
+    fs::remove_file(b.join("Image")).unwrap();
+    assert!(kernel_package(layer, &b).unwrap_err().contains("Image"));
+    // a release that would escape /usr/lib/modules or break a path
+    for bad in ["../x", "a b", "", "a/b"] {
+        let b = kernel_build("k4", bad);
+        let e = kernel_package(layer, &b).unwrap_err();
+        assert!(e.contains("release"), "{bad:?}: {e}");
+    }
+    // a layer with no [layer.kernel] has nothing to put the build under
+    let mut l = layer.clone();
+    l.kernel = None;
+    let b = kernel_build("k5", "7.1.0");
+    assert!(kernel_package(&l, &b)
+        .unwrap_err()
+        .contains("[layer.kernel]"));
+}
+
+#[test]
+fn the_modules_tree_keeps_its_own_file_modes_and_a_clash_with_the_kernels_files_is_refused() {
+    let b = kernel_build("k6", "7.1.0");
+    let (dir, stage) = fixture("k6b");
+    let m = Manifest::parse(DEVICE).unwrap();
+    let layer = m.layer.as_ref().unwrap();
+    let p = kernel_package(layer, &b).unwrap();
+    let es = materialize(&p, &dir, &stage).unwrap();
+    let y = nfpm_yaml(&p, Format::Deb, "0.1.0", &es, None).unwrap();
+    // per entry: the tree has no mode line (nfpm would stamp it on every module), the files do
+    let entries: Vec<&str> = y.split("\n- src:").skip(1).collect();
+    assert_eq!(entries.len(), 4, "{y}");
+    for e in &entries {
+        let tree = e.contains("type: tree");
+        assert_eq!(tree, e.contains("dst: \"/usr/lib/modules/7.1.0\"\n"), "{e}");
+        assert_eq!(tree, !e.contains("mode:"), "{e}");
+    }
+    // no modules folder: no tree entry
+    fs::remove_dir_all(b.join("modules")).unwrap();
+    let p = kernel_package(layer, &b).unwrap();
+    assert!(p
+        .items
+        .iter()
+        .all(|i| !matches!(i.source, lpoco_layer::Source::Dir(_))));
+    // a module tree that holds the kernel's own file names would overwrite them
+    fs::create_dir_all(b.join("modules")).unwrap();
+    fs::write(b.join("modules/vmlinuz"), "x").unwrap();
+    assert!(kernel_package(layer, &b).unwrap_err().contains("overwrite"));
+}
+
+#[test]
+fn a_kernel_package_an_earlier_run_left_is_stale_when_no_build_is_given_now() {
+    let (dir, _) = fixture("k7");
+    let m = Manifest::parse(DEVICE).unwrap();
+    let layer = m.layer.as_ref().unwrap();
+    let old = dir.join(Format::Deb.file_name_for("linux-xiaomi-surya", "0.1.0", Some("arm64")));
+    fs::write(&old, "x").unwrap();
+    assert_eq!(stale(layer, Format::Deb, "0.1.0", &dir, false), vec![old]);
+    assert!(stale(layer, Format::Deb, "0.1.0", &dir, true).is_empty());
 }

@@ -107,3 +107,47 @@ fn the_boot_package_is_packed_with_the_postinstall_the_run_wrote() {
         "{packed}"
     );
 }
+
+#[test]
+fn a_kernel_build_given_is_packed_as_linux_name_for_arm64_and_none_given_makes_none() {
+    let (dir, nfpm) = setup("kern", "#!/bin/sh\ncp \"$5\" \"$7\"\n");
+    let toml = format!(
+        "{DEVICE}\n[layer.kernel]\ntree = \"https://example.org/linux\"\ntag = \"v7.1\"\ndtbs = [\"qcom/a.dtb\"]\n"
+    );
+    fs::write(dir.join("device.toml"), toml).unwrap();
+    let b = dir.join("kbuild");
+    fs::create_dir_all(b.join("dtbs/qcom")).unwrap();
+    fs::write(b.join("dtbs/qcom/a.dtb"), "d").unwrap();
+    fs::write(b.join("Image"), "i").unwrap();
+    fs::write(b.join("kernel.release"), "7.1.0\n").unwrap();
+    let o = pack(&dir, &nfpm, "deb");
+    assert_eq!(
+        o.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+    assert!(!dir.join("out/linux-xiaomi-surya.nfpm.yaml").exists());
+    let o = Command::new(env!("CARGO_BIN_EXE_lpoco-layer"))
+        .args(["pack", "--format", "deb", "--manifest"])
+        .arg(dir.join("device.toml"))
+        .arg("--out")
+        .arg(dir.join("out"))
+        .arg("--kernel-build")
+        .arg(&b)
+        .env("LPOCO_NFPM", &nfpm)
+        .output()
+        .unwrap();
+    assert_eq!(
+        o.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+    let packed = fs::read_to_string(dir.join("out/linux-xiaomi-surya_0.1.0_arm64.deb")).unwrap();
+    assert!(packed.contains("arch: arm64"), "{packed}");
+    assert!(
+        packed.contains("/usr/lib/modules/7.1.0/vmlinuz"),
+        "{packed}"
+    );
+}
