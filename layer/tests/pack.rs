@@ -87,8 +87,10 @@ fn the_declared_files_are_the_same_in_every_format() {
 }
 
 #[test]
-fn apk_gets_no_boot_package_and_deb_gets_a_preset_and_an_initramfs_hook() {
-    assert_eq!(dests(Format::Apk, "a2").len(), 1);
+fn apk_gets_no_preset_and_deb_gets_a_preset_and_an_initramfs_hook() {
+    let apk = dests(Format::Apk, "a2");
+    let boot = &apk.iter().find(|p| p.0 == "xiaomi-surya-boot").unwrap().1;
+    assert!(!boot.iter().any(|d| d.contains("preset")), "{boot:?}");
     let deb = dests(Format::Deb, "d2");
     let boot = &deb.iter().find(|p| p.0 == "xiaomi-surya-boot").unwrap().1;
     for want in [
@@ -325,9 +327,10 @@ fn the_preset_runs_on_first_install_only_in_each_format_and_also_in_a_chroot() {
         assert!(!s.contains("/run/systemd"), "{s}");
         assert!(s.contains("command -v systemctl"), "{s}");
     }
-    assert!(packages(layer, Format::Apk)
-        .iter()
-        .all(|p| p.post_install.is_none()));
+    assert!(packages(layer, Format::Apk).iter().all(|p| p
+        .post_install
+        .as_deref()
+        .is_none_or(|s| !s.contains("systemctl"))));
 }
 
 #[test]
@@ -504,4 +507,116 @@ fn a_kernel_package_an_earlier_run_left_is_stale_when_no_build_is_given_now() {
     fs::write(&old, "x").unwrap();
     assert_eq!(stale(layer, Format::Deb, "0.1.0", &dir, false), vec![old]);
     assert!(stale(layer, Format::Deb, "0.1.0", &dir, true).is_empty());
+}
+
+/// Runs a shell snippet in `dir` and returns what it printed; the test's stand-in for mkinitfs and the package manager.
+fn sh(dir: &std::path::Path, script: &str) -> String {
+    let o = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(script)
+        .current_dir(dir)
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{script}: {o:?}");
+    String::from_utf8(o.stdout).unwrap() + &String::from_utf8(o.stderr).unwrap()
+}
+
+#[test]
+fn apk_names_its_modules_as_mkinitfs_reads_them_and_turns_the_feature_on_once() {
+    let (dir, stage) = fixture("mk");
+    let m = Manifest::parse(DEVICE).unwrap();
+    let layer = m.layer.as_ref().unwrap();
+    assert!(check(layer, Format::Apk).is_ok());
+    let pkgs = packages(layer, Format::Apk);
+    let boot = pkgs.iter().find(|p| p.name == "xiaomi-surya-boot").unwrap();
+    assert_eq!(
+        boot.depends,
+        vec!["xiaomi-surya-config".to_string(), "mkinitfs".to_string()]
+    );
+    let es = materialize(boot, &dir, &stage).unwrap();
+    assert_eq!(es.len(), 1);
+    assert_eq!(es[0].dst, "/etc/mkinitfs/features.d/xiaomi-surya.modules");
+    // mkinitfs globs each line against files under /lib/modules/KERNEL: a bare name matches nothing
+    let kd = dir.join("kmods");
+    let deep = kd.join("kernel/drivers/ufs/host");
+    fs::create_dir_all(&deep).unwrap();
+    fs::write(deep.join("ufs-qcom.ko.zst"), "").unwrap();
+    let other = kd.join("kernel/drivers/phy/qualcomm");
+    fs::create_dir_all(&other).unwrap();
+    fs::write(other.join("phy-qcom-qmp-ufs.ko"), "").unwrap();
+    fs::write(other.join("phy-qcom-qmp-pcie.ko"), "").unwrap();
+    fs::write(other.join("phy-qcom-qmp-ufs-extra.ko"), "").unwrap();
+    fs::write(deep.join("ufs-qcom-ice.ko"), "").unwrap();
+    let seven = kd.join("kernel/a/b/c/d/e/f/g");
+    fs::create_dir_all(&seven).unwrap();
+    fs::write(seven.join("phy_qcom_qmp_ufs.ko.xz"), "").unwrap();
+    let list = es[0].src.display().to_string();
+    let found = sh(
+        &kd,
+        &format!(
+            "sed -e '/^$/d' -e '/^#/d' {list} | while IFS= read -r glob; do for f in $glob; do [ -e \"$f\" ] && echo \"$f\"; done; done | sort -u"
+        ),
+    );
+    assert_eq!(
+        found,
+        "kernel/a/b/c/d/e/f/g/phy_qcom_qmp_ufs.ko.xz\nkernel/drivers/phy/qualcomm/phy-qcom-qmp-ufs.ko\nkernel/drivers/ufs/host/ufs-qcom.ko.zst\n"
+    );
+    // the scriptlet switches the feature on in mkinitfs.conf once and keeps what the user set
+    let s = boot.post_install.as_ref().unwrap();
+    let conf = dir.join("mkinitfs.conf");
+    let run = |content: Option<&str>| {
+        match content {
+            Some(c) => fs::write(&conf, c).unwrap(),
+            None => drop(fs::remove_file(&conf)),
+        }
+        let script = s.replace("/etc/mkinitfs/mkinitfs.conf", &conf.display().to_string());
+        let out = sh(&dir, &script);
+        (fs::read_to_string(&conf).unwrap_or_default(), out)
+    };
+    let (c, _) = run(Some("features=\"ata base ext4\"\n# mine\n"));
+    assert_eq!(c, "features=\"ata base ext4 xiaomi-surya\"\n# mine\n");
+    let (c2, _) = run(Some(&c));
+    assert_eq!(c2, c, "a second install changes nothing");
+    // NAME already there - first, middle, alone - is left; a longer name that starts with it is not NAME
+    for have in [
+        "xiaomi-surya base",
+        "base xiaomi-surya ext4",
+        "xiaomi-surya",
+    ] {
+        let conf_text = format!("features=\"{have}\"\n");
+        assert_eq!(run(Some(&conf_text)).0, conf_text, "{have}");
+    }
+    assert_eq!(
+        run(Some("features=\"base xiaomi-surya-old\"\n")).0,
+        "features=\"base xiaomi-surya-old xiaomi-surya\"\n"
+    );
+    // a dot in the layer name is a dot, not any character
+    let mut dotted = layer.clone();
+    dotted.name = "a.b".into();
+    let pk = packages(&dotted, Format::Apk);
+    let s2 = pk
+        .iter()
+        .find(|p| p.name == "a.b-boot")
+        .unwrap()
+        .post_install
+        .clone()
+        .unwrap();
+    let script = s2.replace("/etc/mkinitfs/mkinitfs.conf", &conf.display().to_string());
+    fs::write(&conf, "features=\"base aXb\"\n").unwrap();
+    sh(&dir, &script);
+    assert_eq!(
+        fs::read_to_string(&conf).unwrap(),
+        "features=\"base aXb a.b\"\n"
+    );
+    let (c3, w) = run(Some("# no features line\n"));
+    assert_eq!(c3, "# no features line\n");
+    assert!(w.contains("xiaomi-surya") && w.contains("by hand"), "{w}");
+    let (_, w) = run(None);
+    assert!(w.contains("by hand"), "a missing conf is said: {w}");
+    // no modules, no boot package for apk
+    let mut l = layer.clone();
+    l.initramfs = None;
+    assert!(packages(&l, Format::Apk)
+        .iter()
+        .all(|p| p.name != "xiaomi-surya-boot"));
 }
