@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.35.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-manifest-v0.34.2...lpoco-manifest-v0.35.0) - 2026-11-19
+
+### Added
+
+- *(host)* lpoco host clones fast-forwards the shared clones from a user timer ([#289](https://github.com/linux-phone-oco/lab-tools/pull/289))
+
 ## [0.34.2](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-manifest-v0.34.1...lpoco-manifest-v0.34.2) - 2026-11-19
 
 ### Added
