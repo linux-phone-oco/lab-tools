@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.38.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-health-v0.38.0...lpoco-health-v0.38.1) - 2026-11-19
+
+### Fixed
+
+- *(attended)* EOF on stdin is no answer; with no terminal a prompt waits on its answer file ([#306](https://github.com/linux-phone-oco/lab-tools/pull/306))
+
 ## [0.38.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-health-v0.37.3...lpoco-health-v0.38.0) - 2026-11-19
 
 ### Added
