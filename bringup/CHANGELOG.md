@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.21.0...lpoco-bringup-v0.21.1) - 2026-11-19
+
+### Added
+
+- *(bringup)* reference capture and diff, the stock OS against our boot ([#197](https://github.com/linux-phone-oco/lab-tools/pull/197))
+
 ## [0.21.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.20.1...lpoco-bringup-v0.21.0) - 2026-11-18
 
 ### Added
