@@ -831,3 +831,78 @@ fn a_refusal_comes_before_the_log_and_names_a_manifest_that_is_missing_or_has_no
         "{t}"
     );
 }
+
+#[test]
+fn the_log_holds_what_the_phone_said_to_a_passing_step_under_that_step() {
+    let dir = tmp("output");
+    let devlab = stand_in(&dir, "pmicwdt 16384 0");
+    let log = dir.join("output.log");
+    let o = run(&dir, &devlab, &["--log", log.to_str().unwrap()], "ok\n");
+    assert_eq!(o.status.code(), Some(0), "{}", said(&o));
+    let l = fs::read_to_string(&log).unwrap();
+    let line = l
+        .lines()
+        .find(|l| l.contains(" out pmicwdt is bound: "))
+        .unwrap_or_else(|| panic!("no output line for the passing step: {l}"));
+    assert!(line.contains("pmicwdt 16384 0"), "{line}");
+}
+
+#[test]
+fn a_dry_run_logs_no_output_and_long_output_is_cut_and_says_so() {
+    let dir = tmp("output-cut");
+    let devlab = stand_in(&dir, "pmicwdt 16384 0");
+    let long = "x".repeat(9000);
+    fs::write(
+        dir.join("phone/bin/lsmod"),
+        format!("#!/bin/sh\necho pmicwdt; echo {long}\n"),
+    )
+    .unwrap();
+    let log = dir.join("cut.log");
+    let o = run(&dir, &devlab, &["--log", log.to_str().unwrap()], "ok\n");
+    assert_eq!(o.status.code(), Some(0), "{}", said(&o));
+    let l = fs::read_to_string(&log).unwrap();
+    let line = l
+        .lines()
+        .find(|l| l.contains(" out pmicwdt is bound: "))
+        .expect("an out line");
+    assert!(
+        line.len() < 4200 && line.contains("[cut: the last 4000 of "),
+        "{}",
+        line.len()
+    );
+    let dry = dir.join("dry.log");
+    run(
+        &dir,
+        &devlab,
+        &["--dry-run", "--log", dry.to_str().unwrap()],
+        "",
+    );
+    assert!(!fs::read_to_string(&dry).unwrap().contains(" out "));
+}
+
+#[test]
+fn a_cut_never_splits_a_character_and_two_steps_keep_their_own_output() {
+    let dir = tmp("output-utf8");
+    let devlab = stand_in(&dir, "pmicwdt 16384 0");
+    let long = "é".repeat(3000);
+    fs::write(
+        dir.join("phone/bin/lsmod"),
+        format!("#!/bin/sh\necho pmicwdt\necho {long}\n"),
+    )
+    .unwrap();
+    let log = dir.join("utf8.log");
+    let o = run(&dir, &devlab, &["--log", log.to_str().unwrap()], "ok\n");
+    assert_eq!(o.status.code(), Some(0), "{}", said(&o));
+    let l = fs::read_to_string(&log).unwrap();
+    let line = l
+        .lines()
+        .find(|l| l.contains(" out pmicwdt is bound: [cut: "))
+        .unwrap_or_else(|| panic!("no cut line: {l}"));
+    assert!(line.ends_with('é') && line.len() < 4200, "{}", line.len());
+    assert!(
+        !l.lines()
+            .filter(|l| l.contains(" out "))
+            .any(|l| l.contains("pmicwdt is bound") && l.contains("6.1.0-pmicwdt")),
+        "one step's output is filed under another: {l}"
+    );
+}

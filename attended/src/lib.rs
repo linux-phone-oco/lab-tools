@@ -143,12 +143,18 @@ struct Config {
 struct State {
     log: Option<File>,
     n: u32,
+    /// the step being run: what the phone says is filed under it
+    step: String,
 }
 
 static CONFIG: OnceLock<Config> = OnceLock::new();
 /// whether the entry file asked for its part: a `--part` it never looks at must not run the whole procedure
 static PART_ASKED: AtomicBool = AtomicBool::new(false);
-static STATE: Mutex<State> = Mutex::new(State { log: None, n: 0 });
+static STATE: Mutex<State> = Mutex::new(State {
+    log: None,
+    n: 0,
+    step: String::new(),
+});
 
 fn config() -> &'static Config {
     CONFIG
@@ -166,6 +172,34 @@ fn slug(name: &str) -> String {
             }
         })
         .collect()
+}
+
+/// The longest output filed for one call, as it stands on the log line (newlines are written as ` | `); a longer
+/// one keeps its last bytes (the end of a dmesg is the recent part) and says how much was cut.
+const OUT_MAX: usize = 4000;
+
+/// File what the phone said to the step being run, under that step's name; nothing outside a step. The log is a
+/// plain file: a step that makes the phone print a secret files it, so a procedure never prints one.
+fn note_out(out: &str) {
+    let step = STATE.lock().unwrap_or_else(|e| e.into_inner()).step.clone();
+    let flat = out.trim().replace('\r', "").replace('\n', " | ");
+    if flat.is_empty() || step.is_empty() {
+        return;
+    }
+    let mut start = flat.len().saturating_sub(OUT_MAX);
+    while !flat.is_char_boundary(start) {
+        start += 1;
+    }
+    let cut = if start > 0 {
+        format!(
+            "[cut: the last {} of {} bytes] ",
+            flat.len() - start,
+            flat.len()
+        )
+    } else {
+        String::new()
+    };
+    note("out", &step, &format!("{cut}{}", &flat[start..]));
 }
 
 pub(crate) fn note(what: &str, step: &str, detail: &str) {
@@ -283,6 +317,7 @@ pub fn run_step(s: Step) {
     let n = {
         let mut st = STATE.lock().unwrap_or_else(|e| e.into_inner());
         st.n += 1;
+        st.step = s.name.clone();
         st.n
     };
     let (kind, name) = (s.kind.word(), s.name.clone());
@@ -321,7 +356,9 @@ pub fn run_step(s: Step) {
     }
     println!("{kind} {n}: {name}");
     note("begin", &name, kind);
-    match s.execute() {
+    let result = s.execute();
+    STATE.lock().unwrap_or_else(|e| e.into_inner()).step.clear();
+    match result {
         Ok(()) => note("ok", &name, ""),
         Err(why) => {
             note("FAIL", &name, &why);
@@ -403,6 +440,7 @@ pub(crate) fn devlab(args: &[&str]) -> Result<String, String> {
         String::from_utf8_lossy(&o.stderr)
     );
     if o.status.success() {
+        note_out(&out);
         Ok(out)
     } else {
         Err(format!(
@@ -459,6 +497,7 @@ impl Phone {
             String::from_utf8_lossy(&o.stderr)
         );
         if o.status.success() {
+            note_out(&out);
             Ok(out)
         } else {
             Err(format!(
