@@ -50,6 +50,14 @@ contract! {
         ..Input::EMPTY
     };
 
+    EXTRA: String = Input {
+        key: "extra",
+        ty: Type::String,
+        arg: Some(Arg { value_name: "EXTRA", ..Arg::positional(2) }),
+        summary: "None: a third word is refused, not dropped.",
+        ..Input::EMPTY
+    };
+
     DRY_RUN: bool = Input {
         key: "dry_run",
         ty: Type::Bool,

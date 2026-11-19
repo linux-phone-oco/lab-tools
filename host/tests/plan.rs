@@ -181,7 +181,13 @@ version = "2.0.0"
         s.contains("cargo install --locked --git https://github.com/linux-phone-oco/lab-tools --tag lpoco-v0.2.0"),
         "{s}"
     );
-    for p in ["lpoco-lab", "lpoco-bringup", "lpoco-health", "lpoco-host"] {
+    for p in [
+        "lpoco-lab",
+        "lpoco-bringup",
+        "lpoco-health",
+        "lpoco-host",
+        "lpoco-attended",
+    ] {
         assert!(s.contains(&format!("--tag {p}-v0.2.0 {p}")), "{p}: {s}");
     }
     assert!(changes(&l).is_none(), "the plan ran a stub");

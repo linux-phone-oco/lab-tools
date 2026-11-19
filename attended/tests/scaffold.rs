@@ -276,3 +276,30 @@ fn check_and_run_agree_on_what_a_procedure_is_and_check_hands_on_the_device() {
         "{runs}"
     );
 }
+
+#[test]
+fn a_stray_argument_is_refused_naming_it_and_nothing_runs() {
+    let d = tmp("stray");
+    proc_file(&d, "calls", "echo ran\n");
+    for args in [vec!["run", "calls", "extra"], vec!["new", "other", "again"]] {
+        let o = tool(&d, &args);
+        let t = text(&o);
+        assert_eq!(o.status.code(), Some(2), "{args:?}: {t}");
+        assert!(t.contains(args[args.len() - 1]), "{args:?} names it: {t}");
+    }
+    assert!(!d.join("runs").exists(), "the procedure was not started");
+    assert!(
+        !d.join("procedures/other.rs").exists(),
+        "nothing was written"
+    );
+}
+
+#[test]
+fn a_flag_that_is_not_declared_is_refused_naming_it_and_nothing_runs() {
+    let d = tmp("flag");
+    proc_file(&d, "calls", "echo ran >> runs\n");
+    let o = tool(&d, &["run", "calls", "--bogus"]);
+    assert!(!o.status.success(), "{}", text(&o));
+    assert!(text(&o).contains("--bogus"), "{}", text(&o));
+    assert!(!d.join("runs").exists(), "the procedure was not started");
+}

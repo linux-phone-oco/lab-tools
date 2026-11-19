@@ -34,6 +34,9 @@ fn run(r: &Resolution) -> Result<i32, String> {
     let verb = Contract::VERB
         .get_from(r)
         .ok_or("usage: lpoco attended new NAME | run NAME [--dry-run] | check")?;
+    if let Some(extra) = Contract::EXTRA.get_from(r) {
+        return Err(format!("{extra:?} is one word too many: usage: lpoco attended new NAME | run NAME [--dry-run] | check"));
+    }
     let device = Contract::DEVICE.get_from(r);
     let repo = repo::find(device.as_deref())?;
     let rust_script = Contract::RUST_SCRIPT
