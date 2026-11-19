@@ -18,14 +18,18 @@ fn tmp(name: &str) -> PathBuf {
 
 /// The example, its git dependency pointed at this checkout (as rust_script_step.rs does), compiled once per test dir.
 fn example(dir: &Path) -> PathBuf {
+    example_named(dir, "attended")
+}
+
+fn example_named(dir: &Path, name: &str) -> PathBuf {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let src = fs::read_to_string(root.join("examples/attended.rs")).unwrap();
+    let src = fs::read_to_string(root.join(format!("examples/{name}.rs"))).unwrap();
     let git = src
         .lines()
         .find(|l| l.starts_with("//! lpoco-attended = { git"))
         .expect("the example depends on lpoco-attended by git tag");
     let local = format!("//! lpoco-attended = {{ path = \"{}\" }}", root.display());
-    let f = dir.join("attended.rs");
+    let f = dir.join(format!("{name}.rs"));
     fs::write(&f, src.replace(git, &local)).unwrap();
     f
 }
@@ -246,4 +250,96 @@ fn run_file(dir: &Path, devlab: &Path, args: &[&str]) -> Output {
         .stdin(Stdio::null())
         .output()
         .unwrap()
+}
+
+/// The library example with `CASE` chosen, against a stand-in phone whose dmesg is `dmesg` and whose `ls` finds
+/// only /drivers/bound_drv; `up_after` failed answers come first (a phone still booting).
+fn library(dir: &Path, case: &str, dmesg: &str, up_after: u32) -> Output {
+    let devlab = stand_in(dir, "");
+    let bin = dir.join("phone/bin");
+    fs::write(
+        bin.join("dmesg"),
+        format!("#!/bin/sh\ncat <<'END'\n{dmesg}\nEND\n"),
+    )
+    .unwrap();
+    fs::write(
+        bin.join("ls"),
+        "#!/bin/sh\ncase \"$*\" in *drivers/bound_drv*) exit 0;; esac\nexit 2\n",
+    )
+    .unwrap();
+    let state = dir.join("phone/answers");
+    fs::write(
+        &devlab,
+        format!(
+            "#!/bin/sh\nn=$(cat {s} 2>/dev/null || echo 0); echo $((n+1)) > {s}\n[ $n -lt {up_after} ] && exit 1\nPATH={bin}:$PATH exec sh -s\n",
+            s = state.display(),
+            bin = bin.display()
+        ),
+    )
+    .unwrap();
+    Command::new("chmod")
+        .arg("+x")
+        .args([&devlab, &bin.join("dmesg"), &bin.join("ls")])
+        .status()
+        .unwrap();
+    let mut c = Command::new("rust-script")
+        .arg(example_named(dir, "library"))
+        .env("CASE", case)
+        .env("LPOCO_ATTENDED_DEVLAB", &devlab)
+        .current_dir(dir)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("rust-script is on the lab machine");
+    c.stdin.take();
+    c.wait_with_output().unwrap()
+}
+
+#[test]
+fn dmesg_clean_passes_a_quiet_log_and_stops_at_an_oops_naming_it() {
+    let dir = tmp("dmesg-quiet");
+    let o = library(
+        &dir,
+        "dmesg",
+        "[1.0] boot ok\n[1.1] deferred probe pending",
+        0,
+    );
+    assert_eq!(o.status.code(), Some(0), "{}", said(&o));
+    let dir = tmp("dmesg-oops");
+    let o = library(&dir, "dmesg", "[1.0] boot ok\n[2.0] Oops: 0000 [#1] SMP", 0);
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(1), "{t}");
+    assert!(
+        t.contains("Oops: 0000") && t.contains("dmesg shows no oops"),
+        "{t}"
+    );
+}
+
+#[test]
+fn check_probe_needs_the_driver_bound_and_refuses_a_name_that_is_not_one() {
+    let bound = library(&tmp("probe-bound"), "probe-bound", "", 0);
+    assert_eq!(bound.status.code(), Some(0), "{}", said(&bound));
+    let missing = library(
+        &tmp("probe-missing"),
+        "probe-missing",
+        "[1] absent_drv: bound",
+        0,
+    );
+    assert_eq!(missing.status.code(), Some(1), "{}", said(&missing));
+    let dir = tmp("probe-bad");
+    let bad = library(&dir, "probe-bad-name", "", 0);
+    assert!(said(&bad).contains("not a driver name"), "{}", said(&bad));
+    assert!(
+        !dir.join("phone/answers").exists(),
+        "a bad name reached the phone"
+    );
+}
+
+#[test]
+fn wait_for_phone_passes_when_the_phone_answers_late_and_fails_when_it_never_does() {
+    let late = library(&tmp("wait-late"), "wait", "", 2);
+    assert_eq!(late.status.code(), Some(0), "{}", said(&late));
+    let never = library(&tmp("wait-never"), "wait", "", 9);
+    assert_eq!(never.status.code(), Some(1), "{}", said(&never));
 }

@@ -33,7 +33,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// Everything an entry file needs, in one line: `use lpoco_attended::prelude::*;`.
 pub mod prelude {
-    pub use crate::{ask_author, check, phone, procedure, retry, step, Outcome, Step};
+    pub use crate::{ask_author, check, phone, procedure, retry, run_step, step, Outcome, Step};
 }
 
 /// What a step does with the world.
