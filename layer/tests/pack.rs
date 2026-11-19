@@ -3,7 +3,7 @@
 //! per package and format - the declared files and kernel-install's devicetree the same in every format, the
 //! format's own glue (systemd preset, initramfs module list) in a boot package that apk does not get.
 
-use lpoco_layer::{materialize, nfpm_yaml, packages, Format};
+use lpoco_layer::{check, materialize, nfpm_yaml, packages, stale, Format};
 use lpoco_manifest::Manifest;
 use std::fs;
 use std::path::PathBuf;
@@ -210,4 +210,42 @@ fn a_kept_config_names_its_files_by_absolute_path() {
     let p = packages(m.layer.as_ref().unwrap(), Format::Apk).remove(0);
     let e = materialize(&p, &dir, &stage).unwrap();
     assert!(e.iter().all(|e| e.src.is_absolute()), "{e:?}");
+}
+
+#[test]
+fn a_layer_that_cannot_be_packed_right_is_refused_before_anything_is_written() {
+    let m = Manifest::parse(DEVICE).unwrap();
+    assert!(check(m.layer.as_ref().unwrap(), Format::Deb).is_ok());
+    // kernel-install needs the devicetree file: without a dtb the package would boot nothing
+    let mut layer = m.layer.clone().unwrap();
+    layer.kernel.as_mut().unwrap().dtbs.clear();
+    let e = check(&layer, Format::Deb).unwrap_err();
+    layer.kernel = None;
+    assert!(check(&layer, Format::Deb).is_err());
+    assert!(e.contains("dtbs"), "{e}");
+    // a module name goes into a shell hook and a config line: one word of kernel-module characters only
+    for bad in ["a b", "a;rm", "", "x\ny", "$(id)"] {
+        let mut layer = m.layer.clone().unwrap();
+        layer.initramfs.as_mut().unwrap().modules = vec![bad.into()];
+        let e = check(&layer, Format::Deb).unwrap_err();
+        layer.kernel = None;
+        assert!(check(&layer, Format::Deb).is_err());
+        assert!(e.contains("module"), "{bad:?}: {e}");
+    }
+}
+
+#[test]
+fn a_boot_package_an_earlier_run_left_is_named_when_this_format_makes_none() {
+    let (dir, _) = fixture("t");
+    let m = Manifest::parse(DEVICE).unwrap();
+    let layer = m.layer.as_ref().unwrap();
+    let old = dir.join(Format::Deb.file_name("xiaomi-surya-boot", "0.1.0"));
+    fs::write(&old, "x").unwrap();
+    // the same format still makes -boot: nothing is stale
+    assert!(stale(layer, Format::Deb, "0.1.0", &dir).is_empty());
+    // a layer that no longer has boot glue leaves it stale
+    let mut l = layer.clone();
+    l.initramfs = None;
+    l.file.retain(|f| f.kind != lpoco_manifest::FileKind::Unit);
+    assert_eq!(stale(&l, Format::Deb, "0.1.0", &dir), vec![old]);
 }
