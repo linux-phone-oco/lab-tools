@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! `lpoco host clones` (backlog host-clones-fresh): the shared clones under the declared folders kept at origin/main.
-//! A clone that is clean, on main and behind is fast-forwarded; any other is left exactly as it is and named with why.
+//! Only a commons place (an AGENTS.md at its top) is touched: any other repository is named and left. A clone that is
+//! clean, on main and behind is fast-forwarded; any other is left exactly as it is and named with why.
 
 use crate::Clones;
 use std::path::{Path, PathBuf};
@@ -15,6 +16,8 @@ pub enum Outcome {
     UpToDate,
     /// behind by this many commits (fast-forwarded, or only said when not asked to)
     Behind(u64),
+    /// a repository that is not a commons place (no AGENTS.md at its top): not the lab's to move
+    NotCommons,
     /// left as it is, and why
     Left(String),
     /// the fetch from origin failed (the clone was left as it is)
@@ -129,6 +132,10 @@ fn ready(dir: &Path) -> Result<(), String> {
 
 /// Brings one clone to origin/main when it may be (`apply`), else says what it would do.
 pub fn freshen(dir: &Path, apply: bool) -> Outcome {
+    // the author's own repositories sit among the commons clones: only a commons place has an AGENTS.md at its top
+    if !dir.join("AGENTS.md").is_file() {
+        return Outcome::NotCommons;
+    }
     if let Err(why) = ready(dir) {
         return Outcome::Left(why);
     }
@@ -184,6 +191,7 @@ pub fn line(name: &str, o: &Outcome, apply: bool) -> String {
             let verb = if apply { "updated" } else { "would update" };
             format!("{name}: {verb} {n} commit{s}")
         }
+        Outcome::NotCommons => format!("{name}: not a commons place, left"),
         Outcome::Left(why) => format!("{name}: left alone ({why})"),
         Outcome::FetchFailed(why) => format!("{name}: left alone (fetch failed: {why})"),
     }

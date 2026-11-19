@@ -90,8 +90,8 @@ fn text(o: &Output) -> String {
     )
 }
 
-/// Six clones of six origins under ~/Projects/shared (plus a worktree and a plain folder, which are not clones):
-/// fresh, behind, dirty, off main, detached, diverged - all but `fresh` have a commit waiting on origin.
+/// Seven clones of seven origins under ~/Projects/shared (plus a worktree and a plain folder, which are not clones):
+/// fresh, behind, dirty, off main, detached, diverged (commons places), private (behind, no AGENTS.md) - all but `fresh` have a commit waiting on origin.
 fn lab(name: &str, clones_toml: &str) -> Lab {
     let dir = std::env::temp_dir().join(format!("lpoco-clones-{}-{name}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
@@ -109,7 +109,7 @@ fn lab(name: &str, clones_toml: &str) -> Lab {
     .unwrap();
     fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
     for n in [
-        "fresh", "behind", "dirty", "offmain", "detached", "diverged",
+        "fresh", "behind", "dirty", "offmain", "detached", "diverged", "private",
     ] {
         git(
             &dir,
@@ -122,6 +122,10 @@ fn lab(name: &str, clones_toml: &str) -> Lab {
                 l.origin(n).to_str().unwrap(),
             ],
         );
+        // a commons place has an AGENTS.md at its top; "private" is an author's own repository without one
+        if n != "private" {
+            l.land(n, "AGENTS.md");
+        }
         l.land(n, "first");
         git(
             &dir,
@@ -133,7 +137,9 @@ fn lab(name: &str, clones_toml: &str) -> Lab {
             ],
         );
     }
-    for n in ["behind", "dirty", "offmain", "detached", "diverged"] {
+    for n in [
+        "behind", "dirty", "offmain", "detached", "diverged", "private",
+    ] {
         l.land(n, "second");
     }
     fs::write(l.shared().join("dirty/first"), "edited").unwrap();
@@ -335,4 +341,22 @@ fn a_run_whose_every_fetch_fails_fails_the_unit() {
     let s = text(&o);
     assert!(s.contains("behind: left alone (fetch failed"), "{s}");
     assert_eq!(o.status.code(), Some(1), "{s}");
+}
+
+#[test]
+fn a_clone_without_an_agents_md_is_not_a_commons_place_and_is_left_where_it_is() {
+    let l = lab("private", DECLARED);
+    let before = l.head("private");
+    // behind and clean on main: only the missing AGENTS.md keeps it still
+    for args in [&["clones", "now"][..], &["clones"][..]] {
+        let s = text(&l.host(args));
+        assert_eq!(l.head("private"), before, "{s}");
+        assert!(s.contains("private: not a commons place, left"), "{s}");
+        assert!(
+            !s.contains("private: updated") && !s.contains("private: would update"),
+            "{s}"
+        );
+    }
+    // the commons place beside it still moves
+    assert_eq!(l.head("behind"), l.origin_main("behind"));
 }
