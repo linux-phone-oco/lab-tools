@@ -3,7 +3,7 @@
 //! per package and format - the declared files and kernel-install's devicetree the same in every format, the
 //! format's own glue (systemd preset, initramfs module list) in a boot package that apk does not get.
 
-use lpoco_layer::{check, materialize, nfpm_yaml, packages, stale, Format};
+use lpoco_layer::{check, materialize, nfpm_yaml, packages, post_install, stale, Format};
 use lpoco_manifest::Manifest;
 use std::fs;
 use std::path::PathBuf;
@@ -164,7 +164,7 @@ fn dependencies_are_written_the_way_each_format_writes_them() {
             .find(|p| p.name == "xiaomi-surya-config")
             .unwrap();
         let e = materialize(&p, &dir, &stage).unwrap();
-        nfpm_yaml(&p, f, "0.1.0", &e).unwrap()
+        nfpm_yaml(&p, f, "0.1.0", &e, None).unwrap()
     };
     assert!(yaml(Format::Deb).contains("- tqftpserv (>= 1.2)"));
     assert!(yaml(Format::Rpm).contains("- tqftpserv >= 1.2"));
@@ -192,14 +192,17 @@ fn debians_strict_bounds_are_doubled_and_a_malformed_token_is_refused() {
     layer.needs = vec!["a>1".into(), "c<2".into(), "d<=3".into(), "e=4".into()];
     let p = packages(&layer, Format::Deb).remove(0);
     let e = materialize(&p, &dir, &stage).unwrap();
-    let y = nfpm_yaml(&p, Format::Deb, "0.1.0", &e).unwrap();
+    let y = nfpm_yaml(&p, Format::Deb, "0.1.0", &e, None).unwrap();
     for want in ["- a (>> 1)", "- c (<< 2)", "- d (<= 3)", "- e (= 4)"] {
         assert!(y.contains(want), "{want} not in {y}");
     }
     for bad in ["b>=", ">=1", "b=>2"] {
         layer.needs = vec![bad.into()];
         let p = packages(&layer, Format::Deb).remove(0);
-        assert!(nfpm_yaml(&p, Format::Deb, "0.1.0", &e).is_err(), "{bad}");
+        assert!(
+            nfpm_yaml(&p, Format::Deb, "0.1.0", &e, None).is_err(),
+            "{bad}"
+        );
     }
 }
 
@@ -248,4 +251,79 @@ fn a_boot_package_an_earlier_run_left_is_named_when_this_format_makes_none() {
     l.initramfs = None;
     l.file.retain(|f| f.kind != lpoco_manifest::FileKind::Unit);
     assert_eq!(stale(&l, Format::Deb, "0.1.0", &dir), vec![old]);
+}
+
+#[test]
+fn the_boot_package_applies_its_preset_after_install_and_follows_the_config_package() {
+    let (dir, stage) = fixture("q");
+    let m = Manifest::parse(DEVICE).unwrap();
+    let layer = m.layer.as_ref().unwrap();
+    let boot = packages(layer, Format::Deb)
+        .into_iter()
+        .find(|p| p.name == "xiaomi-surya-boot")
+        .unwrap();
+    // the units sit in -config: -boot must be unpacked after it for the preset to find them
+    assert_eq!(boot.depends, vec!["xiaomi-surya-config".to_string()]);
+    let script = post_install(&boot, &stage).unwrap().unwrap();
+    let body = fs::read_to_string(&script).unwrap();
+    assert!(body.starts_with("#!/bin/sh\n"), "{body}");
+    assert!(
+        body.contains("systemctl preset surya-awake.service"),
+        "{body}"
+    );
+    let e = materialize(&boot, &dir, &stage).unwrap();
+    let y = nfpm_yaml(&boot, Format::Deb, "0.1.0", &e, Some(&script)).unwrap();
+    assert!(y.contains("scripts:\n  postinstall: \""), "{y}");
+    assert!(y.contains("- xiaomi-surya-config\n"), "{y}");
+    // no unit, no preset, no script
+    let mut l = layer.clone();
+    l.file.retain(|f| f.kind != lpoco_manifest::FileKind::Unit);
+    let boot = packages(&l, Format::Deb)
+        .into_iter()
+        .find(|p| p.name == "xiaomi-surya-boot")
+        .unwrap();
+    assert!(post_install(&boot, &stage).unwrap().is_none());
+}
+
+#[test]
+fn a_unit_name_that_would_run_as_root_in_the_scriptlet_is_refused() {
+    let m = Manifest::parse(DEVICE).unwrap();
+    for bad in ["a;rm -rf x.service", "x$(id).service", "a b.service"] {
+        let mut layer = m.layer.clone().unwrap();
+        layer
+            .file
+            .iter_mut()
+            .find(|f| f.kind == lpoco_manifest::FileKind::Unit)
+            .unwrap()
+            .to = format!("/usr/lib/systemd/system/{bad}");
+        let e = check(&layer, Format::Deb).unwrap_err();
+        assert!(e.contains("unit"), "{bad:?}: {e}");
+        // apk writes no preset and no scriptlet
+        assert!(check(&layer, Format::Apk).is_ok(), "{bad:?}");
+    }
+}
+
+#[test]
+fn the_preset_runs_on_first_install_only_in_each_format_and_also_in_a_chroot() {
+    let m = Manifest::parse(DEVICE).unwrap();
+    let layer = m.layer.as_ref().unwrap();
+    let script = |f: Format| {
+        packages(layer, f)
+            .into_iter()
+            .find(|p| p.name == "xiaomi-surya-boot")
+            .unwrap()
+            .post_install
+            .unwrap()
+    };
+    assert!(script(Format::Deb).contains("[ -z \"$2\" ]"));
+    assert!(script(Format::Rpm).contains("[ \"$1\" = 1 ]"));
+    assert!(!script(Format::Archlinux).contains("$1"));
+    for f in [Format::Deb, Format::Rpm, Format::Archlinux] {
+        let s = script(f);
+        assert!(!s.contains("/run/systemd"), "{s}");
+        assert!(s.contains("command -v systemctl"), "{s}");
+    }
+    assert!(packages(layer, Format::Apk)
+        .iter()
+        .all(|p| p.post_install.is_none()));
 }

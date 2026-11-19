@@ -66,6 +66,8 @@ pub struct Package {
     pub description: String,
     pub depends: Vec<String>,
     pub items: Vec<Item>,
+    /// A shell script the package manager runs after installing it.
+    pub post_install: Option<String>,
 }
 
 /// An item with its source made a file on disk.
@@ -118,6 +120,7 @@ pub fn packages(layer: &Layer, format: Format) -> Vec<Package> {
             description: format!("{name}: device configuration"),
             depends: layer.needs.clone(),
             items: config,
+            post_install: None,
         });
     }
     if format == Format::Apk {
@@ -135,7 +138,17 @@ pub fn packages(layer: &Layer, format: Format) -> Vec<Package> {
                 .any(|s| u.ends_with(s))
         })
         .collect();
+    let mut post_install = None;
     if !units.is_empty() {
+        let first = match format {
+            Format::Deb => "[ -z \"$2\" ]",
+            Format::Rpm => "[ \"$1\" = 1 ]",
+            _ => "true",
+        };
+        post_install = Some(format!(
+            "#!/bin/sh\n# the units are in {name}-config; enable them as the preset says, on first install only\n# (an upgrade keeps what the user chose); a chroot has no running systemd and presets as well\nif command -v systemctl >/dev/null 2>&1 && {first}; then\n    systemctl preset {} || echo \"{name}: systemctl preset failed; enable the units by hand\" >&2\nfi\n",
+            units.join(" ")
+        ));
         let body: String = units.iter().map(|u| format!("enable {u}\n")).collect();
         boot.push(text(
             format!("/usr/lib/systemd/system-preset/50-{name}.preset"),
@@ -170,8 +183,13 @@ pub fn packages(layer: &Layer, format: Format) -> Vec<Package> {
         out.push(Package {
             name: format!("{name}-boot"),
             description: format!("{name}: boot glue (systemd preset, initramfs modules)"),
-            depends: Vec::new(),
+            depends: if post_install.is_some() {
+                vec![format!("{name}-config")]
+            } else {
+                Vec::new()
+            },
             items: boot,
+            post_install,
         });
     }
     out
@@ -250,6 +268,7 @@ pub fn nfpm_yaml(
     format: Format,
     version: &str,
     entries: &[Entry],
+    script: Option<&Path>,
 ) -> Result<String, String> {
     let mut y = format!(
         "name: {}\narch: all\nplatform: linux\nversion: {}\nsection: misc\nmaintainer: linux-phone-oco\ndescription: {}\nlicense: MIT OR Apache-2.0\n",
@@ -262,6 +281,12 @@ pub fn nfpm_yaml(
         for d in &pkg.depends {
             y.push_str(&format!("- {}\n", dependency(d, format)?));
         }
+    }
+    if let Some(s) = script {
+        y.push_str(&format!(
+            "scripts:\n  postinstall: {}\n",
+            quote(&s.to_string_lossy())
+        ));
     }
     y.push_str("contents:\n");
     for e in entries {
@@ -289,6 +314,20 @@ pub fn check(layer: &Layer, format: Format) -> Result<(), String> {
                 "boot method efi-kernel-install needs [layer.kernel] dtbs: it names the devicetree"
                     .into(),
             );
+        }
+    }
+    // apk writes no preset: the unit names go into a root scriptlet and a preset line, one word each
+    if format != Format::Apk {
+        for f in layer.file.iter().filter(|f| f.kind == FileKind::Unit) {
+            let u = f.to.rsplit('/').next().unwrap_or("");
+            if !u
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "_-.".contains(c))
+            {
+                return Err(format!(
+                    "unit name {u:?} is not a systemd unit name (letters, digits, _ - . @ : only)"
+                ));
+            }
         }
     }
     // apk makes no boot package, so its modules are written nowhere
@@ -322,4 +361,15 @@ pub fn stale(layer: &Layer, format: Format, version: &str, out: &Path) -> Vec<Pa
         .map(|n| out.join(format.file_name(&n, version)))
         .filter(|p| p.exists())
         .collect()
+}
+
+/// Writes the package's post-install script under `stage` and says where; none when the package has none.
+pub fn post_install(pkg: &Package, stage: &Path) -> Result<Option<PathBuf>, String> {
+    let Some(body) = &pkg.post_install else {
+        return Ok(None);
+    };
+    let p = stage.join(&pkg.name).join("scripts/postinstall");
+    fs::create_dir_all(p.parent().unwrap()).map_err(|e| format!("{}: {e}", p.display()))?;
+    fs::write(&p, body).map_err(|e| format!("{}: {e}", p.display()))?;
+    Ok(Some(p))
 }
