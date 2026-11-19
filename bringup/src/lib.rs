@@ -17,4 +17,5 @@ pub mod image;
 pub mod init;
 pub mod initramfs;
 pub mod pin;
+pub mod reference;
 pub mod swap;

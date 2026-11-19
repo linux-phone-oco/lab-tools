@@ -19,6 +19,10 @@
 //!                                                the bring-up /init made from the device's [boot.gadget] (configfs gadget, DHCP, telnet, ACM shell)
 //!   lpoco-bringup initramfs files --out DIR [--net N]
 //!                                                the files the init reads beside itself: udhcpd.conf, udhcpc.script, selftest.sh
+//!   lpoco-bringup reference capture --via COMMAND --out DIR
+//!                                                a snapshot of what the stock OS does (device tree, gpio, pinctrl, regulators, clocks, interrupts, drivers) taken over adb or ssh
+//!   lpoco-bringup reference diff PART --live DIR --ours DIR [--match WORDS]
+//!                                                every difference between two snapshots for one part, named; exit 1 on a difference, 2 when the part is not known yet
 //!   lpoco-bringup --version                      this program's version (the lpoco family's one version)
 
 use argenv_resolve::*;
@@ -28,10 +32,11 @@ use argenv_resolve::*;
 pub enum Command {
     Image,
     Initramfs,
+    Reference,
 }
 
 impl Command {
-    pub const TOKENS: &'static [&'static str] = &["image", "initramfs"];
+    pub const TOKENS: &'static [&'static str] = &["image", "initramfs", "reference"];
 }
 
 impl FromRaw for Command {
@@ -39,6 +44,7 @@ impl FromRaw for Command {
         Some(match s.trim() {
             "image" => Command::Image,
             "initramfs" => Command::Initramfs,
+            "reference" => Command::Reference,
             _ => return None,
         })
     }
@@ -56,11 +62,14 @@ pub enum Verb {
     Build,
     Init,
     Files,
+    Capture,
+    Diff,
 }
 
 impl Verb {
     pub const TOKENS: &'static [&'static str] = &[
-        "info", "unpack", "pack", "check", "swap", "bisect", "build", "init", "files",
+        "info", "unpack", "pack", "check", "swap", "bisect", "build", "init", "files", "capture",
+        "diff",
     ];
 }
 
@@ -76,6 +85,8 @@ impl FromRaw for Verb {
             "build" => Verb::Build,
             "init" => Verb::Init,
             "files" => Verb::Files,
+            "capture" => Verb::Capture,
+            "diff" => Verb::Diff,
             _ => return None,
         })
     }
@@ -95,9 +106,9 @@ contract! {
         key: "verb",
         ty: Type::Enum,
         allowed: Verb::TOKENS,
-        subcommands: &[Command::Image, Command::Initramfs],
+        subcommands: &[Command::Image, Command::Initramfs, Command::Reference],
         arg: Some(Arg::positional(0)),
-        summary: "What to do: image info, unpack, pack, check, swap or bisect; initramfs build, init or files.",
+        summary: "What to do: image info, unpack, pack, check, swap or bisect; initramfs build, init or files; reference capture or diff.",
         ..Input::EMPTY
     };
 
@@ -159,9 +170,9 @@ contract! {
     OUT: String, Command = Input {
         key: "out",
         ty: Type::String,
-        subcommands: &[Command::Image, Command::Initramfs],
+        subcommands: &[Command::Image, Command::Initramfs, Command::Reference],
         arg: Some(Arg { value_name: "PATH", ..Arg::long("out") }),
-        summary: "pack, swap: the image to write; bisect: the folder the images are written to; unpack: the folder to write the parts to; initramfs build: the archive to write; initramfs init: the init script to write (standard output when none is given); initramfs files: the folder to write the files to.",
+        summary: "pack, swap: the image to write; bisect: the folder the images are written to; unpack: the folder to write the parts to; initramfs build: the archive to write; initramfs init: the init script to write (standard output when none is given); initramfs files: the folder to write the files to; reference capture: the snapshot folder to write.",
         ..Input::EMPTY
     };
 
@@ -199,6 +210,52 @@ contract! {
         subcommands: &[Command::Initramfs],
         arg: Some(Arg { value_name: "gzip|xz", ..Arg::long("codec") }),
         summary: "initramfs build: the compression the device's kernel reads (xz for the 4.4 kernel; gzip when none is given).",
+        ..Input::EMPTY
+    };
+
+    PART: String, Command = Input {
+        key: "part",
+        ty: Type::String,
+        subcommands: &[Command::Reference],
+        arg: Some(Arg { value_name: "PART", ..Arg::positional(1) }),
+        summary: "reference diff: the part to compare (ufs, touch ...); its lines are those whose node, or text line, hold the part name or a --match word.",
+        ..Input::EMPTY
+    };
+
+    MATCH: String, Command = Input {
+        key: "match",
+        ty: Type::String,
+        subcommands: &[Command::Reference],
+        arg: Some(Arg { value_name: "WORDS", ..Arg::long("match") }),
+        summary: "reference diff: comma-separated words (case-insensitive) that say which lines belong to the part, in place of the part name.",
+        ..Input::EMPTY
+    };
+
+    LIVE: String, Command = Input {
+        key: "live",
+        ty: Type::String,
+        subcommands: &[Command::Reference],
+        arg: Some(Arg { value_name: "DIR", ..Arg::long("live") }),
+        summary: "reference diff: the snapshot of the stock OS (a folder made by reference capture).",
+        ..Input::EMPTY
+    };
+
+    OURS: String, Command = Input {
+        key: "ours",
+        ty: Type::String,
+        subcommands: &[Command::Reference],
+        arg: Some(Arg { value_name: "DIR", ..Arg::long("ours") }),
+        summary: "reference diff: the snapshot of our mainline boot.",
+        ..Input::EMPTY
+    };
+
+    VIA: String, Command = Input {
+        key: "via",
+        ty: Type::String,
+        subcommands: &[Command::Reference],
+        arg: Some(Arg { value_name: "COMMAND", ..Arg::long("via") }),
+        env: Some(Env::new("LPOCO_REFERENCE_VIA")),
+        summary: "reference capture: the transport to a phone with a root shell, run with the capture script on its standard input (adb shell su 0 sh; ssh phone sudo sh).",
         ..Input::EMPTY
     };
 

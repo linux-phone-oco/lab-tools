@@ -1,0 +1,2 @@
+gpiochip0: GPIOs 0-149, parent: platform/3400000.pinctrl, msmgpio:
+ gpio-150 (ufs_reset) out hi
