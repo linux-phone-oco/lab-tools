@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.34.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-health-v0.33.0...lpoco-health-v0.34.0) - 2026-11-19
+
+### Added
+
+- *(host)* lpoco host follow installs a newer release in a lease-free window and lands its pin ([#280](https://github.com/linux-phone-oco/lab-tools/pull/280))
+
 ## [0.33.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-health-v0.32.2...lpoco-health-v0.33.0) - 2026-11-19
 
 ### Added
