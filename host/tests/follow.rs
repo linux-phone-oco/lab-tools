@@ -120,7 +120,7 @@ fn lab(name: &str, follow_toml: &str) -> Lab {
     exe(
         &stubs.join("curl"),
         &format!(
-            "echo \"$0 $@\" >> {}\nwhile [ $# -gt 0 ]; do case \"$1\" in --output) out=\"$2\"; shift;; --*) ;; *) url=\"$1\";; esac; shift; done\nsrc=\"${{url#file://}}\"\n[ -f \"$src\" ] || {{ printf 404; exit 22; }}\nprintf 200\ncp \"$src\" \"$out\"",
+            "echo \"$0 $@\" >> {0}\n[ -d \"$HOME/.cache/lpoco-host/follow/journal\" ] && echo journal-present >> {0}\nwhile [ $# -gt 0 ]; do case \"$1\" in --output) out=\"$2\"; shift;; --*) ;; *) url=\"$1\";; esac; shift; done\nsrc=\"${{url#file://}}\"\n[ -f \"$src\" ] || {{ printf 404; exit 22; }}\nprintf 200\ncp \"$src\" \"$out\"",
             dir.join("calls").display()
         ),
     );
@@ -738,4 +738,137 @@ fn a_relative_lab_path_reaches_the_units_absolute_and_escaped_for_both_services(
         let want = format!("lpoco-host {verb} now --lab \"{abs}\"");
         assert!(s.contains(&want), "{want}\n{s}");
     }
+}
+
+fn journal(l: &Lab) -> PathBuf {
+    l.dir.join("home/.cache/lpoco-host/follow/journal")
+}
+
+#[test]
+fn the_programs_to_step_back_to_are_kept_on_disk_during_an_install_and_gone_after_it() {
+    let l = lab("journal-during", "");
+    releases(&l, &["0.2.1", "0.2.0"]);
+    install_old(&l);
+    let o = follow(&l, &["now"]);
+    assert!(o.status.success(), "{}", text(&o));
+    let c = calls(&l);
+    assert!(
+        c.contains("journal-present"),
+        "no journal stood while the programs were fetched: {c}"
+    );
+    assert!(!journal(&l).exists(), "the journal outlived the follow");
+}
+
+#[test]
+fn a_failed_follow_leaves_no_journal_either() {
+    let l = lab("journal-failed", "");
+    publish_release(&l, "0.2.1", 1, NO_ROOT);
+    releases(&l, &["0.2.1", "0.2.0"]);
+    install_old(&l);
+    let o = follow(&l, &["now"]);
+    assert!(!o.status.success(), "{}", text(&o));
+    assert!(!journal(&l).exists());
+}
+
+#[test]
+fn a_follow_killed_mid_install_is_stepped_back_by_the_next_run_before_it_does_anything_else() {
+    let l = lab("journal-killed", "");
+    releases(&l, &["0.2.0"]);
+    install_old(&l);
+    // what a kill left: the journal of the programs of 0.2.0, and a bin holding two versions
+    let j = journal(&l);
+    fs::create_dir_all(&j).unwrap();
+    for p in FAMILY.iter().chain(&["devlab", "tone"]) {
+        fs::write(j.join(p), format!("#!/bin/sh\necho {p} 0.2.0 kept\n")).unwrap();
+    }
+    fs::write(j.join("lpoco-attended.absent"), "").unwrap();
+    fs::write(j.join("TARGET"), "0.2.1\n").unwrap();
+    fs::remove_file(j.join("lpoco-attended")).unwrap();
+    let bin = l.dir.join("home/.local/bin");
+    exe(&bin.join("lpoco"), "echo lpoco 0.2.1 half");
+    exe(&bin.join("lpoco-attended"), "echo half-written");
+    let o = follow(&l, &["now"]);
+    let s = text(&o);
+    assert!(o.status.success(), "{s}");
+    assert!(s.contains("killed") && s.contains("put back"), "{s}");
+    for p in FAMILY
+        .iter()
+        .filter(|p| **p != "lpoco-attended")
+        .chain(&["devlab", "tone"])
+    {
+        assert!(
+            installed(&l, p).contains("0.2.0 kept"),
+            "{p}: {}",
+            installed(&l, p)
+        );
+    }
+    assert!(
+        installed(&l, "lpoco").contains("0.2.0 kept"),
+        "{}",
+        installed(&l, "lpoco")
+    );
+    assert!(
+        !bin.join("lpoco-attended").exists(),
+        "a program that was not there before is not left behind"
+    );
+    assert!(!j.exists(), "the journal stays after it was used");
+}
+
+#[test]
+fn a_journal_that_is_not_whole_is_an_error_and_changes_nothing() {
+    let l = lab("journal-torn", "");
+    releases(&l, &["0.2.0"]);
+    install_old(&l);
+    let j = journal(&l);
+    fs::create_dir_all(&j).unwrap();
+    // programs but no TARGET: it was not written whole
+    fs::write(j.join("lpoco"), "#!/bin/sh\necho kept\n").unwrap();
+    let o = follow(&l, &["now"]);
+    assert!(!o.status.success(), "{}", text(&o));
+    assert!(
+        installed(&l, "lpoco").contains("old"),
+        "{}",
+        installed(&l, "lpoco")
+    );
+    assert!(j.exists());
+}
+
+#[test]
+fn a_follow_killed_after_its_pin_landed_keeps_the_new_programs_and_drops_the_journal() {
+    let l = lab("journal-landed", "");
+    releases(&l, &["0.2.0"]);
+    install_old(&l);
+    let j = journal(&l);
+    fs::create_dir_all(&j).unwrap();
+    for p in FAMILY.iter().chain(&["devlab", "tone"]) {
+        fs::write(j.join(p), "#!/bin/sh\necho older\n").unwrap();
+    }
+    // the pin is at 0.2.0: that was the release being installed
+    fs::write(j.join("TARGET"), "0.2.0\n").unwrap();
+    let o = follow(&l, &["now"]);
+    let s = text(&o);
+    assert!(o.status.success(), "{s}");
+    assert!(s.contains("pin landed"), "{s}");
+    assert!(
+        installed(&l, "lpoco").contains("old"),
+        "{}",
+        installed(&l, "lpoco")
+    );
+    assert!(!installed(&l, "lpoco").contains("older"));
+    assert!(!j.exists());
+}
+
+#[test]
+fn a_journal_left_alone_by_follow_without_now() {
+    let l = lab("journal-no-now", "");
+    releases(&l, &["0.2.0"]);
+    install_old(&l);
+    let j = journal(&l);
+    fs::create_dir_all(&j).unwrap();
+    fs::write(j.join("TARGET"), "0.2.1\n").unwrap();
+    fs::write(j.join("lpoco"), "#!/bin/sh\necho kept\n").unwrap();
+    let o = follow(&l, &[]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert!(j.exists());
+    assert!(installed(&l, "lpoco").contains("old"));
 }
