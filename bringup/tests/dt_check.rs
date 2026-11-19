@@ -209,3 +209,112 @@ fn docker_ending_before_a_verdict_is_an_error_not_a_failed_check() {
     assert_eq!(o.status.code(), Some(2), "{}", text(&o));
     assert!(!text(&o).contains("checker"), "{}", text(&o));
 }
+
+fn dtbs_run(src: &Path, scratch: &Path, log: &Path) -> Output {
+    run(
+        &[
+            "dtbs",
+            src.to_str().unwrap(),
+            "--image",
+            DIGEST,
+            "--out",
+            scratch.to_str().unwrap(),
+            "--dtbs",
+            "qcom/x.dtb",
+        ],
+        log,
+    )
+}
+
+#[test]
+fn a_schema_violation_printed_while_make_exits_0_is_a_failed_check_with_its_lines_named() {
+    let (src, scratch) = (tmp("src7"), tmp("out7"));
+    fs::write(src.join("WARN"), "").unwrap();
+    let log = tmp("log7").join("args");
+    let o = dtbs_run(&src, &scratch, &log);
+    assert_eq!(o.status.code(), Some(1), "{}", text(&o));
+    let t = text(&o);
+    assert!(t.contains("Unevaluated properties are not allowed"), "{t}");
+    assert!(!t.contains("dt-check: clean"), "{t}");
+    assert!(t.contains("1 violation"), "{t}");
+}
+
+#[test]
+fn a_node_that_is_enabled_is_checked_and_one_that_is_disabled_is_not_a_violation() {
+    let (src, scratch) = (tmp("src8"), tmp("out8"));
+    fs::write(src.join("pm.dts"), "pmic@0 { status = \"okay\"; };\n").unwrap();
+    let o = dtbs_run(&src, &scratch, &tmp("log8").join("args"));
+    assert_eq!(o.status.code(), Some(1), "{}", text(&o));
+    assert!(text(&o).contains("pm8998.dtb"), "{}", text(&o));
+    fs::write(src.join("pm.dts"), "pmic@0 { status = \"disabled\"; };\n").unwrap();
+    let o = dtbs_run(&src, &scratch, &tmp("log8b").join("args"));
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o));
+}
+
+#[test]
+fn dtbs_on_a_fresh_out_runs_defconfig_first_and_on_a_configured_one_does_not() {
+    let (src, scratch) = (tmp("src9"), tmp("out9"));
+    let log = tmp("log9").join("args");
+    assert_eq!(dtbs_run(&src, &scratch, &log).status.code(), Some(0));
+    let args = fs::read_to_string(&log).unwrap();
+    let args: Vec<&str> = args.lines().collect();
+    let at = |w: &str| args.iter().position(|a| *a == w);
+    let (d, t) = (at("defconfig"), at("qcom/x.dtb"));
+    assert!(d.is_some() && d < t, "defconfig before the dtb in {args:?}");
+    fs::write(scratch.join(".config"), "").unwrap();
+    assert_eq!(dtbs_run(&src, &scratch, &log).status.code(), Some(0));
+    let args = fs::read_to_string(&log).unwrap();
+    assert!(!args.lines().any(|a| a == "defconfig"), "{args}");
+}
+
+#[test]
+fn a_make_failure_without_a_violation_is_a_setup_error_never_a_failed_check() {
+    let (src, scratch) = (tmp("src10"), tmp("out10"));
+    fs::write(src.join("SETUP"), "").unwrap();
+    let o = dtbs_run(&src, &scratch, &tmp("log10").join("args"));
+    assert_eq!(o.status.code(), Some(2), "{}", text(&o));
+    assert!(!text(&o).contains("checker failed"), "{}", text(&o));
+    assert!(text(&o).contains("not a check failure"), "{}", text(&o));
+}
+
+#[test]
+fn the_image_carries_its_tools_and_nothing_is_installed_at_run_time() {
+    let (src, scratch) = (tmp("src11"), tmp("out11"));
+    let log = tmp("log11").join("args");
+    assert_eq!(dtbs_run(&src, &scratch, &log).status.code(), Some(0));
+    let args = fs::read_to_string(&log).unwrap();
+    assert!(!args.contains("apk add"), "{args}");
+    let df = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("dt-check/Dockerfile"))
+        .unwrap();
+    for pkg in [
+        "py3-dt-schema",
+        "dtc",
+        "make",
+        "gcc",
+        "flex",
+        "bison",
+        "yamllint",
+    ] {
+        assert!(df.contains(pkg), "{pkg} in the Dockerfile");
+    }
+    assert!(df.contains("@sha256:"), "the base is pinned by digest");
+}
+
+#[test]
+fn a_dtb_already_built_in_out_is_removed_so_its_check_runs_again() {
+    let (src, scratch) = (tmp("src12"), tmp("out12"));
+    let d = scratch.join("arch/arm64/boot/dts/qcom");
+    fs::create_dir_all(&d).unwrap();
+    fs::write(d.join("x.dtb"), "old").unwrap();
+    fs::write(d.join("keep.dtb"), "other").unwrap();
+    let o = dtbs_run(&src, &scratch, &tmp("log12").join("args"));
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o));
+    assert!(!d.join("x.dtb").exists());
+    assert!(d.join("keep.dtb").exists());
+}
+
+#[test]
+fn a_yamllint_line_is_a_violation() {
+    let l = "Documentation/devicetree/bindings/x.yaml:12:3: [error] syntax error";
+    assert_eq!(lpoco_bringup::dt_check::violations(l), vec![l]);
+}
