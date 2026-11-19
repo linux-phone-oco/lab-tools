@@ -318,6 +318,45 @@ pub fn back_to_known_good() -> Step {
     })
 }
 
+/// The phone is up on the named test kernel and answers: boot it once ([`boot_once`], so the name is one the device lists
+/// under `[kernels] test`), wait for the phone, and see the user's shell answer. Its way back is [`back_to_known_good`]:
+/// a step that fails after the boot leaves the phone on the default kernel. A device that declares no `[kernels]` ends the
+/// run (exit 2, dry run too). The device's own gate (power, cable, battery) is its procedure's step before this group.
+pub fn phone_ready(kernel: &str) -> crate::Group {
+    crate::group(
+        &format!("the phone is ready on {kernel}"),
+        [
+            boot_once(kernel),
+            wait_for_phone(60, 5),
+            Step::new(Kind::Check, "the shell answers", || {
+                crate::phone().sh("id -u")
+            }),
+        ],
+    )
+    .way_back(back_to_known_good())
+}
+
+/// Leave the phone on its known good ([`back_to_known_good`]): reboot into the default kernel, see the phone go down
+/// (the old instance still answers for a moment), then see it answer again.
+pub fn leave_known_good() -> crate::Group {
+    crate::group(
+        "leave the phone on its known good",
+        [
+            back_to_known_good(),
+            Step::new(Kind::Check, "the phone goes down", || {
+                crate::retry(30, 1, || {
+                    if crate::phone().sh("true").is_err() {
+                        Ok(())
+                    } else {
+                        Err("the phone still answers")
+                    }
+                })
+            }),
+            wait_for_phone(60, 5),
+        ],
+    )
+}
+
 /// The `vendor:product` of every device under a sysfs USB devices folder.
 fn usb_ids(root: &str) -> Result<Vec<String>, String> {
     let read = |d: &std::path::Path, f: &str| {
