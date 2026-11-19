@@ -22,9 +22,9 @@ fn example(dir: &Path) -> PathBuf {
     let src = fs::read_to_string(root.join("examples/attended.rs")).unwrap();
     let git = src
         .lines()
-        .find(|l| l.starts_with("//! lpoco-bringup = { git"))
-        .expect("the example depends on lpoco-bringup by git tag");
-    let local = format!("//! lpoco-bringup = {{ path = \"{}\" }}", root.display());
+        .find(|l| l.starts_with("//! lpoco-attended = { git"))
+        .expect("the example depends on lpoco-attended by git tag");
+    let local = format!("//! lpoco-attended = {{ path = \"{}\" }}", root.display());
     let f = dir.join("attended.rs");
     fs::write(&f, src.replace(git, &local)).unwrap();
     f
@@ -187,4 +187,63 @@ fn help_lists_what_the_library_reads() {
     for w in ["--dry-run", "--log", "LPOCO_ATTENDED_DEVLAB"] {
         assert!(t.contains(w), "{w} not in the usage: {t}");
     }
+}
+
+#[test]
+fn a_panic_in_a_step_is_not_reported_as_a_pass() {
+    let dir = tmp("panic");
+    let devlab = stand_in(&dir, "x");
+    let src = fs::read_to_string(example(&dir)).unwrap().replace(
+        "step(\"the phone answers\"",
+        "step(\"it panics\", || -> () { panic!(\"boom\") });\n    step(\"the phone answers\"",
+    );
+    fs::write(dir.join("attended.rs"), src).unwrap();
+    let log = dir.join("panic.log");
+    let mut c = Command::new("rust-script")
+        .arg(dir.join("attended.rs"))
+        .args(["--log", log.to_str().unwrap()])
+        .env("LPOCO_ATTENDED_DEVLAB", &devlab)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    drop(c.stdin.take());
+    let o = c.wait_with_output().unwrap();
+    let t = said(&o);
+    assert!(!o.status.success(), "{t}");
+    assert!(!t.contains("steps passed"), "{t}");
+    let l = fs::read_to_string(&log).unwrap();
+    assert!(
+        l.contains("PANIC") && !l.contains("all steps passed"),
+        "{l}"
+    );
+}
+
+#[test]
+fn a_dry_run_reaches_no_phone_even_from_main() {
+    let dir = tmp("drymain");
+    let devlab = stand_in(&dir, "x");
+    let src = fs::read_to_string(example(&dir)).unwrap().replace(
+        "step(\"the phone answers\"",
+        "assert!(phone().sh(\"true\").is_err());\n    step(\"the phone answers\"",
+    );
+    fs::write(dir.join("attended.rs"), src).unwrap();
+    let o = run_file(
+        &dir,
+        &devlab,
+        &["--dry-run", "--log", dir.join("d.log").to_str().unwrap()],
+    );
+    assert_eq!(o.status.code(), Some(0), "{}", said(&o));
+    assert!(!dir.join("calls").exists());
+}
+
+fn run_file(dir: &Path, devlab: &Path, args: &[&str]) -> Output {
+    Command::new("rust-script")
+        .arg(dir.join("attended.rs"))
+        .args(args)
+        .env("LPOCO_ATTENDED_DEVLAB", devlab)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap()
 }
