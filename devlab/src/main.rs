@@ -37,6 +37,7 @@ mod outcome;
 mod phone;
 mod provision;
 mod suite;
+mod usb_timeline;
 mod watch;
 
 use anyhow::{bail, Result};

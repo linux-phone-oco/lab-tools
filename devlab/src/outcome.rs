@@ -7,6 +7,7 @@
 use crate::device::Device;
 use crate::kernel;
 use crate::phone::{rebooted, Phone};
+use crate::usb_timeline;
 use anyhow::{bail, Result};
 use std::time::{Duration, Instant};
 
@@ -106,12 +107,16 @@ pub const SELECTED: &str = "f=$(ls /sys/firmware/efi/efivars/LoaderEntrySelected
 
 pub fn try_and_report(device: &Device, phone: &Phone, name: &str) -> Result<String> {
     let before = phone.boot_id();
+    let began = usb_timeline::now();
     kernel::try_once(phone, name)?;
     let start = Instant::now();
     let p = loop {
         std::thread::sleep(Duration::from_secs(10));
         if start.elapsed() > Duration::from_secs(600) {
-            bail!("no new boot answered within ten minutes - the phone needs looking at");
+            bail!(
+                "no new boot answered within ten minutes - the phone needs looking at\n{}",
+                usb_timeline::report(&device.gadgets, began)
+            );
         }
         if let Ok(p) = Phone::find(device) {
             if rebooted(before.as_deref(), p.boot_id().as_deref()) {
