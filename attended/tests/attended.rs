@@ -991,3 +991,186 @@ fn the_first_gadget_that_declares_a_usb_id_is_the_one_waited_for() {
         said(&o)
     );
 }
+
+/// The physical example, its git dependency pointed at this checkout.
+fn run_physical(dir: &Path, args: &[&str], stdin: &str) -> Output {
+    let devlab = stand_in(dir, "x");
+    let mut c = Command::new("rust-script")
+        .arg(example_named(dir, "physical"))
+        .args(args)
+        .env("LPOCO_ATTENDED_DEVLAB", devlab)
+        .current_dir(dir)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("rust-script is on the lab machine");
+    c.stdin.take().unwrap().write_all(stdin.as_bytes()).unwrap();
+    c.wait_with_output().unwrap()
+}
+
+#[test]
+fn each_physical_act_goes_through_the_person_who_is_told_what_to_do_and_what_to_check_and_the_answers_are_logged(
+) {
+    let dir = tmp("phys-person");
+    let log = dir.join("p.log");
+    let o = run_physical(&dir, &["--log", log.to_str().unwrap()], &"ok\n".repeat(9));
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(0), "{t}");
+    for w in [
+        "press the power button",
+        "hold the volume down button",
+        "unplug the USB cable",
+        "plug the USB cable back in",
+        "touch the Settings icon",
+        "swipe up from the bottom edge",
+        "listen to the phone",
+        "Check that the logo shows",
+        "Check that you can hear the ringtone",
+    ] {
+        assert!(t.contains(w), "{w} not said to the person: {t}");
+    }
+    let l = fs::read_to_string(&log).unwrap();
+    for w in [
+        "press the power button",
+        "unplug the USB cable",
+        "answer: ok",
+    ] {
+        assert!(l.contains(w), "{w} not logged: {l}");
+    }
+    assert_eq!(l.matches("answer: ok").count(), 9, "{l}");
+}
+
+#[test]
+fn a_physical_act_the_person_says_did_not_go_stops_the_run_at_that_act_and_names_what_was_seen() {
+    let dir = tmp("phys-no");
+    let o = run_physical(&dir, &[], "ok\nthe phone stayed dark\n");
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(1), "{t}");
+    assert!(t.contains("hold the volume down button"), "{t}");
+    assert!(t.contains("the phone stayed dark"), "{t}");
+    assert!(
+        !t.contains("unplug the USB cable"),
+        "went on after the stop: {t}"
+    );
+}
+
+#[test]
+fn a_dry_run_lists_the_doer_of_each_act_and_asks_no_one() {
+    let dir = tmp("phys-dry");
+    let o = run_physical(&dir, &["--dry-run"], "");
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(0), "{t}");
+    let lines: Vec<&str> = t
+        .lines()
+        .filter(|l| l.contains("dry run, not run"))
+        .collect();
+    assert_eq!(lines.len(), 9, "{t}");
+    assert!(
+        lines.iter().all(|l| l.ends_with("(by person)")),
+        "a doer is missing: {t}"
+    );
+    assert!(
+        !t.contains("ATTENDED"),
+        "the person was asked in a dry run: {t}"
+    );
+}
+
+#[test]
+fn a_bench_that_claims_an_act_does_it_instead_of_the_person_and_only_that_act() {
+    let dir = tmp("phys-rig");
+    // the person answers eight times: the nine acts less the one the relay claims
+    let o = run_physical(&dir, &["--part", "rig"], &"ok\n".repeat(8));
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(0), "{t}");
+    assert!(t.contains("the relay did: unplug the USB cable"), "{t}");
+    assert!(
+        !t.contains("ATTENDED - please unplug the USB cable"),
+        "the person was asked for the relay's act: {t}"
+    );
+    assert!(
+        t.contains("ATTENDED - please plug the USB cable back in"),
+        "{t}"
+    );
+    let dry = run_physical(&dir, &["--part", "rig", "--dry-run"], "");
+    let d = said(&dry);
+    let unplug = d
+        .lines()
+        .find(|l| l.contains("unplug the USB cable"))
+        .unwrap();
+    let replug = d
+        .lines()
+        .find(|l| l.contains("plug the USB cable back in"))
+        .unwrap();
+    assert!(unplug.ends_with("(by relay)"), "{d}");
+    assert!(replug.ends_with("(by person)"), "{d}");
+}
+
+#[test]
+fn a_run_stopped_at_the_first_prompt_passes_an_act_a_bench_does_and_stops_at_the_first_a_person_does(
+) {
+    let dir = tmp("phys-until");
+    let log = dir.join("u.log");
+    // the relay claims press_power: it is not a prompt, the next act (hold_button) is the person's
+    let o = run_physical(
+        &dir,
+        &[
+            "--part",
+            "rig-power",
+            "--until",
+            "FIRST_PROMPT",
+            "--log",
+            log.to_str().unwrap(),
+        ],
+        "",
+    );
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(0), "{t}");
+    assert!(t.contains("the relay did: press the power button"), "{t}");
+    assert!(
+        t.contains(
+            "stopped before the first prompt (\"hold the volume down button\") after 1 step(s)"
+        ),
+        "{t}"
+    );
+    assert!(!t.contains("ATTENDED"), "{t}");
+    // without the relay the first act is the person's: the run stops before it
+    let o = run_physical(&dir, &["--until", "FIRST_PROMPT"], "");
+    let t = said(&o);
+    assert!(
+        t.contains("stopped before the first prompt (\"press the power button\") after 0 step(s)"),
+        "{t}"
+    );
+}
+
+#[test]
+fn the_log_says_who_did_each_act_and_a_plain_ask_keeps_its_old_lines() {
+    let dir = tmp("phys-log");
+    let log = dir.join("l.log");
+    let o = run_physical(
+        &dir,
+        &["--part", "rig", "--log", log.to_str().unwrap()],
+        &"ok\n".repeat(8),
+    );
+    assert_eq!(o.status.code(), Some(0), "{}", said(&o));
+    let l = fs::read_to_string(&log).unwrap();
+    assert!(
+        l.contains("begin unplug the USB cable: ask by relay"),
+        "{l}"
+    );
+    assert!(
+        l.contains("begin press the power button: ask\n"),
+        "a person's act is logged as ever: {l}"
+    );
+    // an ask_author step prints and logs as it did before the benches
+    let dir = tmp("phys-ask");
+    let devlab = stand_in(&dir, "pmicwdt 16384 0");
+    let log = dir.join("a.log");
+    let o = run(&dir, &devlab, &["--log", log.to_str().unwrap()], "ok\n");
+    let t = said(&o);
+    assert!(
+        t.contains("ask 2: ask the author: hold volume down and plug the cable in\n"),
+        "{t}"
+    );
+    assert!(!t.contains("by person"), "{t}");
+}
