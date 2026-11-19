@@ -10,7 +10,7 @@
 //!   lpoco-health off TEST --reason WORDS     switch a test off, with a reason (--by WHO, or LPOCO_HEALTH_BY)
 //!   lpoco-health on TEST                     switch it on again
 //!   lpoco-health awake [--once]             hold the kernel wake lock lpoco-awake (the lab phone's keep-awake; --once: one step)
-//!   lpoco-health suspend plan|cycle         one controlled suspend and wake, counted (--seconds N, --settle N; the way back is the manifest's)
+//!   lpoco-health suspend plan|cycle         one controlled suspend and wake, counted (--seconds N, --settle N, --before CMD, --after CMD; the way back is the manifest's)
 
 use argenv_resolve::*;
 
@@ -120,6 +120,24 @@ contract! {
         default: Some(2),
         arg: Some(Arg { value_name: "N", ..Arg::long("settle") }),
         summary: "suspend: seconds to let the phone settle after waking before it is counted again (default 2).",
+        ..Input::EMPTY
+    };
+
+    BEFORE: String, Command = Input {
+        key: "before",
+        ty: Type::String,
+        subcommands: &[Command::Suspend],
+        arg: Some(Arg { value_name: "CMD", ..Arg::long("before") }),
+        summary: "suspend cycle: a command (sh -c) run after the services are stopped, ahead of the suspend; if it fails the cycle is refused.",
+        ..Input::EMPTY
+    };
+
+    AFTER: String, Command = Input {
+        key: "after",
+        ty: Type::String,
+        subcommands: &[Command::Suspend],
+        arg: Some(Arg { value_name: "CMD", ..Arg::long("after") }),
+        summary: "suspend cycle: a command (sh -c) run once the counters are read, before the services start again; always run when --before was.",
         ..Input::EMPTY
     };
 

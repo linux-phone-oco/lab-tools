@@ -29,6 +29,10 @@ pub struct Ask {
     pub root: PathBuf,
     pub seconds: u64,
     pub settle: u64,
+    /// one-off commands (sh -c): `before` after the services are stopped and ahead of the suspend, `after` once
+    /// the counters are read - a probe's tracing on and off, with no wrapper around the verb
+    pub before: String,
+    pub after: String,
 }
 
 /// What the manifest declares for the cycle.
@@ -335,6 +339,42 @@ impl Drop for Quieted {
     }
 }
 
+/// One hook command through `sh -c`, its trouble in words; an empty command is no hook.
+fn hook(cmd: &str) -> Hook {
+    if cmd.trim().is_empty() {
+        return None;
+    }
+    Some(
+        match Command::new("sh")
+            .args(["-c", cmd])
+            .stdin(Stdio::null())
+            .stdout(Stdio::from(std::io::stderr())) // the report owns stdout
+            .status()
+        {
+            Ok(s) if s.success() => Ok(()),
+            Ok(s) => Err(format!(
+                "exit {}",
+                s.code().map_or("by signal".into(), |c| c.to_string())
+            )),
+            Err(e) => Err(format!("not run: {e}")),
+        },
+    )
+}
+
+type Hook = Option<Result<(), String>>;
+
+fn hooks_json(ask: &Ask, before: &Hook, after: &Hook) -> Value {
+    json!({"before": hook_json(&ask.before, before), "after": hook_json(&ask.after, after)})
+}
+
+fn hook_json(cmd: &str, r: &Option<Result<(), String>>) -> Value {
+    match r {
+        None => Value::Null,
+        Some(Ok(())) => json!({"cmd": cmd, "ok": true}),
+        Some(Err(e)) => json!({"cmd": cmd, "ok": false, "why": e}),
+    }
+}
+
 /// What a cycle would do, or why it would refuse; changes nothing.
 pub fn plan(ask: &Ask) -> (i32, Value) {
     let d = load_declared(ask);
@@ -361,21 +401,33 @@ pub fn cycle(ask: &Ask) -> (i32, Value) {
     // stopped before the alarm is armed: a slow stop must not eat the sleep
     let mut stopped = Stopped::stop(root, &d.stop);
     let not_stopped = stopped.not_stopped.clone();
+    let before_hook = hook(&ask.before);
+    if let Some(Err(e)) = &before_hook {
+        let after_hook = hook(&ask.after);
+        return (
+            2,
+            json!({"verb": "cycle", "refused": [format!("the before hook failed: {e}")],
+                   "hooks": hooks_json(ask, &before_hook, &after_hook)}),
+        );
+    }
     let before = read_counters(root);
     let target = before.rtc.unwrap_or(0) + ask.seconds;
     let _ = std::fs::write(&alarm, "0");
     let armed = std::fs::write(&alarm, target.to_string()).is_ok();
     if !armed || text(&alarm) != target.to_string() {
         let _ = std::fs::write(&alarm, "0");
+        let after_hook = hook(&ask.after);
         return (
             2,
-            json!({"verb": "cycle", "refused": ["the RTC wake alarm did not take"]}),
+            json!({"verb": "cycle", "refused": ["the RTC wake alarm did not take"],
+                   "hooks": hooks_json(ask, &before_hook, &after_hook)}),
         );
     }
     let wrote = std::fs::write(root.join("sys/power/state"), "freeze");
     std::thread::sleep(Duration::from_secs(ask.settle));
     let after = read_counters(root);
     let _ = std::fs::write(&alarm, "0");
+    let after_hook = hook(&ask.after);
     let not_started = stopped.start_back();
     drop(quieted);
 
@@ -443,6 +495,7 @@ pub fn cycle(ask: &Ask) -> (i32, Value) {
         "wakeups": wakeups.iter().map(|(n, dl)| json!({"name": n, "delta": dl})).collect::<Vec<_>>(),
         "quiet": d.quiet,
         "way_back": d.guard,
+        "hooks": hooks_json(ask, &before_hook, &after_hook),
     });
     if let Err(e) = wrote {
         report["state_write"] = json!(format!("{e}"));
