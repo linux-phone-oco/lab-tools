@@ -38,6 +38,10 @@ pub struct Boot {
     pub hooks: Option<std::collections::BTreeMap<String, String>>,
     /// the USB gadget the bring-up init (`lpoco-bringup initramfs init`) raises: how the phone names itself on the cable
     pub gadget: Option<BootGadget>,
+    /// Seconds the device takes to answer after a boot into a test image (an attended procedure waits this long)
+    pub device_wait: Option<u32>,
+    /// Seconds the phone takes to come back to its known-good system after a try
+    pub back_wait: Option<u32>,
 }
 
 /// `[boot.gadget]`: what the bring-up init says of the phone on the USB cable. The functions (ACM serial

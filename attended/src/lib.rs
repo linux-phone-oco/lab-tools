@@ -26,6 +26,8 @@ pub mod bench;
 mod cli;
 mod device;
 pub mod steps;
+mod values;
+pub use values::Val;
 
 use argenv_resolve::{InputResolveExt, OnProblems};
 use std::fmt::Display;
@@ -40,9 +42,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 pub mod prelude {
     pub use crate::bench::{bench, Act, ActKind, Bench};
     pub use crate::{
-        ask_author, check, confirm, hold_button, listen_for, look_for, part, phone, press_power,
-        procedure, replug_usb, retry, run_step, step, swipe, touch, unknown_part, unplug_usb,
-        Outcome, Step,
+        ask_author, check, confirm, dev, hold_button, listen_for, look_for, part, phone,
+        press_power, proc, procedure, replug_usb, retry, run_step, step, swipe, touch,
+        unknown_part, unplug_usb, Outcome, Step, Val,
     };
 }
 
@@ -154,6 +156,8 @@ struct Config {
     device: std::path::PathBuf,
     /// what that file declares: steps read their keys from it
     manifest: lpoco_manifest::Manifest,
+    /// the same file as the tables it says, for the keys a procedure reads by name
+    raw: toml::Value,
     devlab: String,
     sysfs_usb: String,
     name: String,
@@ -278,7 +282,7 @@ pub fn procedure(name: &str, device: &str) -> Run {
         std::process::exit(0);
     }
     let dry = cli::Contract::DRY_RUN.get_from(&r).unwrap_or(false);
-    let (device_file, manifest) =
+    let (device_file, manifest, raw) =
         device::load(cli::Contract::DEVICE.get_from(&r).as_deref(), device).unwrap_or_else(|e| {
             eprintln!("{name}: {e}");
             std::process::exit(2)
@@ -308,6 +312,7 @@ pub fn procedure(name: &str, device: &str) -> Run {
         part,
         device: device_file,
         manifest,
+        raw,
         devlab,
         sysfs_usb,
         name: name.to_string(),
@@ -465,6 +470,40 @@ pub fn listen_for(what: &str) {
 pub fn part() -> Option<String> {
     PART_ASKED.store(true, Ordering::Relaxed);
     config().part.clone()
+}
+
+/// End the run with exit 2 and the reason: a procedure that cannot know a value it needs must not start.
+pub(crate) fn stop(why: &str) -> ! {
+    eprintln!("{}: {why}", config().name);
+    std::process::exit(2)
+}
+
+/// The value at a dotted key of the device's `device.toml` (`dev("health.battery_floor_mv")`): the table that owns
+/// the fact. A key the file does not say ends the run with exit 2 naming it. Read it where the entry file builds its
+/// steps, not inside a step's closure: a dry run does not run closures, so only a read made outside one is found by it.
+pub fn dev(key: &str) -> Val {
+    values::find(&config().raw, key).unwrap_or_else(|| stop(&format!("device.toml has no {key}")))
+}
+
+/// A value of this procedure's own `[procedures.NAME]` table (`proc("window")`); NAME is the procedure's name in
+/// lowercase words joined by `-`. Only what no other table owns goes there. A missing key ends the run as `dev` does.
+pub fn proc(key: &str) -> Val {
+    let name = words(&config().name);
+    if name.is_empty() {
+        stop("the procedure's name has no letters or digits, so it has no [procedures.NAME] table")
+    }
+    let table = format!("procedures.{name}.{key}");
+    values::find(&config().raw, &table)
+        .unwrap_or_else(|| stop(&format!("device.toml has no {table}")))
+}
+
+/// Lowercase words joined by `-`: how a procedure's name is written as a table name.
+fn words(name: &str) -> String {
+    name.split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .map(str::to_ascii_lowercase)
+        .collect::<Vec<_>>()
+        .join("-")
 }
 
 /// A `--part` the procedure has not got: name it and the known ones, end the run with exit 2.

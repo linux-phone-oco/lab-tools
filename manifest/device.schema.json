@@ -122,6 +122,27 @@
           "type": "null"
         }
       ]
+    },
+    "images": {
+      "description": "The images a procedure puts on the phone, by name",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Images"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "procedures": {
+      "description": "Values only one procedure uses, per procedure (a free table of numbers and words)",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "$ref": "#/definitions/ProcValue"
+        }
+      }
     }
   },
   "additionalProperties": false,
@@ -151,6 +172,23 @@
           "items": {
             "type": "string"
           }
+        },
+        "shell_port": {
+          "description": "The port the phone's early shell answers on (its telnet port), where it has one",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint16",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "shell_address": {
+          "description": "The address that shell answers on, where it is not the first of `addresses`",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "additionalProperties": false,
@@ -450,6 +488,27 @@
           "minimum": 0,
           "default": null
         },
+        "battery_floor_mv": {
+          "description": "The battery charge, in mV, below which a procedure that changes the phone does not start",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0,
+          "default": null
+        },
+        "battery_source": {
+          "description": "How the battery is read for that floor (needed with it, and only with it)",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/BatterySource"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "suspend_irq_max": {
           "description": "Interrupts one 15 s suspended cycle may count in all (the suite check suspend-irq-quiet); unsaid, the\ncheck says not measured: the number comes from a reading of this phone, never a guess",
           "type": [
@@ -494,6 +553,16 @@
         }
       },
       "additionalProperties": false
+    },
+    "BatterySource": {
+      "description": "How `[health] battery_floor_mv` is read.",
+      "oneOf": [
+        {
+          "description": "`fastboot getvar battery-voltage`, while the phone is in the bootloader",
+          "type": "string",
+          "const": "fastboot-getvar"
+        }
+      ]
     },
     "Hazard": {
       "description": "A path on the phone that harms it to touch - each with what it did, so the refusal says why.",
@@ -757,6 +826,24 @@
               "type": "null"
             }
           ]
+        },
+        "device_wait": {
+          "description": "Seconds the device takes to answer after a boot into a test image (an attended procedure waits this long)",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "back_wait": {
+          "description": "Seconds the phone takes to come back to its known-good system after a try",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
         }
       },
       "additionalProperties": false,
@@ -1065,6 +1152,20 @@
             "string",
             "null"
           ]
+        },
+        "adb": {
+          "description": "The adb program of this lab (adb on the path when none is given)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fastboot": {
+          "description": "The fastboot program of this lab (fastboot on the path when none is given)",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "additionalProperties": false
@@ -1090,6 +1191,57 @@
         }
       },
       "additionalProperties": false
+    },
+    "Images": {
+      "description": "`[images]`: `dir` is the folder the images live in, relative to the device repo; each `[images.NAME]` is one.",
+      "type": "object",
+      "properties": {
+        "dir": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/Image"
+      }
+    },
+    "Image": {
+      "description": "`[images.NAME]`: one image, by its path relative to the device repo and, once known, its checksum.",
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "sha256": {
+          "description": "lowercase hex, 64 digits",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "path"
+      ]
+    },
+    "ProcValue": {
+      "description": "One value of `[procedures.NAME]`: a number or a word, nothing nested.",
+      "anyOf": [
+        {
+          "type": "integer",
+          "format": "int64"
+        },
+        {
+          "type": "number",
+          "format": "double"
+        },
+        {
+          "type": "string"
+        }
+      ]
     }
   }
 }

@@ -1267,3 +1267,65 @@ fn a_name_devlab_would_refuse_is_named_as_such_even_when_the_device_declares_no_
     let o = devlab_calls(&dir, "boot-once-dry", "calls4", 0);
     assert!(said(&o).contains("lists: no kernel"), "{}", said(&o));
 }
+
+/// The example with `lines` put before its first step, run with --dry-run in a folder whose device.toml is `toml`.
+fn with_values(name: &str, toml: &str, lines: &str) -> Output {
+    let dir = tmp(name);
+    fs::write(dir.join("device.toml"), toml).unwrap();
+    let devlab = stand_in(&dir, "x");
+    let src = fs::read_to_string(example(&dir)).unwrap().replace(
+        "step(\"the phone answers\"",
+        &format!("{lines}\n    step(\"the phone answers\""),
+    );
+    fs::write(dir.join("attended.rs"), src).unwrap();
+    let mut c = Command::new("rust-script")
+        .arg(dir.join("attended.rs"))
+        .args(["--dry-run", "--log", dir.join("v.log").to_str().unwrap()])
+        .env("LPOCO_ATTENDED_DEVLAB", &devlab)
+        .current_dir(&dir)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    drop(c.stdin.take());
+    c.wait_with_output().unwrap()
+}
+
+const VALUES: &str = "[device]\ncodename = \"xiaomi-surya\"\n[health]\nbattery_floor_mv = 3700\nbattery_source = \"fastboot-getvar\"\n[procedures.boot-the-pmicwdt-kernel]\nwindow = 120\nname = \"abc\"\n";
+const READ: &str = "println!(\"floor={} window={} name={}\", dev(\"health.battery_floor_mv\").int(), proc(\"window\").int(), proc(\"name\").text());";
+
+#[test]
+fn a_procedure_reads_the_devices_keys_and_its_own_values_by_name() {
+    let o = with_values("keys", VALUES, READ);
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(0), "{t}");
+    assert!(t.contains("floor=3700 window=120 name=abc"), "{t}");
+}
+
+#[test]
+fn a_missing_key_fails_the_dry_run_naming_it_before_any_step() {
+    let no_proc = VALUES.replace("window = 120\n", "");
+    let o = with_values("no-proc", &no_proc, READ);
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(2), "{t}");
+    assert!(
+        t.contains("procedures.boot-the-pmicwdt-kernel.window"),
+        "{t}"
+    );
+    let no_dev = VALUES.replace(
+        "battery_floor_mv = 3700\nbattery_source = \"fastboot-getvar\"\n",
+        "",
+    );
+    let o = with_values("no-dev", &no_dev, READ);
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(2), "{t}");
+    assert!(t.contains("health.battery_floor_mv"), "{t}");
+    let o = with_values("wrong-type", VALUES, "let _ = proc(\"name\").int();");
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(2), "{t}");
+    assert!(
+        t.contains("procedures.boot-the-pmicwdt-kernel.name") && t.contains("number"),
+        "{t}"
+    );
+}
