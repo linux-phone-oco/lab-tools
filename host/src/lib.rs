@@ -5,6 +5,7 @@
 
 pub mod clones;
 pub mod follow;
+pub mod lock;
 pub mod share;
 
 use serde::Deserialize;

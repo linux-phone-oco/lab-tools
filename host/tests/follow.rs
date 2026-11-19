@@ -548,3 +548,127 @@ fn the_enabled_watchers_are_restarted_after_a_followed_release() {
         calls(&l)
     );
 }
+
+fn lock_file(l: &Lab) -> PathBuf {
+    l.dir.join("home/.local/state/lpoco-host/lock")
+}
+
+/// The lock held the way a run at work holds it: an flock on the file, naming this process.
+fn lock_held(l: &Lab) -> fs::File {
+    fs::create_dir_all(lock_file(l).parent().unwrap()).unwrap();
+    let mut f = fs::File::create(lock_file(l)).unwrap();
+    f.try_lock().unwrap();
+    use std::io::Write;
+    writeln!(f, "{}", std::process::id()).unwrap();
+    f
+}
+
+/// Whether nobody holds the lock now.
+fn lock_is_free(l: &Lab) -> bool {
+    match fs::File::create(lock_file(l)).unwrap().try_lock() {
+        Ok(()) => true,
+        Err(_) => false,
+    }
+}
+
+#[test]
+fn a_run_that_holds_the_lock_makes_follow_wait_and_nothing_is_changed() {
+    let l = lab("locked", "");
+    releases(&l, &["0.2.1", "0.2.0"]);
+    install_old(&l);
+    let _held = lock_held(&l);
+    let o = follow(&l, &["now"]);
+    let s = text(&o);
+    assert!(o.status.success(), "{s}");
+    assert!(
+        s.contains("waits") && s.contains(&std::process::id().to_string()),
+        "{s}"
+    );
+    assert!(installed(&l, "lpoco").contains("old"));
+    assert!(
+        !calls(&l).contains(SUFFIX),
+        "a program was fetched under another run's lock: {}",
+        calls(&l)
+    );
+}
+
+#[test]
+fn a_lock_file_left_by_a_run_that_is_gone_holds_nothing_and_follow_gives_it_back() {
+    let l = lab("stale-lock", "");
+    releases(&l, &["0.2.1", "0.2.0"]);
+    install_old(&l);
+    // a file naming a process that is not there, as a kill or a power cut leaves it
+    fs::create_dir_all(lock_file(&l).parent().unwrap()).unwrap();
+    fs::write(lock_file(&l), "999999999\n").unwrap();
+    let o = follow(&l, &["now"]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert!(installed(&l, "lpoco").contains("0.2.1"), "{}", text(&o));
+    assert!(lock_is_free(&l), "follow still holds its lock");
+}
+
+#[test]
+fn a_failed_follow_gives_the_lock_back_too() {
+    let l = lab("lock-after-failure", "");
+    releases(&l, &["0.2.1", "0.2.0"]);
+    publish_release(&l, "0.2.1", 1, NO_ROOT);
+    install_old(&l);
+    let o = follow(&l, &["now"]);
+    assert!(!o.status.success(), "{}", text(&o));
+    assert!(lock_is_free(&l), "a failed follow still holds its lock");
+}
+
+#[test]
+fn an_unreachable_lock_is_an_error_and_not_a_wait() {
+    let l = lab("lock-unwritable", "");
+    releases(&l, &["0.2.1", "0.2.0"]);
+    install_old(&l);
+    // the lock's place is a folder: it cannot be opened as a file
+    fs::create_dir_all(lock_file(&l)).unwrap();
+    let o = follow(&l, &["now"]);
+    assert!(!o.status.success(), "{}", text(&o));
+    assert!(text(&o).contains("cannot take the lock"), "{}", text(&o));
+}
+
+fn prepare(l: &Lab) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_lpoco-host"))
+        .args(["prepare", "now"])
+        .env_clear()
+        .env("HOME", l.dir.join("home"))
+        .env("PATH", l.dir.join("stubs"))
+        .env(
+            "LPOCO_LAB",
+            l.dir.join("home/Projects/lab-machine/lab.toml"),
+        )
+        .env("LPOCO_ROOT", l.dir.join("stubs/root"))
+        .env("LPOCO_FS_ROOT", l.dir.join("fs"))
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn prepare_refuses_while_another_run_holds_the_lock_and_gives_it_back_when_done() {
+    let l = lab("prepare-locked", "");
+    {
+        let _held = lock_held(&l);
+        let o = prepare(&l);
+        assert!(!o.status.success(), "{}", text(&o));
+        assert!(
+            text(&o).contains(&format!("(pid {}) holds the lock", std::process::id())),
+            "{}",
+            text(&o)
+        );
+        assert!(
+            !calls(&l).contains("root"),
+            "prepare ran root under another run's lock: {}",
+            calls(&l)
+        );
+    }
+    let o = prepare(&l);
+    assert!(
+        text(&o).contains("read:") || o.status.success(),
+        "{}",
+        text(&o)
+    );
+    assert!(!text(&o).contains("holds the lock"), "{}", text(&o));
+    assert!(lock_is_free(&l), "prepare still holds its lock");
+}

@@ -312,6 +312,26 @@ fn stage_dir(home: &str) -> String {
 
 fn run(r: &Resolution) -> Result<i32, String> {
     let command = Contract::COMMAND.get_from(r).unwrap_or(Command::Plan);
+    let now = Contract::NOW.get_from(r).as_deref() == Some("now");
+    // a run that changes the host holds the lock before it reads anything the other run may be changing
+    let _lock = if now && matches!(command, Command::Prepare | Command::Follow) {
+        let home = Contract::HOME.get_from(r).ok_or("HOME is not set")?;
+        match lock::take(&home) {
+            Ok(l) => Some(l),
+            Err(lock::Refused::Held(pid)) if matches!(command, Command::Follow) => {
+                println!("waits: another lpoco-host run (pid {pid}) is changing the host; the next timer run follows");
+                return Ok(0);
+            }
+            Err(refused) => {
+                return Err(format!(
+                    "{}: wait for it, then run again",
+                    refused.said(&lock::lock_path(&home))
+                ));
+            }
+        }
+    } else {
+        None
+    };
     let st = load(r)?;
     match command {
         Command::Plan => {
