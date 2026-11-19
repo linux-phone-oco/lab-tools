@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.2](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.37.1...lpoco-bringup-v0.37.2) - 2026-11-19
+
+### Added
+
+- *(attended)* named step groups with a way back, phone_ready and leave_known_good ([#300](https://github.com/linux-phone-oco/lab-tools/pull/300))
+
 ## [0.37.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.37.0...lpoco-bringup-v0.37.1) - 2026-11-19
 
 ### Added
