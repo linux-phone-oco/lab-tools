@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-health-v0.26.0...lpoco-health-v0.26.1) - 2026-11-19
+
+### Other
+
+- *(layer)* pack_run asserts the written postinstall is the one nfpm is given ([#227](https://github.com/linux-phone-oco/lab-tools/pull/227))
+
 ## [0.26.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-health-v0.25.0...lpoco-health-v0.26.0) - 2026-11-19
 
 ### Added
