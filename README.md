@@ -269,7 +269,7 @@ the first dtb: the same files in every format; dependency tokens written the way
 for apk, `NAME-boot` (a systemd preset enabling the layer's units; the initramfs module list as an initramfs-tools hook,
 a dracut drop-in or a mkinitcpio drop-in). Each package's nfpm config is kept beside it. Proof: `layer/tests/pack.rs`
 from fixtures; with nfpm, research `test-layer-apk-and-deb.sh` (docs) passes on a fixture of surya's shape.
-Not yet: the kernel package, the per-base dependency token map (tokens pass through), mkinitfs for apk, Nura's deviceinfo,
+Not yet: a scriptlet that runs `systemctl preset` (the preset file alone enables nothing until a first boot or preset call), the kernel package, the per-base dependency token map (tokens pass through), mkinitfs for apk, Nura's deviceinfo,
 `export`.
 
 ## lpoco host: the lab host prepared from declarations

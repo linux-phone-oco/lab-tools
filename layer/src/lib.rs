@@ -169,9 +169,7 @@ pub fn packages(layer: &Layer, format: Format) -> Vec<Package> {
     if !boot.is_empty() {
         out.push(Package {
             name: format!("{name}-boot"),
-            description: format!(
-                "{name}: boot glue (kernel-install devicetree, systemd preset, initramfs modules)"
-            ),
+            description: format!("{name}: boot glue (systemd preset, initramfs modules)"),
             depends: Vec::new(),
             items: boot,
         });
@@ -214,28 +212,45 @@ pub fn materialize(pkg: &Package, manifest_dir: &Path, stage: &Path) -> Result<V
 }
 
 /// A dependency token as the format writes it: `tqftpserv>=1.2` is `tqftpserv (>= 1.2)` in a deb, with spaces in an rpm.
-fn dependency(token: &str, format: Format) -> String {
-    let at = token.find(['<', '>', '=']);
-    let Some(at) = at else {
-        return token.trim().to_string();
+fn dependency(token: &str, format: Format) -> Result<String, String> {
+    let Some(at) = token.find(['<', '>', '=']) else {
+        return Ok(token.trim().to_string());
     };
     let (name, rest) = token.split_at(at);
     let (name, rest) = (name.trim(), rest.trim());
     let op_len = rest.chars().take_while(|c| "<>=".contains(*c)).count();
     let (op, ver) = rest.split_at(op_len);
     let ver = ver.trim();
-    match format {
-        Format::Deb => format!("{name} ({op} {ver})"),
+    if name.is_empty() || ver.is_empty() || !["<", ">", "<=", ">=", "="].contains(&op) {
+        return Err(format!(
+            "dependency {token:?} is not NAME or NAME<op>VERSION with < > <= >= ="
+        ));
+    }
+    Ok(match format {
+        // Debian's bare < and > mean <= and >=: its strict forms are << and >>
+        Format::Deb => {
+            let op = match op {
+                "<" => "<<",
+                ">" => ">>",
+                o => o,
+            };
+            format!("{name} ({op} {ver})")
+        }
         Format::Rpm => format!("{name} {op} {ver}"),
         _ => format!("{name}{op}{ver}"),
-    }
+    })
 }
 
 fn quote(s: &str) -> String {
     format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
-pub fn nfpm_yaml(pkg: &Package, format: Format, version: &str, entries: &[Entry]) -> String {
+pub fn nfpm_yaml(
+    pkg: &Package,
+    format: Format,
+    version: &str,
+    entries: &[Entry],
+) -> Result<String, String> {
     let mut y = format!(
         "name: {}\narch: all\nplatform: linux\nversion: {}\nsection: misc\nmaintainer: linux-phone-oco\ndescription: {}\nlicense: MIT OR Apache-2.0\n",
         pkg.name,
@@ -245,7 +260,7 @@ pub fn nfpm_yaml(pkg: &Package, format: Format, version: &str, entries: &[Entry]
     if !pkg.depends.is_empty() {
         y.push_str("depends:\n");
         for d in &pkg.depends {
-            y.push_str(&format!("- {}\n", dependency(d, format)));
+            y.push_str(&format!("- {}\n", dependency(d, format)?));
         }
     }
     y.push_str("contents:\n");
@@ -260,5 +275,5 @@ pub fn nfpm_yaml(pkg: &Package, format: Format, version: &str, entries: &[Entry]
             y.push_str("  type: config|noreplace\n");
         }
     }
-    y
+    Ok(y)
 }

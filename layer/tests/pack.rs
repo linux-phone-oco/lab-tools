@@ -164,7 +164,7 @@ fn dependencies_are_written_the_way_each_format_writes_them() {
             .find(|p| p.name == "xiaomi-surya-config")
             .unwrap();
         let e = materialize(&p, &dir, &stage).unwrap();
-        nfpm_yaml(&p, f, "0.1.0", &e)
+        nfpm_yaml(&p, f, "0.1.0", &e).unwrap()
     };
     assert!(yaml(Format::Deb).contains("- tqftpserv (>= 1.2)"));
     assert!(yaml(Format::Rpm).contains("- tqftpserv >= 1.2"));
@@ -182,4 +182,32 @@ fn a_file_the_layer_names_but_the_tree_lacks_is_refused() {
     let p = packages(m.layer.as_ref().unwrap(), Format::Apk).remove(0);
     let e = materialize(&p, &dir, &stage).unwrap_err();
     assert!(e.contains("ucm/HiFi.conf"), "{e}");
+}
+
+#[test]
+fn debians_strict_bounds_are_doubled_and_a_malformed_token_is_refused() {
+    let (dir, stage) = fixture("s");
+    let m = Manifest::parse(DEVICE).unwrap();
+    let mut layer = m.layer.clone().unwrap();
+    layer.needs = vec!["a>1".into(), "c<2".into(), "d<=3".into(), "e=4".into()];
+    let p = packages(&layer, Format::Deb).remove(0);
+    let e = materialize(&p, &dir, &stage).unwrap();
+    let y = nfpm_yaml(&p, Format::Deb, "0.1.0", &e).unwrap();
+    for want in ["- a (>> 1)", "- c (<< 2)", "- d (<= 3)", "- e (= 4)"] {
+        assert!(y.contains(want), "{want} not in {y}");
+    }
+    for bad in ["b>=", ">=1", "b=>2"] {
+        layer.needs = vec![bad.into()];
+        let p = packages(&layer, Format::Deb).remove(0);
+        assert!(nfpm_yaml(&p, Format::Deb, "0.1.0", &e).is_err(), "{bad}");
+    }
+}
+
+#[test]
+fn a_kept_config_names_its_files_by_absolute_path() {
+    let (dir, stage) = fixture("p");
+    let m = Manifest::parse(DEVICE).unwrap();
+    let p = packages(m.layer.as_ref().unwrap(), Format::Apk).remove(0);
+    let e = materialize(&p, &dir, &stage).unwrap();
+    assert!(e.iter().all(|e| e.src.is_absolute()), "{e:?}");
 }

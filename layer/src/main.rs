@@ -59,6 +59,8 @@ fn pack(r: &argenv_resolve::Resolution) -> Result<(), String> {
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or(Path::new("."))
         .to_path_buf();
+    let dir = std::path::absolute(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let out = std::path::absolute(&out).map_err(|e| format!("{}: {e}", out.display()))?;
     let pkgs = packages(layer, format);
     if pkgs.is_empty() {
         return Err("the layer holds no file to pack".into());
@@ -68,7 +70,7 @@ fn pack(r: &argenv_resolve::Resolution) -> Result<(), String> {
     for p in &pkgs {
         let entries = materialize(p, &dir, &stage)?;
         let conf = out.join(format!("{}.nfpm.yaml", p.name));
-        fs::write(&conf, nfpm_yaml(p, format, &version, &entries))
+        fs::write(&conf, nfpm_yaml(p, format, &version, &entries)?)
             .map_err(|e| format!("{}: {e}", conf.display()))?;
         let target = out.join(format.file_name(&p.name, &version));
         let status = Command::new(&nfpm)
