@@ -12,3 +12,5 @@ name = "lpoco_attended"
 [dependencies]
 # the command line is declared once (argenv), not parsed by hand
 argenv-resolve = "0.4"
+# the device manifest a procedure names: its values are read from the same declared tables every lpoco program reads
+lpoco-manifest = { path = "../manifest" }
