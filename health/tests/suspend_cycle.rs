@@ -101,6 +101,7 @@ cat "$1/sys/power/state" > "$1/seen_state"
 echo "$(cat "$1/sys/class/wakeup/wakeup1/event_count" | tr -d '\n')" > "$1/serial_before"
 cat "$1/sys/bus/platform/devices/88c000.serial/power/wakeup" > "$1/wakeup_during"
 cat "$1/systemctl.log" > "$1/systemctl_during" 2>/dev/null
+cat "$1/hook.log" > "$1/hook_during" 2>/dev/null
 cp "$1/after/cxsd" "$1/sys/kernel/debug/qcom_stats/cxsd"
 cp "$1/after/aosd" "$1/sys/kernel/debug/qcom_stats/aosd"
 cp "$1/after/state1usage" "$1/sys/devices/system/cpu/cpu0/cpuidle/state1/usage"
@@ -445,4 +446,97 @@ fn services_left_stopped_by_a_cut_off_cycle_are_started_by_the_next() {
         rig.read("systemctl.log"),
         "start hexagonrpcd\nstop sensorspd\nstart sensorspd\n"
     );
+}
+
+#[test]
+fn the_before_hook_runs_ahead_of_the_suspend_and_the_after_hook_behind_it() {
+    let rig = Rig::new("hooks", ARMED);
+    let o = rig.run(
+        &[
+            "suspend",
+            "cycle",
+            "--seconds",
+            "5",
+            "--settle",
+            "1",
+            "--before",
+            "echo before >> $LPOCO_HEALTH_ROOT/hook.log",
+            "--after",
+            "echo after >> $LPOCO_HEALTH_ROOT/hook.log",
+        ],
+        true,
+    );
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o.stderr));
+    assert_eq!(
+        rig.read("hook_during"),
+        "before\n",
+        "only before, while suspended"
+    );
+    assert_eq!(rig.read("hook.log"), "before\nafter\n");
+    let v: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap();
+    assert_eq!(v["hooks"]["before"]["ok"], true, "{v}");
+    assert_eq!(v["hooks"]["after"]["ok"], true, "{v}");
+}
+
+#[test]
+fn a_before_hook_that_fails_stops_the_cycle_and_the_after_hook_still_runs() {
+    let rig = Rig::new("hook-fails", ARMED);
+    let o = rig.run(
+        &[
+            "suspend",
+            "cycle",
+            "--before",
+            "echo before >> $LPOCO_HEALTH_ROOT/hook.log; exit 3",
+            "--after",
+            "echo after >> $LPOCO_HEALTH_ROOT/hook.log",
+        ],
+        false,
+    );
+    assert_eq!(o.status.code(), Some(2), "{}", text(&o.stdout));
+    assert!(
+        text(&o.stderr).contains("before hook"),
+        "{}",
+        text(&o.stderr)
+    );
+    assert!(rig.read("seen_state").is_empty(), "nothing suspended");
+    assert_eq!(rig.read("hook.log"), "before\nafter\n");
+}
+
+#[test]
+fn a_hook_is_not_run_by_a_refused_cycle_or_a_plan() {
+    let rig = Rig::new("hook-refused", ARMED);
+    fs::remove_file(rig.p("armed")).unwrap();
+    let hook = "echo ran >> $LPOCO_HEALTH_ROOT/hook.log";
+    let _ = rig.run(
+        &["suspend", "cycle", "--before", hook, "--after", hook],
+        false,
+    );
+    let p = rig.run(&["suspend", "plan", "--before", hook], false);
+    assert_eq!(p.status.code(), Some(0));
+    assert_eq!(rig.read("hook.log"), "");
+}
+
+#[test]
+fn a_hook_that_prints_leaves_the_report_alone_and_a_failing_after_hook_is_reported() {
+    let rig = Rig::new("hook-prints", ARMED);
+    let o = rig.run(
+        &[
+            "suspend",
+            "cycle",
+            "--seconds",
+            "5",
+            "--settle",
+            "1",
+            "--before",
+            "echo noise",
+            "--after",
+            "cat $LPOCO_HEALTH_ROOT/systemctl.log >> $LPOCO_HEALTH_ROOT/hook.log; exit 4",
+        ],
+        true,
+    );
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o.stderr));
+    let v: serde_json::Value =
+        serde_json::from_slice(&o.stdout).expect("stdout is one JSON report");
+    assert_eq!(v["hooks"]["after"]["ok"], false, "{v}");
+    assert!(text(&o.stderr).contains("noise"));
 }

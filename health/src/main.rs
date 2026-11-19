@@ -541,6 +541,8 @@ fn main() {
                 root: cli::Contract::ROOT.get_from(&r).unwrap_or_default().into(),
                 seconds: cli::Contract::SECONDS.get_from(&r).unwrap_or(15),
                 settle: cli::Contract::SETTLE.get_from(&r).unwrap_or(2),
+                before: cli::Contract::BEFORE.get_from(&r).unwrap_or_default(),
+                after: cli::Contract::AFTER.get_from(&r).unwrap_or_default(),
             };
             let (code, report) = match cli::Contract::VERB.get_from(&r).as_deref() {
                 Some("plan") => suspend::plan(&ask),
