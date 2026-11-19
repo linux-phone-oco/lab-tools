@@ -1741,7 +1741,7 @@ fn clones(st: &State, now: bool) -> Result<i32, String> {
             match outcome {
                 clones::Outcome::FetchFailed(_) => fetch_failed += 1,
                 clones::Outcome::UpToDate | clones::Outcome::Behind(_) => fetched += 1,
-                clones::Outcome::Left(_) => {}
+                clones::Outcome::Left(_) | clones::Outcome::NotCommons => {}
             }
             println!("{}", clones::line(&name, &outcome, now));
         }

@@ -350,7 +350,7 @@ host cannot read cannot land (device-template's `bin/check-device-toml.sh`).
 
 `lab.toml` `[clones]` with `folders = ["~/Projects"]` and `every = "15min"` makes `plan` list, and `prepare now` write and
 enable, the user timer `lpoco-host-clones.timer` that runs `lpoco-host clones now`. Each clone under a folder that is on
-`main` and has no uncommitted tracked change is fast-forwarded to origin/main (`merge --ff-only`: nothing is reset or
+`main`, has an `AGENTS.md` at its top (a commons place: any other repository is named "not a commons place, left" and never touched, the author's own among them) and has no uncommitted tracked change is fast-forwarded to origin/main (`merge --ff-only`: nothing is reset or
 removed, and git itself refuses a fast-forward that an untracked file would meet). Any other - dirty, detached, on another
 branch, diverged - is left exactly as it is and named with why; a worktree is not a clone. `clones` without `now` only
 fetches and says what it would do (a fresh `origin/main` is all it changes). The unit fails (exit 1) when a declared
