@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.32.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-host-v0.31.1...lpoco-host-v0.32.0) - 2026-11-19
+
+### Added
+
+- *(manifest)* homes for the attended keys; lpoco-attended reads dev() and proc() ([#270](https://github.com/linux-phone-oco/lab-tools/pull/270))
+
 ## [0.31.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-host-v0.31.0...lpoco-host-v0.31.1) - 2026-11-19
 
 ### Added
