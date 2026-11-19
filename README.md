@@ -299,6 +299,11 @@ without it no watcher is enabled for it, and an instance already enabled for a d
                              by the lab user with no password (the polkit rule's own test), its interfaces found from the device's address
     lpoco host revoke now    removes /etc/sudoers.d/lab-agent, the standing grant: refuses unless check passes, the share was measured and the
                              root prefix does not name lab-agent; `prepare now` ends with the same share check
+    lpoco host follow [now]  a family release newer than lab.toml's pin: with no keeper lease held on any phone, install it (release assets, hash checked), run its own
+                             `check` and `plan` against lab.toml with the pin moved, and land the pin (a clone, a branch, `land`, signed lab-host-follow);
+                             a failing check or a plan that lists a root command puts the previous programs back and lands nothing; without `now` it says what it would do
+
+`lab.toml` `[follow]` with `every = "15min"` makes `plan` list, and `prepare now` write and enable, the user timer `lpoco-host-follow.timer` that runs `lpoco-host follow now`. A phone's keeper lease is `~/.local/state/devlab/CODENAME/keeper.lease/holder`, held while renewed in the last 90 minutes. `LPOCO_RELEASES` names the releases list (GitHub's API when none is given).
 
 Root is one prefix, `LPOCO_ROOT`, then the lab declaration's `root`, then `sudo` (the author's typed password: no standing grant, decision of 2026-11-18); the commands are a fixed
 list the plan prints. `lab.toml` tools: `lpoco = "0.2.0"` installs the family from its release tags with cargo into

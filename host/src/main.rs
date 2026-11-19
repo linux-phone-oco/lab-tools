@@ -21,7 +21,7 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 fn main() {
     let r = Contract::parse_and_lint(OnProblems::FailOnError);
     if Contract::HELP.get_from(&r).unwrap_or(false) {
-        print!("{}", cli::usage("lpoco-host", "The lab host prepared from declarations (run as lpoco host). Commands: plan (the default; changes nothing on the host, only fetches each declaration's clone), prepare now (changes only what differs), check (reads, and exercises the share as the lab user), revoke now (removes the standing grant once the check passes)."));
+        print!("{}", cli::usage("lpoco-host", "The lab host prepared from declarations (run as lpoco host). Commands: plan (the default; changes nothing on the host, only fetches each declaration's clone), prepare now (changes only what differs), follow [now] (a newer family release installed when no keeper holds a phone, checked, its pin landed), check (reads, and exercises the share as the lab user), revoke now (removes the standing grant once the check passes)."));
         return;
     }
     if Contract::VERSION.get_from(&r).unwrap_or(false) {
@@ -49,6 +49,9 @@ struct State {
     found: Vec<Device>,
     missed: Vec<String>,
     reads: Vec<String>,
+    lab_path: String,
+    /// where follow reads the releases list
+    releases_url: String,
     lab: Lab,
     fs_root: String,
     /// where release assets are fetched from; None when this host fits none (then cargo builds)
@@ -87,6 +90,11 @@ fn load(r: &Resolution) -> Result<State, String> {
     let skip: Vec<PathBuf> = misses.iter().map(|(d, _)| d.path.clone()).collect();
     devices.retain(|d| !skip.contains(&d.path));
     Ok(State {
+        lab_path: lab_path.clone(),
+        releases_url: Contract::RELEASES.get_from(r).unwrap_or_else(|| {
+            "https://api.github.com/repos/linux-phone-oco/lab-tools/releases?per_page=100"
+                .to_string()
+        }),
         path: Contract::PATH.get_from(r).unwrap_or_default(),
         fs_root: Contract::FS_ROOT.get_from(r).unwrap_or_default(),
         release_base: asset_fits(std::env::consts::OS, std::env::consts::ARCH).then(|| {
@@ -317,6 +325,7 @@ fn run(r: &Resolution) -> Result<i32, String> {
             prepare(&st)
         }
         Command::Check => check(&st),
+        Command::Follow => follow(&st, Contract::NOW.get_from(r).as_deref() == Some("now")),
         Command::Revoke => {
             if Contract::NOW.get_from(r).as_deref() != Some("now") {
                 return Err("revoke removes the standing grant: say `lpoco host revoke now` (it refuses unless the check passes)".into());
@@ -507,6 +516,18 @@ fn plan(st: &State) {
     for c in &ucmds {
         println!("    {}", c.join(" "));
     }
+    if let Some((files, cmds)) = follow_units(st) {
+        println!("\nfollow (user timer, no root; `lpoco host follow now` installs a newer release when no keeper holds a phone):");
+        for f in &files {
+            println!("    {} ({})", f.dst, f.state());
+            for l in f.diff() {
+                println!("        {l}");
+            }
+        }
+        for c in &cmds {
+            println!("    {}", c.join(" "));
+        }
+    }
     println!("\ntools:");
     for t in tools {
         let found = t.found_text();
@@ -580,7 +601,47 @@ fn prepare(st: &State) -> Result<i32, String> {
     let _ = fs::remove_dir_all(&stage);
     // worked out before the tools change: a replaced binary restarts the watchers that run it
     let tools = tool_plans(st);
-    let (unit, ucmds) = watchers(st, &tools);
+    let (unit, mut ucmds) = watchers(st, &tools);
+    install_tools(st, tools)?;
+    if unit.changed() {
+        if let Some(d) = Path::new(&unit.dst).parent() {
+            fs::create_dir_all(d).map_err(|e| format!("cannot make {}: {e}", d.display()))?;
+        }
+        replace_file(&unit.dst, unit.content.as_bytes(), 0o644)
+            .map_err(|e| format!("cannot write {}: {e}", unit.dst))?;
+    }
+    if let Some((files, cmds)) = follow_units(st) {
+        for f in files.iter().filter(|f| f.changed()) {
+            if let Some(d) = Path::new(&f.dst).parent() {
+                fs::create_dir_all(d).map_err(|e| format!("cannot make {}: {e}", d.display()))?;
+            }
+            replace_file(&f.dst, f.content.as_bytes(), 0o644)
+                .map_err(|e| format!("cannot write {}: {e}", f.dst))?;
+        }
+        ucmds.extend(cmds);
+    }
+    for c in &ucmds {
+        println!("user: {}", c.join(" "));
+        let status = Proc::new(&c[0])
+            .args(&c[1..])
+            .status()
+            .map_err(|e| format!("cannot run {}: {e}", c[0]))?;
+        if !status.success() {
+            return Err(format!("{} failed ({status})", c.join(" ")));
+        }
+    }
+    println!("prepared: {} root command(s)", cmds.len());
+    // as kubeadm runs its checks, the verb that installed the share also exercises it
+    let (share_bad, _) = share_checks(st);
+    Ok(if st.missed.is_empty() && share_bad == 0 {
+        0
+    } else {
+        1
+    })
+}
+
+/// Installs each tool that is off its pin, by the steps its plan names.
+fn install_tools(st: &State, tools: Vec<ToolPlan>) -> Result<(), String> {
     for t in tools.into_iter().filter(|t| !t.ok()) {
         println!("tool {}: pinned {}", t.name, t.pinned);
         for s in &t.steps {
@@ -627,31 +688,7 @@ fn prepare(st: &State) -> Result<i32, String> {
             }
         }
     }
-    if unit.changed() {
-        if let Some(d) = Path::new(&unit.dst).parent() {
-            fs::create_dir_all(d).map_err(|e| format!("cannot make {}: {e}", d.display()))?;
-        }
-        replace_file(&unit.dst, unit.content.as_bytes(), 0o644)
-            .map_err(|e| format!("cannot write {}: {e}", unit.dst))?;
-    }
-    for c in &ucmds {
-        println!("user: {}", c.join(" "));
-        let status = Proc::new(&c[0])
-            .args(&c[1..])
-            .status()
-            .map_err(|e| format!("cannot run {}: {e}", c[0]))?;
-        if !status.success() {
-            return Err(format!("{} failed ({status})", c.join(" ")));
-        }
-    }
-    println!("prepared: {} root command(s)", cmds.len());
-    // as kubeadm runs its checks, the verb that installed the share also exercises it
-    let (share_bad, _) = share_checks(st);
-    Ok(if st.missed.is_empty() && share_bad == 0 {
-        0
-    } else {
-        1
-    })
+    Ok(())
 }
 
 /// Device nodes of `class` (block or tty) whose USB ancestor reports `serial`.
@@ -1232,4 +1269,391 @@ fn install_release(
 fn finish(work: &str, result: Result<(), String>) -> Result<(), String> {
     let _ = fs::remove_dir_all(work);
     result
+}
+
+/// `follow [now]`: a family release newer than lab.toml's pin is installed when no phone's keeper holds the lab,
+/// judged by its own `check` and `plan`, and its pin landed; a failing check or a release that needs root puts the
+/// previous programs back and lands nothing. Without `now` it only says what it would do.
+fn follow(st: &State, now: bool) -> Result<i32, String> {
+    let Some(ToolPin::Version(pinned)) = st.lab.tools.get("lpoco") else {
+        return Err("lab.toml pins no lpoco release: nothing to follow from".into());
+    };
+    let newest = newest_release(st)?;
+    let Some(newest) = newest.filter(|n| follow::is_newer(n, pinned)) else {
+        println!("up to date: lpoco {pinned} is the newest family release");
+        return Ok(0);
+    };
+    if !now {
+        println!("lpoco {pinned} is pinned, {newest} is released: `lpoco host follow now` installs it when no keeper holds a phone, checks it and lands the pin");
+        return Ok(0);
+    }
+    if waits_for_keeper(st, &newest) {
+        return Ok(0);
+    }
+    // everything that can be known before a program is touched
+    let staged = stage_lab(st, pinned, &newest)?;
+    preflight_landing(st)?;
+    let before = Judged::of(&host_program(st), &st.lab_path)?;
+    if !before.check_ok {
+        println!(
+            "waits: the host's own check fails now ({}); it is fixed before a release is followed",
+            before.check_tail
+        );
+        return Ok(1);
+    }
+    // the baseline took time: a keeper may have come
+    if waits_for_keeper(st, &newest) {
+        return Ok(0);
+    }
+    let previous = save_programs(&st.home)?;
+    println!("following: lpoco {pinned} -> {newest}");
+    let stepped_back = |why: String| {
+        restore_programs(&previous);
+        Err(format!(
+            "{why}; the programs of {pinned} are back and the pin stays"
+        ))
+    };
+    if let Err(why) = install_family(st, &newest) {
+        return stepped_back(why);
+    }
+    let after = Judged::of(&format!("{}/.local/bin/lpoco-host", st.home), &staged)?;
+    if !after.check_ok {
+        return stepped_back(format!(
+            "lpoco-host {newest} check failed: {}",
+            after.check_tail
+        ));
+    }
+    let Some(root) = after.root.clone() else {
+        return stepped_back(format!(
+            "lpoco-host {newest} plan did not answer (no root-commands section, or it failed): not applied"
+        ));
+    };
+    let new_root: Vec<&String> = root
+        .iter()
+        .filter(|c| !before.root.as_ref().is_some_and(|b| b.contains(c)))
+        .collect();
+    if !new_root.is_empty() {
+        return stepped_back(format!(
+            "release {newest} needs root ({}): not applied by the timer, say so to orchestration",
+            new_root
+                .iter()
+                .map(|c| c.as_str())
+                .collect::<Vec<_>>()
+                .join("; ")
+        ));
+    }
+    // a keeper that came during the install holds programs of two versions: step back, wait for the next window
+    if waits_for_keeper(st, &newest) {
+        restore_programs(&previous);
+        return Ok(0);
+    }
+    if let Err(why) = land_pin(st, pinned, &newest) {
+        return stepped_back(format!("the pin was not landed ({why})"));
+    }
+    restart_watchers(st);
+    println!("followed: lpoco {newest} is installed, checked, and its pin landed");
+    Ok(0)
+}
+
+/// What a host program says about the lab: whether its `check` passes, the tail of what it printed, and the root
+/// commands its `plan` lists (None when the plan failed or has no such section).
+struct Judged {
+    check_ok: bool,
+    check_tail: String,
+    root: Option<Vec<String>>,
+}
+
+impl Judged {
+    fn of(host: &str, lab: &str) -> Result<Judged, String> {
+        let run = |verb: &str| {
+            Proc::new(host)
+                .args([verb, "--lab", lab])
+                .output()
+                .map_err(|e| format!("cannot run {host} {verb}: {e}"))
+        };
+        let check = run("check")?;
+        let plan = run("plan")?;
+        Ok(Judged {
+            check_ok: check.status.success(),
+            check_tail: String::from_utf8_lossy(&check.stdout)
+                .lines()
+                .rev()
+                .take(3)
+                .collect::<Vec<_>>()
+                .join(" | "),
+            root: plan
+                .status
+                .success()
+                .then(|| follow::plan_root_commands(&String::from_utf8_lossy(&plan.stdout)))
+                .flatten(),
+        })
+    }
+}
+
+/// The installed host, else this very program.
+fn host_program(st: &State) -> String {
+    let installed = format!("{}/.local/bin/lpoco-host", st.home);
+    if Path::new(&installed).exists() {
+        installed
+    } else {
+        std::env::current_exe()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or(installed)
+    }
+}
+
+/// Says so and returns true when a phone's keeper holds the lab now.
+fn waits_for_keeper(st: &State, newest: &str) -> bool {
+    let held = follow::held_leases(&st.home, &st.found, &lease_age);
+    for (phone, who) in &held {
+        println!(
+            "waits: {who} keeps {phone}; release {newest} is installed in a window with no keeper"
+        );
+    }
+    !held.is_empty()
+}
+
+/// lab.toml with the pin moved, written where the new host reads it from.
+fn stage_lab(st: &State, pinned: &str, newest: &str) -> Result<String, String> {
+    let text = declared_lab_text(st)?;
+    let bumped = follow::bump_pin(&text, pinned, newest)
+        .ok_or_else(|| format!("{} has no line `lpoco = \"{pinned}\"` to move", st.lab_path))?;
+    let staged = format!("{}/.cache/lpoco-host/follow/lab.toml", st.home);
+    fs::write(&staged, &bumped).map_err(|e| format!("cannot write {staged}: {e}"))?;
+    Ok(staged)
+}
+
+/// The landing is possible before a program is touched: lab.toml lies in a clone that has an origin, and `land` is found.
+fn preflight_landing(st: &State) -> Result<(), String> {
+    let lab = Path::new(&st.lab_path);
+    let dir = lab.parent().unwrap_or(Path::new("."));
+    let origin = Proc::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["remote", "get-url", "origin"])
+        .output();
+    if !origin.is_ok_and(|o| o.status.success()) {
+        return Err(format!(
+            "{} is not in a clone with an origin: the pin could not be landed, nothing is changed",
+            st.lab_path
+        ));
+    }
+    if on_path(&st.path, "land").is_none() {
+        return Err(
+            "`land` is not on PATH: the pin could not be landed, nothing is changed".into(),
+        );
+    }
+    Ok(())
+}
+
+/// Restarts each enabled watcher: it runs the old `devlab` until it is.
+fn restart_watchers(st: &State) {
+    for i in enabled_watchers(st) {
+        let unit = format!("devlab-watch@{i}.service");
+        println!("user: systemctl --user restart {unit}");
+        let _ = Proc::new("systemctl")
+            .args(["--user", "restart", &unit])
+            .status();
+    }
+}
+
+fn newest_release(st: &State) -> Result<Option<String>, String> {
+    let work = format!("{}/.cache/lpoco-host/follow", st.home);
+    fs::create_dir_all(&work).map_err(|e| format!("cannot make {work}: {e}"))?;
+    let file = Path::new(&work).join("releases.json");
+    let _ = fs::remove_file(&file);
+    if !fetch(&st.releases_url, &file)? {
+        return Err(format!("{} has no releases list", st.releases_url));
+    }
+    let text =
+        fs::read_to_string(&file).map_err(|e| format!("cannot read {}: {e}", file.display()))?;
+    follow::newest_family_version(&text)
+}
+
+/// A keeper lease's holder and the time since its last renewal.
+fn lease_age(holder_file: &str) -> Option<(String, std::time::Duration)> {
+    let who = fs::read_to_string(holder_file).ok()?;
+    let age = fs::metadata(holder_file)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| std::time::SystemTime::now().duration_since(t).ok())
+        .unwrap_or_default();
+    Some((who.trim().to_string(), age))
+}
+
+/// The names the family's programs are installed under: each program and the second names of lpoco-lab and lpoco-tone.
+fn program_names() -> Vec<&'static str> {
+    FAMILY
+        .iter()
+        .copied()
+        .chain(OLD_NAMES.iter().map(|(old, _)| *old))
+        .collect()
+}
+
+/// Each program's path and what it held (None: it was not there).
+type Saved = Vec<(String, Option<Vec<u8>>)>;
+
+/// What each program in ~/.local/bin held before, kept to step back to; a program that was not there is None.
+fn save_programs(home: &str) -> Result<Saved, String> {
+    program_names()
+        .into_iter()
+        .map(|n| {
+            let to = format!("{home}/.local/bin/{n}");
+            match fs::read(&to) {
+                Ok(b) => Ok((to, Some(b))),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok((to, None)),
+                Err(e) => Err(format!("cannot keep {to} to step back to: {e}")),
+            }
+        })
+        .collect()
+}
+
+fn restore_programs(previous: &Saved) {
+    for (to, bytes) in previous {
+        match bytes {
+            Some(b) => {
+                if let Err(e) = replace_file(to, b, 0o755) {
+                    eprintln!("lpoco-host: cannot put {to} back: {e}");
+                }
+            }
+            None => {
+                let _ = fs::remove_file(to);
+            }
+        }
+    }
+}
+
+/// Installs the family's programs at release `newest`, each from its asset after the hash matches.
+fn install_family(st: &State, newest: &str) -> Result<(), String> {
+    let mut lab = st.lab.clone();
+    lab.tools
+        .insert("lpoco".into(), ToolPin::Version(newest.to_string()));
+    let tools: Vec<ToolPlan> = tools_for(
+        &lab,
+        &st.home,
+        &|n| version_found(&st.path, &st.home, n),
+        &|_| None,
+        &|_| false,
+        st.release_base.as_deref(),
+    )
+    .into_iter()
+    .filter(|t| FAMILY.contains(&t.name.as_str()))
+    .collect();
+    install_tools(st, tools)
+}
+
+/// lab.toml as origin's main has it when it is in a clone, else as the file lies.
+fn declared_lab_text(st: &State) -> Result<String, String> {
+    declared_text(Path::new(&st.lab_path)).map(|(t, _)| t)
+}
+
+/// Lands the pin: a fresh clone of the lab's repository, one commit on a branch of its own signed lab-host-follow,
+/// and `land` (which checks it, merges it and reads main back).
+fn land_pin(st: &State, pinned: &str, newest: &str) -> Result<(), String> {
+    let lab = Path::new(&st.lab_path);
+    let dir = lab.parent().unwrap_or(Path::new("."));
+    let git = |dir: &Path, args: &[&str]| -> Result<String, String> {
+        let o = Proc::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args([
+                "-c",
+                &format!("user.name={}", follow::SIGNER),
+                "-c",
+                &format!("user.email={}@localhost", follow::SIGNER),
+            ])
+            .args(args)
+            .output()
+            .map_err(|e| format!("cannot run git: {e}"))?;
+        if o.status.success() {
+            Ok(String::from_utf8_lossy(&o.stdout).trim().to_string())
+        } else {
+            Err(format!(
+                "git {}: {}",
+                args.join(" "),
+                String::from_utf8_lossy(&o.stderr).trim()
+            ))
+        }
+    };
+    let top = PathBuf::from(git(dir, &["rev-parse", "--show-toplevel"])?);
+    let rel = lab
+        .canonicalize()
+        .map_err(|e| format!("{}: {e}", lab.display()))?;
+    let rel = rel
+        .strip_prefix(top.canonicalize().map_err(|e| e.to_string())?)
+        .map_err(|_| "lab.toml is outside its repository".to_string())?
+        .to_path_buf();
+    let origin = git(&top, &["remote", "get-url", "origin"])?;
+    let work = PathBuf::from(format!("{}/.cache/lpoco-host/follow/pin", st.home));
+    let _ = fs::remove_dir_all(&work);
+    git(
+        Path::new("."),
+        &["clone", "--quiet", &origin, &work.to_string_lossy()],
+    )?;
+    let branch = format!("lab-host-follow-{newest}");
+    git(&work, &["checkout", "-q", "-b", &branch])?;
+    let file = work.join(&rel);
+    let text =
+        fs::read_to_string(&file).map_err(|e| format!("cannot read {}: {e}", file.display()))?;
+    let bumped = follow::bump_pin(&text, pinned, newest).ok_or_else(|| {
+        format!(
+            "main's {} has no line `lpoco = \"{pinned}\"`: someone moved the pin",
+            rel.display()
+        )
+    })?;
+    fs::write(&file, bumped).map_err(|e| format!("cannot write {}: {e}", file.display()))?;
+    git(
+        &work,
+        &[
+            "commit",
+            "-q",
+            "-am",
+            &format!("chore(lab): follow the family to lpoco {newest}"),
+        ],
+    )?;
+    let status = Proc::new("land")
+        .current_dir(&work)
+        .status()
+        .map_err(|e| format!("cannot run land: {e}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("land failed ({status})"))
+    }
+}
+
+/// The user units that run `follow`, when lab.toml declares `[follow]`: the timer, the service it starts, and the
+/// user commands (no root) that make them known and start the timer.
+fn follow_units(st: &State) -> Option<(Vec<FileChange>, Vec<Vec<String>>)> {
+    let every = &st.lab.follow.as_ref()?.every;
+    let dir = format!("{}/.config/systemd/user", st.home);
+    let unit = |name: &str, content: String| {
+        let dst = format!("{dir}/{name}");
+        FileChange {
+            seen: fs::read_to_string(&dst).ok().into(),
+            content,
+            serials: vec![],
+            dst,
+        }
+    };
+    let files = vec![
+        unit(follow::FOLLOW_TIMER, follow::timer_text(every)),
+        unit(follow::FOLLOW_SERVICE, follow::service_text()),
+    ];
+    let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+    let mut cmds = Vec::new();
+    if files.iter().any(FileChange::changed) {
+        cmds.push(s(&["systemctl", "--user", "daemon-reload"]));
+    }
+    let wanted = format!("{dir}/timers.target.wants/{}", follow::FOLLOW_TIMER);
+    if files.iter().any(FileChange::changed) || !Path::new(&wanted).exists() {
+        cmds.push(s(&[
+            "systemctl",
+            "--user",
+            "enable",
+            "--now",
+            follow::FOLLOW_TIMER,
+        ]));
+    }
+    Some((files, cmds))
 }

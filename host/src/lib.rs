@@ -3,6 +3,7 @@
 //! Two declarations: the lab's own (`lab.toml`: its devices, its root prefix, its tools at pins) and each
 //! device's `[host]` table in its `device.toml` (decision 2026-11-17-lpoco-host).
 
+pub mod follow;
 pub mod share;
 
 use serde::Deserialize;
@@ -62,7 +63,7 @@ impl Devices {
     }
 }
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Deserialize, Debug, Default, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct Lab {
     pub devices: Option<Devices>,
@@ -71,6 +72,15 @@ pub struct Lab {
     pub gadget_group: Option<String>,
     #[serde(default)]
     pub tools: BTreeMap<String, ToolPin>,
+    /// `[follow]`: the host follows the family's releases by itself (`lpoco host follow`, run by a user timer).
+    pub follow: Option<Follow>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct Follow {
+    /// How often the timer looks, as systemd says it: `15min`.
+    pub every: String,
 }
 
 pub use lpoco_manifest::{Access, Gadget, HostTable};
@@ -1123,6 +1133,9 @@ fn full_version(v: &str) -> bool {
 }
 
 fn validate_lab(lab: &Lab) -> Result<(), String> {
+    if let Some(f) = &lab.follow {
+        follow::valid_every(&f.every)?;
+    }
     if let Some(g) = &lab.gadget_group {
         safe_word("gadget_group", g)?;
     }
