@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.3](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-health-v0.37.2...lpoco-health-v0.37.3) - 2026-11-19
+
+### Added
+
+- *(attended)* a settling group settles the way backs of finished groups; leave_known_good is one ([#302](https://github.com/linux-phone-oco/lab-tools/pull/302))
+
 ## [0.37.2](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-health-v0.37.1...lpoco-health-v0.37.2) - 2026-11-19
 
 ### Added

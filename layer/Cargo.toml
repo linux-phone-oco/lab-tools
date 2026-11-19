@@ -1,7 +1,7 @@
 [package]
 name = "lpoco-layer"
 # the family is released together: one version with lpoco and every lpoco-* program (release-plz.toml, version_group)
-version = "0.37.2"
+version = "0.37.3"
 edition = "2021"
 description = "lpoco layer: a phone's device layer, declared once in device.toml [layer], packed into apk, deb, rpm and archlinux packages through nfpm"
 license = "MIT OR Apache-2.0"
