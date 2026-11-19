@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.2](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-ffs-acm-v0.21.1...lpoco-ffs-acm-v0.21.2) - 2026-11-19
+
+### Added
+
+- *(bringup)* dt-check binding|dtbs, the kernel's devicetree checks in a digest-pinned container ([#199](https://github.com/linux-phone-oco/lab-tools/pull/199))
+
 ## [0.21.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-ffs-acm-v0.21.0...lpoco-ffs-acm-v0.21.1) - 2026-11-19
 
 ### Added
