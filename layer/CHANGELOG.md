@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.34.2](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-layer-v0.34.1...lpoco-layer-v0.34.2) - 2026-11-19
+
+### Added
+
+- *(lab)* lpoco-lab manifest check reads a device.toml as the host does, writing nothing ([#287](https://github.com/linux-phone-oco/lab-tools/pull/287))
+
 ## [0.34.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-layer-v0.34.0...lpoco-layer-v0.34.1) - 2026-11-19
 
 ### Added
