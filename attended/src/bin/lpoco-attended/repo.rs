@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 const FILE: &str = "device.toml";
 
 pub struct Repo {
+    pub manifest: PathBuf,
     pub root: PathBuf,
     pub codename: String,
 }
@@ -47,7 +48,11 @@ pub fn find(given: Option<&str>) -> Result<Repo, String> {
         .parent()
         .expect("a file has a folder")
         .to_path_buf();
-    Ok(Repo { root, codename })
+    Ok(Repo {
+        manifest,
+        root,
+        codename,
+    })
 }
 
 /// A procedure's name is a file name: lowercase words, digits and hyphens, nothing that climbs or hides.

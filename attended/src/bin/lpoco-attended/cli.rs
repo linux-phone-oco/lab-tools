@@ -2,9 +2,10 @@
 //! lpoco-attended's invocation surface, declared once with argenv. Run as `lpoco attended ...`.
 //!
 //!   lpoco-attended new NAME [--device FILE]          write procedures/NAME.rs for the repo's device, ready to run
-//!   lpoco-attended run NAME [--dry-run] [--log FILE] [--device FILE] [--until FIRST_PROMPT] [--part NAME]
+//!   lpoco-attended run NAME [--dry-run] [--log FILE] [--device FILE] [--until FIRST_PROMPT] [--part NAME] [--call-limit SECONDS]
 //!                                                    run procedures/NAME.rs; the options go to the procedure as given
-//!   lpoco-attended check                             dry-run every procedure; exit 1 naming each that fails
+//!   lpoco-attended check [--host]                    dry-run every procedure; exit 1 naming each that fails;
+//!                                                    --host also runs the installed devlab on the manifest (read-only, cut after 30 s)
 //!   lpoco-attended --version                         this program's version (the lpoco family's one version)
 
 use argenv_resolve::*;
@@ -83,6 +84,15 @@ contract! {
         ..Input::EMPTY
     };
 
+    HOST: bool = Input {
+        key: "host",
+        ty: Type::Bool,
+        default: Some(false),
+        arg: Some(Arg::long("host")),
+        summary: "check: also run the installed devlab on the manifest (a read-only call); a procedure is ready only when the lab's own tools read its device.toml.",
+        ..Input::EMPTY
+    };
+
     UNTIL: String = Input {
         key: "until",
         ty: Type::Enum,
@@ -116,6 +126,14 @@ contract! {
         ..Input::EMPTY
     };
 
+    DEVLAB: String = Input {
+        key: "devlab",
+        ty: Type::String,
+        env: Some(Env::new("LPOCO_ATTENDED_DEVLAB")),
+        summary: "check --host: the devlab program to try (devlab when none is given); a test points it at a stand-in.",
+        ..Input::EMPTY
+    };
+
     LIB: String = Input {
         key: "lib",
         ty: Type::String,
@@ -146,7 +164,7 @@ contract! {
 /// The usage `--help` prints, read from the declaration above.
 pub fn usage(name: &str) -> String {
     let mut out = format!(
-        "Usage: {name} new NAME | run NAME [OPTIONS] | check\n\nA device repo's attended procedures, procedures/NAME.rs: scaffold one, run one, dry-run them all.\n"
+        "Usage: {name} new NAME | run NAME [OPTIONS] | check [--host]\n\nA device repo's attended procedures, procedures/NAME.rs: scaffold one, run one, dry-run them all.\n"
     );
     let mut args = String::new();
     let mut envs = String::new();
