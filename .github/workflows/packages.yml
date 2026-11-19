@@ -1,24 +1,21 @@
 name: Packages
 
-# A signed Alpine repository on GitHub Pages - lpoco-health and sxmo-utils for postmarketOS phones -
-# rebuilt after every lpoco-health release, or when an sxmo-utils-v tag is pushed (or by hand), so a
-# phone's apk upgrade brings both with the rest of its system. Building, signing, checking,
+# A signed Alpine repository on GitHub Pages - lpoco-health for postmarketOS phones -
+# rebuilt after every lpoco-health release (or by hand), so a
+# phone's apk upgrade brings it with the rest of its system. Building, signing, checking,
 # publishing and a real install live in the package conveyor; this repository keeps its declarations
-# (packaging/conveyor.toml, packaging/sxmo-utils/conveyor.toml), its APKBUILDs and its public key.
-# The private key is the secret APK_SIGNING_KEY, given to the one conveyor step that signs. Both packages
-# are one repository, so their jobs run one after the other: each keeps what the other published.
-# Tags: lpoco-health-v* are release-plz's (release-plz.toml); sxmo-utils-v* are made by hand, once per
-# lab tag of grenudi/sxmo-utils, and equal the APKBUILD's pkgver.
+# (packaging/conveyor.toml), its APKBUILDs and its public key.
+# The private key is the secret APK_SIGNING_KEY, given to the one conveyor step that signs.
+# Tags: lpoco-health-v* are release-plz's (release-plz.toml). The sxmo-utils-v* tags stay, unused; sxmo-utils is
+# Alpine community's now.
 on:
   workflow_run:
     workflows: [Release]
     types: [completed]
-  push:
-    tags: ['sxmo-utils-v*']
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag to publish (default - the newest lpoco-health-v and sxmo-utils-v tags, both)
+        description: Release tag to publish (default - the newest lpoco-health-v tag)
         required: false
 
 permissions:
@@ -36,7 +33,6 @@ jobs:
     timeout-minutes: 10
     outputs:
       health: ${{ steps.tag.outputs.health }}
-      shell: ${{ steps.tag.outputs.shell }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -51,7 +47,7 @@ jobs:
         run: |
           git fetch --tags --force
           newest() { git tag --list "$1" --sort=-v:refname | head -n1; }
-          health=""; shell=""
+          health=""
           case "$EVENT" in
             push) given="$REF_NAME" ;;
             workflow_dispatch) given="$INPUT_TAG" ;;
@@ -59,13 +55,11 @@ jobs:
           esac
           case "$given" in
             lpoco-health-v*) health="$given" ;;
-            sxmo-utils-v*) shell="$given" ;;
-            "") if [ "$EVENT" = workflow_dispatch ]; then health="$(newest 'lpoco-health-v*')"; shell="$(newest 'sxmo-utils-v*')"; fi ;;
-            *) echo "a tag that is neither lpoco-health-v nor sxmo-utils-v: $given" >&2; exit 1 ;;
+            "") if [ "$EVENT" = workflow_dispatch ]; then health="$(newest 'lpoco-health-v*')"; fi ;;
+            *) echo "a tag that is not an lpoco-health-v: $given" >&2; exit 1 ;;
           esac
           echo "health=$health" >> "$GITHUB_OUTPUT"
-          echo "shell=$shell" >> "$GITHUB_OUTPUT"
-          echo "release tags: lpoco-health ${health:-none}, sxmo-utils ${shell:-none}"
+          echo "release tags: lpoco-health ${health:-none}"
   alpine:
     name: the package conveyor - lpoco-health
     needs: tag
@@ -77,20 +71,5 @@ jobs:
     uses: linux-package-distribution-oco/conveyor/.github/workflows/alpine.yml@v1
     with:
       tag: ${{ needs.tag.outputs.health }}
-    secrets:
-      APK_SIGNING_KEY: ${{ secrets.APK_SIGNING_KEY }}
-  alpine-sxmo-utils:
-    name: the package conveyor - sxmo-utils
-    # after lpoco-health's job (the pages are one repository), whether or not that job ran
-    needs: [tag, alpine]
-    if: ${{ !cancelled() && needs.alpine.result != 'failure' && needs.tag.outputs.shell != '' }}
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-    uses: linux-package-distribution-oco/conveyor/.github/workflows/alpine.yml@v1
-    with:
-      tag: ${{ needs.tag.outputs.shell }}
-      declaration: packaging/sxmo-utils/conveyor.toml
     secrets:
       APK_SIGNING_KEY: ${{ secrets.APK_SIGNING_KEY }}

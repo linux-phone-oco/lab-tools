@@ -97,9 +97,7 @@ marks) to `lpoco-health` and leaves `devlab-health` as another name of the progr
 The package is released by release-plz (a `lpoco-health-vX.Y.Z` tag) and published by the package
 conveyor (`packaging/`, `.github/workflows/packages.yml`) at https://linux-phone-oco.github.io/lab-tools/,
 for postmarketOS v26.06 (Alpine 3.24): any postmarketOS phone can take it with the lines on that page.
-The same page holds `sxmo-utils`, our fork's lab build of the phone's shell (`packaging/sxmo-utils/`): it is
-published when a tag `sxmo-utils-v<pkgver>` (the APKBUILD's `pkgver`, made by hand once per lab tag of
-grenudi/sxmo-utils; release-plz does not make it) is pushed, and each package is kept when the other is rebuilt.
+sxmo-utils is not built here any more: surya runs Alpine community's own (its `sxmo-utils-v*` tags stay in history).
 
 `lpoco lab kernel install NAME VMLINUZ DTB MODULES.tgz | try NAME | log | remove NAME` - the safe test-kernel boot (one try by boot
 counting, a stalled boot saves its log and falls back to stock), proven on surya.
@@ -299,5 +297,5 @@ prepare never edits or removes it. An old `devlab`/`tone` first on PATH that is 
 
 Our tools are MIT OR Apache-2.0, at your option: [`LICENSE-MIT`](LICENSE-MIT), [`LICENSE-APACHE`](LICENSE-APACHE). Source files say so in
 an `SPDX-License-Identifier` header; the rest is annotated by path in [`REUSE.toml`](REUSE.toml), and `.github/licence-check` (run by CI)
-keeps new files covered. Third-party packaging keeps its own licence: `packaging/sxmo-utils` is AGPL-3.0-only, as its APKBUILD says.
+keeps new files covered.
 The device-tree fixture is GPL-2.0-only OR BSD-2-Clause, the kernel's dual licence for device trees. Texts of the other licences: `LICENSES/`.
