@@ -277,3 +277,49 @@ pub fn nfpm_yaml(
     }
     Ok(y)
 }
+
+/// What would make a package wrong, said before anything is written: kernel-install without a dtb to name, and
+/// initramfs module names that are not one word of kernel-module characters (they go into a shell hook and a config line).
+pub fn check(layer: &Layer, format: Format) -> Result<(), String> {
+    if let Some(b) = &layer.boot {
+        if b.method == BootMethod::EfiKernelInstall
+            && layer.kernel.as_ref().is_none_or(|k| k.dtbs.is_empty())
+        {
+            return Err(
+                "boot method efi-kernel-install needs [layer.kernel] dtbs: it names the devicetree"
+                    .into(),
+            );
+        }
+    }
+    // apk makes no boot package, so its modules are written nowhere
+    if let (Some(i), false) = (&layer.initramfs, format == Format::Apk) {
+        for m in &i.modules {
+            if m.is_empty()
+                || !m
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+            {
+                return Err(format!(
+                    "initramfs module {m:?} is not a kernel module name (letters, digits, _ and - only)"
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Packages of this layer's name that an earlier run left in `out` and this run does not make (its `-boot`
+/// when the layer has no boot glue now); the caller removes them so nobody installs a stale one.
+pub fn stale(layer: &Layer, format: Format, version: &str, out: &Path) -> Vec<PathBuf> {
+    let made: Vec<String> = packages(layer, format)
+        .into_iter()
+        .map(|p| p.name)
+        .collect();
+    ["config", "boot"]
+        .iter()
+        .map(|s| format!("{}-{s}", layer.name))
+        .filter(|n| !made.contains(n))
+        .map(|n| out.join(format.file_name(&n, version)))
+        .filter(|p| p.exists())
+        .collect()
+}

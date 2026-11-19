@@ -5,7 +5,7 @@ mod cli;
 
 use argenv_resolve::{InputResolveExt, OnProblems};
 use cli::Contract;
-use lpoco_layer::{materialize, nfpm_yaml, packages, Format};
+use lpoco_layer::{check, materialize, nfpm_yaml, packages, stale, Format};
 use lpoco_manifest::Manifest;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -61,11 +61,16 @@ fn pack(r: &argenv_resolve::Resolution) -> Result<(), String> {
         .to_path_buf();
     let dir = std::path::absolute(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let out = std::path::absolute(&out).map_err(|e| format!("{}: {e}", out.display()))?;
+    check(layer, format).map_err(|e| format!("{}: {e}", manifest.display()))?;
     let pkgs = packages(layer, format);
     if pkgs.is_empty() {
         return Err("the layer holds no file to pack".into());
     }
     fs::create_dir_all(&out).map_err(|e| format!("{}: {e}", out.display()))?;
+    for old in stale(layer, format, &version, &out) {
+        fs::remove_file(&old).map_err(|e| format!("{}: {e}", old.display()))?;
+        eprintln!("lpoco-layer: removed the stale {}", old.display());
+    }
     let stage = out.join("stage");
     for p in &pkgs {
         let entries = materialize(p, &dir, &stage)?;
