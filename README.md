@@ -148,6 +148,10 @@ The ways every project shares - no git push to main, no Python, the practices an
 session start - are the hooks of the ideal-agent plugin (https://github.com/grenudi/ideal-agent), installed
 on the lab since 2026-11-17; devlab keeps only what is its phone's.
 
+### How the phone is reached
+
+`[connection]` says how (decision 2026-11-19-phone-reached-by-its-declared-transport): `transport = "ssh"` (the default: the phone user's password from `PHONE_PASS` or `~/.config/devlab/CODENAME/password`, sudo for root), `"telnet"` (the phone's own shell at `shell_address` (else the first address) and `shell_port`, no login, a script run as it is) or `"adb"` (`adb -s SERIAL shell`, the serial being `[fastboot] serial`, else the first `[[host.gadget]]` serial; `addresses = []` is fine). `login = "password"` (ssh) or `"none"` (telnet, adb) follows the transport and may be left out; a pair that cannot work is refused. `lpoco lab phone sh|root|put` and `lpoco lab suite` go through it: on a device with no login `suite` says `not applicable: device.toml declares no login` (exit 0 for `latest` and `list`, 2 for the rest) and asks for no password. Limits: over telnet and adb `root` is the same shell as `sh` (adb's shell is the phone's `shell` user unless adbd runs as root), a script must not exit the shell or read standard input over telnet, and a file is not carried over telnet. Not yet through the transport: `boot_once` by `fastboot boot`, the `lpoco-attended` library steps.
+
 A phone's addresses are the ones devlab has met: every manifest it loads leaves its addresses in
 `~/.local/state/devlab/CODENAME/addresses`, beside the Wi-Fi address it learned. In the lab's
 `~/.claude/settings.json`:

@@ -84,6 +84,9 @@ impl Manifest {
                 id.make_ascii_lowercase();
             }
         }
+        if let Some(c) = &m.connection {
+            c.validate()?;
+        }
         if let Some(i) = &m.images {
             i.validate()?;
         }
@@ -483,6 +486,12 @@ pub struct Identity {
 #[derive(Debug, Clone, Deserialize, PartialEq, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Connection {
+    /// How the phone is reached: ssh (as it always was), telnet on `shell_address`:`shell_port`, or adb by the
+    /// phone's serial ([fastboot] or the first [[host.gadget]])
+    #[serde(default)]
+    pub transport: Transport,
+    /// Whether the phone has a login: password (ssh, the default) or none (telnet, adb: the default there)
+    pub login: Option<Login>,
     pub user: String,
     /// Addresses to try, in order (USB networking first, as a rule)
     pub addresses: Vec<String>,
@@ -490,6 +499,45 @@ pub struct Connection {
     pub shell_port: Option<u16>,
     /// The address that shell answers on, where it is not the first of `addresses`
     pub shell_address: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum Transport {
+    #[default]
+    Ssh,
+    Telnet,
+    Adb,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum Login {
+    Password,
+    None,
+}
+
+impl Connection {
+    /// The login this phone has: what is declared, else what the transport implies (ssh asks a password;
+    /// telnet and adb reach a shell that asks none).
+    pub fn login(&self) -> Login {
+        self.login.unwrap_or(match self.transport {
+            Transport::Ssh => Login::Password,
+            Transport::Telnet | Transport::Adb => Login::None,
+        })
+    }
+
+    fn validate(&self) -> Result<(), String> {
+        match (self.transport, self.login()) {
+            (Transport::Ssh, Login::None) => Err("connection: transport ssh has a password login; login = none is for telnet and adb".into()),
+            (Transport::Adb, Login::Password) => Err("connection: transport adb has no login; say login = none or leave it out".into()),
+            (Transport::Telnet, Login::Password) => Err("connection: transport telnet has no login; say login = none or leave it out".into()),
+            (Transport::Telnet, Login::None) if self.shell_port.is_none() => {
+                Err("connection: transport telnet needs shell_port, the port its shell answers on".into())
+            }
+            _ => Ok(()),
+        }
+    }
 }
 
 /// The tones the lab's ear listens for (`devlab hear`); none named means one on each side. How loud
