@@ -574,6 +574,8 @@ version = "0.31.0"
 dependencies = [
  "argenv-resolve",
  "lpoco-manifest",
+ "serde",
+ "toml",
 ]
 
 [[package]]

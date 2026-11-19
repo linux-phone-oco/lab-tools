@@ -1,0 +1,171 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! lpoco-attended (run as `lpoco attended ...`): a device repo's procedures/NAME.rs, scaffolded, run and
+//! dry-run by name (decision 2026-11-19-procedures-one-shape). See cli.rs for the invocation surface.
+
+mod cli;
+mod repo;
+mod template;
+
+use argenv_resolve::{InputResolveExt, OnProblems, Resolution};
+use cli::{Contract, Verb};
+use std::path::Path;
+use std::process::Command;
+
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+fn main() {
+    let r = Contract::parse_and_lint(OnProblems::FailOnError);
+    if Contract::HELP.get_from(&r).unwrap_or(false) {
+        print!("{}", cli::usage("lpoco-attended"));
+        return;
+    }
+    if Contract::VERSION.get_from(&r).unwrap_or(false) {
+        println!("lpoco-attended {VERSION}");
+        return;
+    }
+    let code = run(&r).unwrap_or_else(|e| {
+        eprintln!("lpoco-attended: {e}");
+        2
+    });
+    std::process::exit(code);
+}
+
+fn run(r: &Resolution) -> Result<i32, String> {
+    let verb = Contract::VERB
+        .get_from(r)
+        .ok_or("usage: lpoco attended new NAME | run NAME [--dry-run] | check")?;
+    let device = Contract::DEVICE.get_from(r);
+    let repo = repo::find(device.as_deref())?;
+    let rust_script = Contract::RUST_SCRIPT
+        .get_from(r)
+        .unwrap_or_else(|| "rust-script".into());
+    match verb {
+        Verb::New => new(r, &repo),
+        Verb::Run => run_one(r, &repo, &rust_script),
+        Verb::Check => check(&repo, &rust_script, device.as_deref()),
+    }
+}
+
+fn name_of(r: &Resolution) -> Result<String, String> {
+    let name = Contract::NAME
+        .get_from(r)
+        .ok_or("a procedure NAME is needed (lpoco attended new|run NAME)")?;
+    repo::valid_name(&name)?;
+    Ok(name)
+}
+
+fn new(r: &Resolution, repo: &repo::Repo) -> Result<i32, String> {
+    let name = name_of(r)?;
+    let file = repo.procedure(&name);
+    if file.exists() {
+        return Err(format!(
+            "{} already exists; nothing written",
+            file.display()
+        ));
+    }
+    let lib = Contract::LIB.get_from(r);
+    let text = template::procedure(&name, &repo.codename, lib.as_deref(), repo.steps_crate()?);
+    write_new(&file, &text).map_err(|e| format!("cannot write {}: {e}", file.display()))?;
+    println!(
+        "wrote {}: try  lpoco attended run {name} --dry-run",
+        file.display()
+    );
+    Ok(0)
+}
+
+/// The options a run hands the procedure, in the order its own `--help` lists them.
+fn passed_on(r: &Resolution) -> Vec<String> {
+    let mut a = Vec::new();
+    if Contract::DRY_RUN.get_from(r).unwrap_or(false) {
+        a.push("--dry-run".to_string());
+    }
+    for (flag, v) in [
+        ("--log", Contract::LOG.get_from(r)),
+        ("--device", Contract::DEVICE.get_from(r)),
+        ("--until", Contract::UNTIL.get_from(r)),
+        ("--part", Contract::PART.get_from(r)),
+    ] {
+        if let Some(v) = v {
+            a.push(flag.to_string());
+            a.push(v);
+        }
+    }
+    a
+}
+
+fn run_one(r: &Resolution, repo: &repo::Repo, rust_script: &str) -> Result<i32, String> {
+    let name = name_of(r)?;
+    let file = repo.existing(&name)?;
+    let status = Command::new(rust_script)
+        .arg(&file)
+        .args(passed_on(r))
+        .status()
+        .map_err(|e| format!("cannot run {rust_script}: {e}"))?;
+    Ok(status.code().unwrap_or(1))
+}
+
+fn check(repo: &repo::Repo, rust_script: &str, device: Option<&str>) -> Result<i32, String> {
+    let names = repo.procedures()?;
+    let mut failed = 0;
+    let dir = scratch_dir()?;
+    for name in &names {
+        let log = dir.join(format!("{name}.log"));
+        let out = dry_run(rust_script, &repo.procedure(name), &log, device)?;
+        if out.status.success() {
+            println!("{name}: ok");
+        } else {
+            failed += 1;
+            println!("{name}: FAILED (exit {})", out.status.code().unwrap_or(-1));
+            for line in String::from_utf8_lossy(&out.stdout)
+                .lines()
+                .chain(String::from_utf8_lossy(&out.stderr).lines())
+            {
+                println!("    {line}");
+            }
+        }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+    Ok(if failed == 0 { 0 } else { 1 })
+}
+
+fn dry_run(
+    rust_script: &str,
+    file: &Path,
+    log: &Path,
+    device: Option<&str>,
+) -> Result<std::process::Output, String> {
+    Command::new(rust_script)
+        .arg(file)
+        .args(["--dry-run", "--log"])
+        .arg(log)
+        .args(device.into_iter().flat_map(|d| ["--device", d]))
+        .output()
+        .map_err(|e| format!("cannot run {rust_script}: {e}"))
+}
+
+/// Write `text` as a new, runnable file: never through an existing file or a link, mode 0755 (it has a shebang).
+fn write_new(file: &Path, text: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    std::fs::create_dir_all(file.parent().expect("a file in procedures/"))?;
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o755)
+        .open(file)?
+        .write_all(text.as_bytes())
+}
+
+/// A folder of this run's own for the throw-away logs: made new (never one that was there), so a planted link is never followed.
+fn scratch_dir() -> Result<std::path::PathBuf, String> {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let dir = std::env::temp_dir().join(format!(
+        "lpoco-attended-check-{}-{stamp}",
+        std::process::id()
+    ));
+    std::fs::create_dir(&dir).map_err(|e| format!("cannot make {}: {e}", dir.display()))?;
+    Ok(dir)
+}
