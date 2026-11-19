@@ -45,9 +45,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 pub mod prelude {
     pub use crate::bench::{bench, Act, ActKind, Bench};
     pub use crate::{
-        ask_author, check, confirm, dev, hold_button, listen_for, look_for, part, phone,
-        press_power, proc, procedure, replug_usb, retry, run_step, step, swipe, touch,
-        unknown_part, unplug_usb, Outcome, Step, Val,
+        ask_author, check, confirm, dev, group, hold_button, listen_for, look_for, part, phone,
+        press_power, proc, procedure, replug_usb, retry, run_group, run_step, step, swipe, touch,
+        unknown_part, unplug_usb, Group, Item, Kind, Outcome, Step, Val,
     };
 }
 
@@ -185,6 +185,8 @@ struct State {
     from_reached: bool,
     /// how many steps `--from` skipped
     skipped: u32,
+    /// the names of the groups being run, outermost first: a step is logged under them
+    groups: Vec<String>,
 }
 
 static CONFIG: OnceLock<Config> = OnceLock::new();
@@ -197,7 +199,15 @@ static STATE: Mutex<State> = Mutex::new(State {
     seen: Vec::new(),
     from_reached: false,
     skipped: 0,
+    groups: Vec::new(),
 });
+
+thread_local! {
+    /// the way backs of the groups now open that no step has started yet (a group skipped whole owes none)
+    static PENDING: std::cell::RefCell<Vec<Option<Step>>> = const { std::cell::RefCell::new(Vec::new()) };
+    /// the way backs owed: a step of their group has begun; run in reverse order when the run fails
+    static OWED: std::cell::RefCell<Vec<Step>> = const { std::cell::RefCell::new(Vec::new()) };
+}
 
 fn config() -> &'static Config {
     CONFIG
@@ -400,10 +410,14 @@ pub fn run_step(s: Step) {
     let n = {
         let mut st = STATE.lock().unwrap_or_else(|e| e.into_inner());
         st.n += 1;
-        st.step = s.name.clone();
+        st.step = label(&st.groups, &s.name);
         st.n
     };
     let (kind, name) = (s.kind.word(), s.name.clone());
+    let (indent, path) = {
+        let st = STATE.lock().unwrap_or_else(|e| e.into_inner());
+        ("  ".repeat(st.groups.len()), label(&st.groups, &s.name))
+    };
     // whether an earlier step has this very name: a --from would then start at the earlier one
     let repeated = {
         let mut st = STATE.lock().unwrap_or_else(|e| e.into_inner());
@@ -417,8 +431,8 @@ pub fn run_step(s: Step) {
             st.step.clear();
             st.skipped += 1;
             drop(st);
-            println!("{kind} {n}: {name} - skipped (before --from)");
-            note("skip", &name, "before --from");
+            println!("{indent}{kind} {n}: {name} - skipped (before --from)");
+            note("skip", &path, "before --from");
             return;
         }
         st.from_reached = true;
@@ -457,10 +471,10 @@ pub fn run_step(s: Step) {
             .doer
             .as_deref()
             .map_or(String::new(), |d| format!(" (by {d})"));
-        println!("{kind} {n}: {name} - dry run, not run{by}");
+        println!("{indent}{kind} {n}: {name} - dry run, not run{by}");
         note(
             "dry",
-            &name,
+            &path,
             &format!(
                 "{kind}{}",
                 s.id.as_deref()
@@ -476,18 +490,171 @@ pub fn run_step(s: Step) {
         .as_deref()
         .filter(|d| *d != bench::PERSON)
         .map_or(String::new(), |d| format!(" by {d}"));
-    println!("{kind} {n}: {name}{by}");
-    note("begin", &name, &format!("{kind}{by}"));
-    let result = s.execute();
+    arm_way_backs();
+    println!("{indent}{kind} {n}: {name}{by}");
+    note("begin", &path, &format!("{kind}{by}"));
+    // a step that panics fails like one that returns an error: the way backs owed must still run
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| s.execute()))
+        .unwrap_or_else(|_| {
+            note("PANIC", &path, "the step panicked; the way backs owed run");
+            Err("the step panicked".to_string())
+        });
     STATE.lock().unwrap_or_else(|e| e.into_inner()).step.clear();
     match result {
-        Ok(()) => note("ok", &name, ""),
+        Ok(()) => note("ok", &path, ""),
         Err(why) => {
-            note("FAIL", &name, &why);
-            eprintln!("{}: stopped at {kind} {n} {name:?}: {why}", c.name);
-            std::process::exit(1);
+            note("FAIL", &path, &why);
+            let within = if path == name {
+                String::new()
+            } else {
+                format!(
+                    " in {}",
+                    path.strip_suffix(&format!(" > {name}")).unwrap_or(&path)
+                )
+            };
+            eprintln!("{}: stopped at {kind} {n} {name:?}{within}: {why}", c.name);
+            leave_failed();
         }
     }
+}
+
+/// What a group holds: a step, or a group inside it.
+pub enum Item {
+    Step(Step),
+    Group(Group),
+}
+
+impl From<Step> for Item {
+    fn from(s: Step) -> Item {
+        Item::Step(s)
+    }
+}
+
+impl From<Group> for Item {
+    fn from(g: Group) -> Item {
+        Item::Group(g)
+    }
+}
+
+/// Steps that go together under one name: one line in the entry file, logged under that name, listed nested by
+/// `--dry-run`, named by `--from`. It may carry a way back ([`Group::way_back`]).
+pub struct Group {
+    name: String,
+    items: Vec<Item>,
+    way_back: Option<Step>,
+}
+
+/// A named group of steps (or of groups): `run_group(group("reach the phone", [a, b]))`. A mix of steps and groups
+/// takes `Item::from` on each (`[Item::from(step), Item::from(inner_group)]`).
+pub fn group<I: Into<Item>>(name: &str, items: impl IntoIterator<Item = I>) -> Group {
+    Group {
+        name: name.to_string(),
+        items: items.into_iter().map(Into::into).collect(),
+        way_back: None,
+    }
+}
+
+impl Group {
+    /// What to do when the run fails after this group's first step began: the step runs once, after the failing
+    /// step, with the way backs of the other groups open or finished, the last to begin first. A run that passes
+    /// runs none; a group skipped whole by `--from` owes none; a way back that fails is named and the others
+    /// still run. A group that has finished still owes its way back (a later group that undoes it, like
+    /// `leave_known_good`, does not cancel it); `--until FIRST_PROMPT` runs none, and `--from` arms the group again at
+    /// its first step run. A step that panics counts as failed; so does a key `dev()` or a step needs that
+    /// device.toml lacks (exit 2).
+    pub fn way_back(mut self, back: Step) -> Group {
+        self.way_back = Some(back);
+        self
+    }
+}
+
+/// The steps of a group, in order, each logged under the group's name (`GROUP > STEP`); the run stops at the first
+/// that fails, after the way backs of its groups.
+pub fn run_group(g: Group) {
+    let c = config();
+    let (indent, from_here) = {
+        let mut st = STATE.lock().unwrap_or_else(|e| e.into_inner());
+        st.seen.push(g.name.clone());
+        let named = c.from.as_deref() == Some(g.name.as_str());
+        if named {
+            st.from_reached = true;
+        }
+        ("  ".repeat(st.groups.len()), named)
+    };
+    let back = g
+        .way_back
+        .as_ref()
+        .map_or(String::new(), |b| format!(" (way back: {})", b.name));
+    println!("{indent}group: {}{back}", g.name);
+    let path = label(
+        &STATE.lock().unwrap_or_else(|e| e.into_inner()).groups,
+        &g.name,
+    );
+    note(
+        "group",
+        &path,
+        &format!(
+            "{}{back}",
+            if from_here { "--from starts here" } else { "" }
+        ),
+    );
+    STATE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .groups
+        .push(g.name);
+    PENDING.with(|p| p.borrow_mut().push(g.way_back));
+    for item in g.items {
+        match item {
+            Item::Step(s) => run_step(s),
+            Item::Group(g) => run_group(g),
+        }
+    }
+    PENDING.with(|p| p.borrow_mut().pop());
+    STATE.lock().unwrap_or_else(|e| e.into_inner()).groups.pop();
+}
+
+/// A step's name as it is logged: under the groups it is in, outermost first.
+fn label(groups: &[String], name: &str) -> String {
+    groups
+        .iter()
+        .map(String::as_str)
+        .chain([name])
+        .collect::<Vec<_>>()
+        .join(" > ")
+}
+
+/// A step is about to begin: the way backs of the groups it is in are owed from now on.
+fn arm_way_backs() {
+    let armed: Vec<Step> =
+        PENDING.with(|p| p.borrow_mut().iter_mut().filter_map(Option::take).collect());
+    OWED.with(|o| o.borrow_mut().extend(armed));
+}
+
+/// End the run that failed: run the way backs owed, the last owed first, then exit 1.
+fn leave_failed() -> ! {
+    leave_with(1)
+}
+
+/// End the run with `code` after the way backs owed (a run that cannot go on, exit 2, leaves the phone as a failed one does).
+pub(crate) fn leave_with(code: i32) -> ! {
+    let owed = OWED.with(|o| std::mem::take(&mut *o.borrow_mut()));
+    for back in owed.into_iter().rev() {
+        let name = back.name.clone();
+        println!("way back: {name}");
+        note("way-back", &name, "begin");
+        STATE.lock().unwrap_or_else(|e| e.into_inner()).step = name.clone();
+        let result = back.execute();
+        STATE.lock().unwrap_or_else(|e| e.into_inner()).step.clear();
+        match result {
+            Ok(()) => note("way-back", &name, "ok"),
+            Err(why) => {
+                note("FAIL", &format!("way back {name}"), &why);
+                eprintln!("{}: the way back {name:?} failed: {why}", config().name);
+            }
+        }
+    }
+    std::process::exit(code)
 }
 
 /// Do something; the run stops here when the closure fails.
@@ -562,7 +729,7 @@ pub fn part() -> Option<String> {
 /// End the run with exit 2 and the reason: a procedure that cannot know a value it needs must not start.
 pub(crate) fn stop(why: &str) -> ! {
     eprintln!("{}: {why}", config().name);
-    std::process::exit(2)
+    leave_with(2)
 }
 
 /// The value at a dotted key of the device's `device.toml` (`dev("health.battery_floor_mv")`): the table that owns
@@ -600,7 +767,7 @@ pub fn unknown_part(asked: &str, known: &[&str]) -> ! {
         config().name,
         known.join(", ")
     );
-    std::process::exit(2)
+    leave_with(2)
 }
 
 /// Try `run` up to `tries` times, `every` seconds apart, until it passes; the last failure is returned.
@@ -633,7 +800,7 @@ pub(crate) fn declared<T>(
             c.name,
             c.device.display()
         );
-        std::process::exit(2)
+        leave_with(2)
     })
 }
 
