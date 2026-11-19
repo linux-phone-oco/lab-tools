@@ -520,6 +520,16 @@ pub fn kernel_package(layer: &Layer, build: &Path) -> Result<Package, String> {
         }
     }
     if modules.is_dir() {
+        if fs::symlink_metadata(&modules)
+            .map(|m| m.file_type().is_symlink())
+            .unwrap_or(false)
+        {
+            return Err(format!(
+                "{}: modules is a link; it must be the module tree itself",
+                build.display()
+            ));
+        }
+        outside_links(build, &modules, &modules)?;
         items.push(Item {
             source: Source::Dir(modules.to_string_lossy().into_owned()),
             dst: base,
@@ -559,4 +569,43 @@ fn mkinitfs_globs(modules: &[String]) -> String {
         }
     }
     out
+}
+
+/// Refuses a symlink under the module tree whose target is absolute, has a `..` after a name, or climbs out of the tree: a kernel build's
+/// `build` and `source` links name the build machine's folders and would dangle on the phone.
+fn outside_links(build: &Path, root: &Path, dir: &Path) -> Result<(), String> {
+    let rd = fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    for entry in rd {
+        let path = entry.map_err(|e| format!("{}: {e}", dir.display()))?.path();
+        let meta = fs::symlink_metadata(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        if meta.is_dir() {
+            outside_links(build, root, &path)?;
+        } else if meta.file_type().is_symlink() {
+            let target = fs::read_link(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+            let rel = path.strip_prefix(root).unwrap_or(&path);
+            let mut depth = rel.components().count() as i64 - 1;
+            let mut out = target.is_absolute();
+            let mut named = false;
+            for c in target.components() {
+                match c {
+                    std::path::Component::ParentDir => {
+                        // a `..` after a name could climb through another link: refused, not resolved
+                        out |= named;
+                        depth -= 1;
+                    }
+                    std::path::Component::Normal(_) => named = true,
+                    _ => {}
+                }
+            }
+            if out || depth < 0 {
+                return Err(format!(
+                    "{}: modules/{} links to {}, outside the module tree (it would dangle on the phone); remove it, as a package's modules/ holds no build or source link",
+                    build.display(),
+                    rel.display(),
+                    target.display()
+                ));
+            }
+        }
+    }
+    Ok(())
 }
