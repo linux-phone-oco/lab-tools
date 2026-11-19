@@ -651,9 +651,9 @@ pub const TREE: &[Node] = &[
     ),
     n(
         &["kernel", "try"],
-        "Reboot into it once; any later boot is stock (or the kept kernel)",
+        "Reboot into it once, with another device tree (--dtb) or more kernel options (--cmdline); any later boot is stock (or the kept kernel)",
         &["name"],
-        &["dtb"],
+        &["dtb", "cmdline"],
     ),
     n(&["kernel", "log"], "What a timed-out try left on the boot partition", &[], &[]),
     n(&["kernel", "remove"], "Remove it and its modules", &["name"], &[]),
