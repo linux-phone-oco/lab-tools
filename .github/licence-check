@@ -1,34 +1,41 @@
 #!/bin/sh
-# Every tracked file is covered by a licence (decision 2026-11-19-one-licence-for-the-plugin): an
-# SPDX-License-Identifier line in its first 10 lines, or a path of a REUSE.toml annotation (`**` and `*` match
-# across folders; one `path = [...]` per line). The licence texts are the LICENSE-* files; each named licence
-# has its own. A shell check where REUSE lint, a Python tool, does not fit (practice 21).
+# Every tracked file is covered by a licence (decision 2026-11-19-one-licence-for-the-plugin): an SPDX header of
+# its own - a line in its first 10 that is only `SPDX-License-Identifier: EXPR`, behind a comment mark - or a path
+# of a REUSE.toml annotation (`**` matches across folders, `*` and `?` within one, as REUSE says; one
+# `path = [...]` per line). Every licence named, in REUSE.toml or a header, has its text: LICENSE-MIT,
+# LICENSE-APACHE, or LICENSES/ID.txt. A shell check where REUSE lint, a Python tool, does not fit (practice 21).
 #
 #   licence-check [DIR]   DIR: a git checkout (default .)
 # Prints each file not covered and each licence without its text; ends 0 when all are covered, 1 when not.
 set -euf  # -f: an annotation's path is a pattern, never expanded against the files
 cd "${1:-.}"
 [ -f REUSE.toml ] || { echo "licence-check: no REUSE.toml"; exit 1; }
-paths=$(sed -n 's/^path = \[\(.*\)\]$/\1/p' REUSE.toml | tr ',' '\n' | sed 's/^ *"//; s/" *$//')
+id='[A-Za-z0-9.+-]+'
+header="^[[:space:]]*(#+|//+|/\*+|\*+|--|;+|%+|<!--|\.\.)?[[:space:]]*SPDX-License-Identifier:[[:space:]]*\(?$id([[:space:]]+(OR|AND|WITH)[[:space:]]+\(?$id\)?)*\)?[[:space:]]*(\*/|-->)?[[:space:]]*$"
+# REUSE.toml's paths as one anchored regex: `**` any run, `*` and `?` within a folder, the rest literal
+re=$(sed -n 's/^path = \[\(.*\)\]$/\1/p' REUSE.toml | tr ',' '\n' | sed 's/^ *"//; s/" *$//' | sed '
+    s/[].[^$+(){}|\\]/\\&/g
+    s/\*\*/\x01/g
+    s/\*/[^\/]*/g
+    s/?/[^\/]/g
+    s/\x01/.*/g' | paste -s -d '|')
 bad=0
-for id in $(sed -n 's/^SPDX-License-Identifier = "\(.*\)"$/\1/p' REUSE.toml | tr ' ' '\n' | grep -v -x -E 'OR|AND|WITH' | sort -u); do
-    case "$id" in MIT) f=LICENSE-MIT ;; Apache-2.0) f=LICENSE-APACHE ;; *) f=LICENSES/$id.txt ;; esac
-    [ -f "$f" ] || { echo "licence-check: $id has no text ($f)"; bad=1; }
+files=$(mktemp); found=$(mktemp); trap 'rm -f "$files" "$found"' EXIT
+git ls-files | grep -v -E '^(LICENSE-[^/]*|LICENSES/.*)$' > "$files" || true
+ids=$(sed -n 's/^SPDX-License-Identifier = "\(.*\)"$/\1/p' REUSE.toml)
+{ grep -v -x -E "${re:-^$}" "$files" || true; } | while IFS= read -r file; do
+    h=$(head -n 10 "$file" 2>/dev/null | grep -E -m 1 "$header" || true)
+    if [ -n "$h" ]; then
+        printf '%s\n' "$(printf '%s' "$h" | sed 's/.*SPDX-License-Identifier:[[:space:]]*//; s/[[:space:]]*\(\*\/\|-->\)[[:space:]]*$//')" >> "$found"
+    else
+        echo "licence-check: $file is not covered (REUSE.toml or an SPDX-License-Identifier line)"; echo x >> "$found.bad"
+    fi
 done
-git ls-files | {
-    out=0
-    while IFS= read -r file; do
-        case "$file" in LICENSE-*|LICENSES/*) continue ;; esac
-        covered=""
-        for p in $paths; do
-            pat=$(printf '%s' "$p" | sed 's/\*\*/*/g')
-            # shellcheck disable=SC2254 # the annotation's path is a pattern
-            case "$file" in $pat) covered=1; break ;; esac
-        done
-        [ -n "$covered" ] || head -n 10 "$file" 2>/dev/null | grep -q 'SPDX-License-Identifier:' || {
-            echo "licence-check: $file is not covered (REUSE.toml or an SPDX-License-Identifier line)"; out=1; }
-    done
-    exit $out
-} || bad=1
+[ ! -f "$found.bad" ] || { bad=1; rm -f "$found.bad"; }
+ids="$ids $(cat "$found")"
+for i in $(printf '%s\n' $ids | tr -d '()' | grep -v -x -E 'OR|AND|WITH|' | sort -u); do
+    case "$i" in MIT) f=LICENSE-MIT ;; Apache-2.0) f=LICENSE-APACHE ;; *) f=LICENSES/$i.txt ;; esac
+    [ -f "$f" ] || { echo "licence-check: $i has no text ($f)"; bad=1; }
+done
 [ "$bad" -eq 0 ] && echo "licence-check: every tracked file is covered"
 exit "$bad"
