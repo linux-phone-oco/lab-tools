@@ -327,3 +327,48 @@ fn the_preset_runs_on_first_install_only_in_each_format_and_also_in_a_chroot() {
         .iter()
         .all(|p| p.post_install.is_none()));
 }
+
+#[test]
+fn a_dependency_token_is_named_per_format_by_the_layers_map_and_kept_when_unmapped() {
+    let device = DEVICE.replace(
+        "[layer.kernel]",
+        "[layer.names.deb]\nqrtr = \"qrtr-tools\"\ntqftpserv = \"tqftpserv-bin\"\n\n[layer.names.rpm]\nqrtr = \"qrtr\"\n\n[layer.kernel]",
+    );
+    let m = Manifest::parse(&device).unwrap();
+    let layer = m.layer.as_ref().unwrap();
+    let (dir, stage) = fixture("n");
+    let want = [
+        (Format::Deb, ["- qrtr-tools", "- tqftpserv-bin (>= 1.2)"]),
+        (Format::Rpm, ["- qrtr\n", "- tqftpserv >= 1.2"]),
+        (Format::Apk, ["- qrtr\n", "- tqftpserv>=1.2"]),
+        (Format::Archlinux, ["- qrtr\n", "- tqftpserv>=1.2"]),
+    ];
+    for (format, wants) in want {
+        let p = packages(layer, format).remove(0);
+        let e = materialize(&p, &dir, &stage).unwrap();
+        let y = nfpm_yaml(&p, format, "0.1.0", &e, None).unwrap();
+        for w in wants {
+            assert!(y.contains(w), "{format:?}: {w:?} not in {y}");
+        }
+    }
+}
+
+#[test]
+fn a_name_map_for_a_token_the_layer_does_not_need_is_refused() {
+    let device = DEVICE.replace(
+        "[layer.kernel]",
+        "[layer.names.deb]\nqrtrr = \"qrtr-tools\"\n\n[layer.kernel]",
+    );
+    let e = Manifest::parse(&device).unwrap_err();
+    assert!(e.contains("qrtrr"), "{e}");
+    let device = DEVICE.replace(
+        "[layer.kernel]",
+        "[layer.names.deb]\nqrtr = \"two words\"\n\n[layer.kernel]",
+    );
+    assert!(Manifest::parse(&device).is_err());
+    let device = DEVICE.replace(
+        "[layer.kernel]",
+        "[layer.names.deb]\nqrtr = \"qrtr>=1\"\n\n[layer.kernel]",
+    );
+    assert!(Manifest::parse(&device).is_err());
+}

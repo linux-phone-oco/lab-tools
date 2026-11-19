@@ -5,6 +5,7 @@
 
 use schemars::JsonSchema;
 use serde::Deserialize;
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Deserialize, PartialEq, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -14,6 +15,9 @@ pub struct Layer {
     /// dependency tokens ("qrtr", "tqftpserv>=1.2"); a token map names each per base
     #[serde(default)]
     pub needs: Vec<String>,
+    /// the token map: per format, the package name a token has there when it is not the token itself
+    #[serde(default)]
+    pub names: LayerNames,
     pub kernel: Option<LayerKernel>,
     pub boot: Option<LayerBoot>,
     pub firmware: Option<LayerFirmware>,
@@ -21,6 +25,32 @@ pub struct Layer {
     /// the files the layer installs, each with its kind and a destination under /usr
     #[serde(default)]
     pub file: Vec<LayerFile>,
+}
+
+/// `[layer.names.FORMAT]`: token = "that format's package name"; a token not listed keeps its own name.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct LayerNames {
+    #[serde(default)]
+    pub apk: BTreeMap<String, String>,
+    #[serde(default)]
+    pub deb: BTreeMap<String, String>,
+    #[serde(default)]
+    pub rpm: BTreeMap<String, String>,
+    #[serde(default)]
+    pub archlinux: BTreeMap<String, String>,
+}
+
+impl LayerNames {
+    pub fn of(&self, format: &str) -> Option<&BTreeMap<String, String>> {
+        Some(match format {
+            "apk" => &self.apk,
+            "deb" => &self.deb,
+            "rpm" => &self.rpm,
+            "archlinux" => &self.archlinux,
+            _ => return None,
+        })
+    }
 }
 
 /// `[layer.kernel]`: where the kernel comes from and what it builds.
@@ -112,6 +142,28 @@ impl Layer {
         }
         if self.needs.iter().any(|n| n.trim().is_empty()) {
             return Err("layer needs holds an empty token".into());
+        }
+        let wanted: Vec<&str> = self
+            .needs
+            .iter()
+            .map(|n| n.split(['<', '>', '=']).next().unwrap_or("").trim())
+            .collect();
+        for f in ["apk", "deb", "rpm", "archlinux"] {
+            for (token, name) in self.names.of(f).into_iter().flatten() {
+                if !wanted.contains(&token.as_str()) {
+                    return Err(format!(
+                        "layer names.{f} maps {token:?}, which layer needs does not hold"
+                    ));
+                }
+                if name.is_empty()
+                    || name.contains(char::is_whitespace)
+                    || name.contains(['<', '>', '='])
+                {
+                    return Err(format!(
+                        "layer names.{f} maps {token:?} to {name:?}, which is not one package name"
+                    ));
+                }
+            }
         }
         if let Some(i) = &self.initramfs {
             if i.modules.iter().any(|m| m.trim().is_empty()) {
