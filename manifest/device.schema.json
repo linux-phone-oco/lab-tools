@@ -64,6 +64,13 @@
         "$ref": "#/definitions/Hazard"
       }
     },
+    "user_config": {
+      "description": "Config files the phone keeps outside any git, which the lab names when they drift (lpoco host check)",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/UserConfig"
+      }
+    },
     "host": {
       "description": "What the lab host needs for this device",
       "allOf": [
@@ -473,6 +480,36 @@
       "required": [
         "path",
         "why"
+      ]
+    },
+    "UserConfig": {
+      "description": "A config file on the phone, outside any git, that the lab compares at each check: declared either against\nthe default its package ships (`expect`, a phone path) or against a copy kept in the base (`from`, a path\nin the device repository) - exactly one. A deliberate change then lives in the base or in the package.",
+      "type": "object",
+      "properties": {
+        "path": {
+          "description": "The file's absolute path on the phone",
+          "type": "string"
+        },
+        "expect": {
+          "description": "The package default's absolute path on the phone, e.g. /usr/share/sxmo/...",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "from": {
+          "description": "The copy kept in the device repository, relative to the manifest",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "path"
       ]
     },
     "HostTable": {

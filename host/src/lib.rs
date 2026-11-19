@@ -85,6 +85,8 @@ pub struct Device {
     pub usb_address: Option<String>,
     /// Files the manifest puts on the phone (`[[flash.overlay]]`, `[[provision.install]]`).
     pub pieces: Vec<Piece>,
+    /// Config files the phone keeps outside any git (`[[user_config]]`), each against its package default or the base's copy.
+    pub user_configs: Vec<lpoco_manifest::UserConfig>,
 }
 
 /// One declared phone-side file: `from` in the device repository, `to` on the phone (a `root:` prefix, the image's root, is dropped).
@@ -129,6 +131,14 @@ pub enum Stale {
     },
     /// A declared file or a lab-tools package the phone does not hold.
     Missing { what: String },
+    /// A declared user config whose blob is not the one it is declared against: `expected` is the blob of the
+    /// package default (or of the base's copy at origin/main), `against` says which, in words.
+    Config {
+        path: String,
+        found: String,
+        expected: String,
+        against: String,
+    },
     /// A lab-tools package on the phone off the `[tools] lpoco` pin.
     Package {
         name: String,
@@ -148,7 +158,7 @@ pub fn blob_id(bytes: &[u8]) -> String {
 
 /// What the phone's last gathered report (jsonl, one result a line; the rows of health's 94-lab-pieces.sh) says is
 /// off main. A row `test = "piece-file:PATH"` has detail `PATH BLOBID|missing`; `test = "piece-package-NAME"` has
-/// `NAME VERSION|missing`. `main` gives the bytes origin/main holds for a declared `from` (None: not judged).
+/// `NAME VERSION|missing`; `test = "config-file:PATH"` has `PATH BLOB DEFAULT` (a declared user config). `main` gives the bytes origin/main holds for a declared `from` (None: not judged).
 /// Rows the report lacks are not judged: not measured is not stale. A line that is not a row is an error.
 pub fn stale_pieces(
     d: &Device,
@@ -166,7 +176,55 @@ pub fn stale_pieces(
         let (Some(what), Some(found)) = (w.next(), w.next()) else {
             continue;
         };
-        let s = if test.starts_with("piece-file:") {
+        let s = if test.starts_with("config-file:") {
+            // detail `PATH BLOB DEFAULT`: only a declared path is read. A file the phone lacks has no edit to lose
+            // against a package default, but is drift against the base's copy; a default or copy that cannot be
+            // found is named, never passed.
+            let Some(c) = d.user_configs.iter().find(|c| c.path == what) else {
+                continue;
+            };
+            let (expected, against) = match (&c.expect, &c.from) {
+                (Some(_), _) if found == "missing" => continue,
+                (Some(e), _) => match w.next() {
+                    Some("-") | None => continue, // not reported: not measured is not stale
+                    Some("missing") => {
+                        let what = format!("{what}'s package default {e}");
+                        let s = Stale::Missing { what };
+                        if !out.contains(&s) {
+                            out.push(s);
+                        }
+                        continue;
+                    }
+                    Some(blob) => (blob.to_string(), format!("the package default {e}")),
+                },
+                (None, Some(f)) => {
+                    let Some(bytes) = main(f) else {
+                        let s = Stale::Missing {
+                            what: format!("{what}'s base copy {f} at origin/main"),
+                        };
+                        if !out.contains(&s) {
+                            out.push(s);
+                        }
+                        continue;
+                    };
+                    if found == "missing" {
+                        out.push(Stale::Missing { what: what.into() });
+                        continue;
+                    }
+                    (blob_id(&bytes), format!("the base's copy {f}"))
+                }
+                (None, None) => continue,
+            };
+            if expected == found {
+                continue;
+            }
+            Stale::Config {
+                path: what.into(),
+                found: found.into(),
+                expected,
+                against,
+            }
+        } else if test.starts_with("piece-file:") {
             let Some(p) = d.pieces.iter().find(|p| p.to == what) else {
                 continue;
             };
@@ -259,6 +317,15 @@ pub fn stale_lines(d: &Device, report: &str, per: &str) -> Result<Vec<String>, S
                 "{} phone piece {what}: STALE, missing on the phone (per {per})",
                 d.codename
             ),
+            Stale::Config {
+                path,
+                found,
+                expected,
+                against,
+            } => format!(
+                "{} phone config {path}: DRIFTED, runs {found}, {against} is {expected} (per {per})",
+                d.codename
+            ),
             Stale::Package { name, found, pin } => format!(
                 "{} phone package {name}: STALE, {found} is off the pin {pin} (per {per})",
                 d.codename
@@ -345,6 +412,7 @@ pub fn parse_device(path: &Path, text: &str) -> Result<Device, String> {
             .and_then(|a| a.as_str())
             .map(str::to_string),
         pieces: pieces_of(&v),
+        user_configs: m.user_config.clone(),
     })
 }
 
@@ -987,6 +1055,7 @@ mod one_per_codename_tests {
             fastboot_serial: None,
             usb_address: None,
             pieces: Vec::new(),
+            user_configs: Vec::new(),
         }
     }
 

@@ -110,3 +110,34 @@ fn unsaid_the_lab_tools_package_is_the_one_reported() {
     assert!(out.contains("lpoco-health 0.12.1-r0"), "{out}");
     assert_eq!(out.lines().count(), 1, "{out}");
 }
+
+#[test]
+fn a_declared_user_config_reports_its_blob_and_its_package_defaults_and_an_undeclared_one_is_not_read(
+) {
+    let root = phone(
+        "config",
+        "PIECE_CONFIGS='/home/u/hook.sh=/usr/share/x/hook.sh /home/u/profile /home/u/gone=/usr/share/x/gone'\n",
+    );
+    fs::create_dir_all(root.join("home/u")).unwrap();
+    fs::create_dir_all(root.join("usr/share/x")).unwrap();
+    fs::write(root.join("home/u/hook.sh"), b"edited\n").unwrap();
+    fs::write(root.join("usr/share/x/hook.sh"), b"shipped\n").unwrap();
+    fs::write(root.join("home/u/profile"), b"export X=1\n").unwrap();
+    fs::write(root.join("home/u/undeclared"), b"never read\n").unwrap();
+    let out = run(&root);
+    let b = |p: &str| git_blob(&root.join(p));
+    assert!(
+        out.contains(&format!(
+            "/home/u/hook.sh {} {}",
+            b("home/u/hook.sh"),
+            b("usr/share/x/hook.sh")
+        )),
+        "{out}"
+    );
+    assert!(
+        out.contains(&format!("/home/u/profile {} -", b("home/u/profile"))),
+        "against the base's copy there is no default blob: {out}"
+    );
+    assert!(out.contains("/home/u/gone missing missing"), "{out}");
+    assert!(!out.contains("undeclared"), "{out}");
+}

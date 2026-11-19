@@ -128,3 +128,122 @@ fn the_lines_name_a_package_off_its_pin() {
     );
     assert!(stale_lines(&device, "not json\n", "r").is_err());
 }
+
+const CONFIGS: &str = r#"
+[device]
+codename = "xiaomi-surya"
+[[user_config]]
+path = "/home/user/.config/sxmo/hooks/sxmo_hook_lock.sh"
+expect = "/usr/share/sxmo/default_hooks/sxmo_hook_lock.sh"
+[[user_config]]
+path = "/home/user/.config/sxmo/profile"
+from = "config/sxmo/profile"
+"#;
+const HOOK: &str = "/home/user/.config/sxmo/hooks/sxmo_hook_lock.sh";
+const PROFILE: &str = "/home/user/.config/sxmo/profile";
+const PACKAGE_HOOK: &[u8] = b"#!/bin/sh\n# as the package ships it\n";
+const EDITED_HOOK: &[u8] = b"#!/bin/sh\n# edited on the phone\n";
+const PROFILE_IN_BASE: &[u8] = b"export X=1\n";
+const PROFILE_ON_PHONE: &[u8] = b"export X=2\n";
+
+/// The rows health's 94-lab-pieces.sh writes for a declared user config: `config-file:PATH`, detail
+/// `PATH BLOB DEFAULT` - the file's blob, then the blob of the package default it is declared against
+/// (`-` when it is declared against the base's copy), `missing` for a file the phone does not hold.
+fn config_report(hook: &str, hook_default: &str, profile: &str) -> String {
+    format!(
+        "{{\"layer\":\"base\",\"component\":\"lab-pieces\",\"test\":\"config-file:{HOOK}\",\"outcome\":\"pass\",\"detail\":\"{HOOK} {hook} {hook_default}\"}}\n\
+         {{\"layer\":\"base\",\"component\":\"lab-pieces\",\"test\":\"config-file:{PROFILE}\",\"outcome\":\"pass\",\"detail\":\"{PROFILE} {profile} -\"}}\n\
+         {{\"layer\":\"base\",\"component\":\"lab-pieces\",\"test\":\"config-file:/home/user/.config/other\",\"outcome\":\"pass\",\"detail\":\"/home/user/.config/other {} -\"}}\n",
+        blob_id(b"nobody declared me")
+    )
+}
+
+#[test]
+fn a_user_config_off_its_package_default_or_its_base_copy_is_named_and_a_matching_one_passes() {
+    let device = parse_device(Path::new("device.toml"), CONFIGS).unwrap();
+    let main = |from: &str| (from == "config/sxmo/profile").then(|| PROFILE_IN_BASE.to_vec());
+    let (edited, shipped) = (blob_id(EDITED_HOOK), blob_id(PACKAGE_HOOK));
+    let (on_phone, in_base) = (blob_id(PROFILE_ON_PHONE), blob_id(PROFILE_IN_BASE));
+
+    let stale = stale_pieces(&device, &config_report(&edited, &shipped, &on_phone), main).unwrap();
+    assert_eq!(
+        stale,
+        vec![
+            Stale::Config {
+                path: HOOK.into(),
+                found: edited.clone(),
+                expected: shipped.clone(),
+                against: "the package default /usr/share/sxmo/default_hooks/sxmo_hook_lock.sh"
+                    .into(),
+            },
+            Stale::Config {
+                path: PROFILE.into(),
+                found: on_phone,
+                expected: in_base.clone(),
+                against: "the base's copy config/sxmo/profile".into(),
+            },
+        ]
+    );
+    // both as declared: nothing named; an undeclared file in the report is never read
+    assert!(
+        stale_pieces(&device, &config_report(&shipped, &shipped, &in_base), main)
+            .unwrap()
+            .is_empty()
+    );
+    // a file the phone does not hold has no edit to lose: not named (the package default applies)
+    assert!(
+        stale_pieces(&device, &config_report("missing", &shipped, &in_base), main)
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn a_user_config_must_be_declared_against_exactly_one_thing() {
+    for body in [
+        "path = \"/p\"\n",
+        "path = \"/p\"\nexpect = \"/e\"\nfrom = \"f\"\n",
+        "path = \"relative\"\nexpect = \"/e\"\n",
+    ] {
+        let text = format!("[device]\ncodename = \"x\"\n[[user_config]]\n{body}");
+        assert!(
+            parse_device(Path::new("device.toml"), &text).is_err(),
+            "{body}"
+        );
+    }
+}
+
+#[test]
+fn a_config_whose_default_or_base_copy_cannot_be_found_is_named_not_passed() {
+    let device = parse_device(Path::new("device.toml"), CONFIGS).unwrap();
+    let shipped = blob_id(PACKAGE_HOOK);
+    // the package no longer ships its default; the base does not hold the declared copy; the phone lacks it
+    let none = |_: &str| None;
+    let stale = stale_pieces(
+        &device,
+        &config_report(&shipped, "missing", "missing"),
+        none,
+    )
+    .unwrap();
+    assert_eq!(stale.len(), 2, "{stale:?}");
+    assert!(
+        stale.iter().all(|s| matches!(s, Stale::Missing { .. })),
+        "{stale:?}"
+    );
+}
+
+#[test]
+fn a_user_config_declared_twice_against_itself_or_out_of_the_base_is_refused() {
+    for body in [
+        "path = \"/p\"\nexpect = \"/e\"\n[[user_config]]\npath = \"/p\"\nfrom = \"f\"\n",
+        "path = \"/p\"\nexpect = \"/p\"\n",
+        "path = \"/p\"\nfrom = \"../f\"\n",
+        "path = \"/p\"\nfrom = \"/abs\"\n",
+    ] {
+        let text = format!("[device]\ncodename = \"x\"\n[[user_config]]\n{body}");
+        assert!(
+            parse_device(Path::new("device.toml"), &text).is_err(),
+            "{body}"
+        );
+    }
+}
