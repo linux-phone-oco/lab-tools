@@ -288,6 +288,7 @@ runs: a NetworkManager keyfile (`/etc/NetworkManager/system-connections/NAME.nmc
 when `/run/NetworkManager` exists, else a systemd-networkd file (`/etc/systemd/network/70-NAME.network`, `networkctl reload`) when
 `/run/systemd/netif` exists; with neither, plan says so and writes nothing. Planned in the diff, written only by `prepare now`.
 The NetworkManager directory is root-only, so the lab user cannot read an existing keyfile: it is planned as new and rewritten at each `prepare now` (same content, one `nmcli connection reload`).
+A gadget's `usb_id = "18d1:4ee0"` (vendor:product, four hex digits each) is what the phone shows on the host's USB bus when that gadget is up; `host` does nothing with it, the attended procedures (`wait_for_gadget`) read it.
 A device that wants its health watched says `watch = true` in its `[host]` (`devlab-watch@NAME-lab` user unit, enabled and restarted by prepare);
 without it no watcher is enabled for it, and an instance already enabled for a device that does not ask is named in the plan and left running.
 

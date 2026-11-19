@@ -56,7 +56,24 @@ pub struct Manifest {
 
 impl Manifest {
     pub fn parse(text: &str) -> Result<Manifest, String> {
-        let m: Manifest = toml::from_str(text).map_err(|e| e.to_string())?;
+        let mut m: Manifest = toml::from_str(text).map_err(|e| e.to_string())?;
+        for (i, g) in m.host.gadget.iter_mut().enumerate() {
+            if let Some(id) = &mut g.usb_id {
+                let ok = id.split_once(':').is_some_and(|(v, p)| {
+                    [v, p]
+                        .iter()
+                        .all(|h| h.len() == 4 && h.chars().all(|c| c.is_ascii_hexdigit()))
+                });
+                if !ok {
+                    return Err(format!(
+                        "host.gadget #{} (serial {:?}) usb_id {id:?} is not vendor:product in four hex digits each",
+                        i + 1,
+                        g.serial
+                    ));
+                }
+                id.make_ascii_lowercase();
+            }
+        }
         for (i, c) in m.user_config.iter().enumerate() {
             if m.user_config[..i].iter().any(|o| o.path == c.path) {
                 return Err(format!("user_config {} is declared twice", c.path));
@@ -123,6 +140,9 @@ pub struct Gadget {
     /// The host's address on that network, as IPv4 CIDR (`10.55.0.1/24`): written as a link config for the host's own network manager, only with the verb. Needs `net_name`.
     #[serde(default)]
     pub net_address: Option<String>,
+    /// What the phone shows on the host's USB bus when this gadget is up, as `vendor:product` in four hex digits each (`18d1:4ee0`); kept lowercase.
+    #[serde(default)]
+    pub usb_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, JsonSchema)]

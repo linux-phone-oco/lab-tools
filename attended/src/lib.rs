@@ -135,6 +135,8 @@ struct Config {
     part: Option<String>,
     /// the device.toml of the procedure's device, the one devlab is handed
     device: std::path::PathBuf,
+    /// what that file declares: steps read their keys from it
+    manifest: lpoco_manifest::Manifest,
     devlab: String,
     sysfs_usb: String,
     name: String,
@@ -259,8 +261,8 @@ pub fn procedure(name: &str, device: &str) -> Run {
         std::process::exit(0);
     }
     let dry = cli::Contract::DRY_RUN.get_from(&r).unwrap_or(false);
-    let device_file = device::load(cli::Contract::DEVICE.get_from(&r).as_deref(), device)
-        .unwrap_or_else(|e| {
+    let (device_file, manifest) =
+        device::load(cli::Contract::DEVICE.get_from(&r).as_deref(), device).unwrap_or_else(|e| {
             eprintln!("{name}: {e}");
             std::process::exit(2)
         });
@@ -288,6 +290,7 @@ pub fn procedure(name: &str, device: &str) -> Run {
         until_first_prompt,
         part,
         device: device_file,
+        manifest,
         devlab,
         sysfs_usb,
         name: name.to_string(),
@@ -415,6 +418,25 @@ pub fn retry<R: Outcome>(tries: u32, every: u64, mut run: impl FnMut() -> R) -> 
         }
     }
     last
+}
+
+/// A key a step needs from the device's device.toml, or the run ends with exit 2 naming the key, the file and the step
+/// (in a dry run too). A step reads it when it is built, so in a real run the steps before it have already run: put the
+/// steps that read a key first, or dry-run the procedure before the real run.
+pub(crate) fn declared<T>(
+    key: &str,
+    step: &str,
+    find: impl FnOnce(&lpoco_manifest::Manifest) -> Option<T>,
+) -> T {
+    let c = config();
+    find(&c.manifest).unwrap_or_else(|| {
+        eprintln!(
+            "{}: {} has no {key}, which {step} reads",
+            c.name,
+            c.device.display()
+        );
+        std::process::exit(2)
+    })
 }
 
 pub(crate) fn sysfs_usb() -> &'static str {

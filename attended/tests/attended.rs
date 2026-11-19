@@ -906,3 +906,88 @@ fn a_cut_never_splits_a_character_and_two_steps_keep_their_own_output() {
         "one step's output is filed under another: {l}"
     );
 }
+
+/// The library example's `gadget-seen` case against a device.toml that declares (or not) a gadget's usb_id.
+fn gadget(dir: &Path, usb_id: Option<&str>, bus: &Path, args: &[&str]) -> Output {
+    let id = usb_id.map_or(String::new(), |i| format!("usb_id = \"{i}\"\n"));
+    fs::write(
+        dir.join("device.toml"),
+        format!(
+            "{}[[host.gadget]]\nserial = \"s\"\naccess = [\"tty\"]\n{id}",
+            manifest("xiaomi-surya")
+        ),
+    )
+    .unwrap();
+    Command::new("rust-script")
+        .arg(example_named(dir, "library"))
+        .args(args)
+        .env("CASE", "gadget-seen")
+        .env("LPOCO_ATTENDED_SYSFS_USB", bus)
+        .current_dir(dir)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn wait_for_gadget_looks_for_the_usb_id_the_device_declares_not_one_the_procedure_carries() {
+    let dir = tmp("gadget-seen");
+    let bus = usb_tree(&dir, Some(("18d1", "4ee0")));
+    let o = gadget(&dir, Some("18D1:4EE0"), &bus, &[]);
+    assert_eq!(o.status.code(), Some(0), "{}", said(&o));
+    let other = tmp("gadget-other");
+    let bus = usb_tree(&other, Some(("18d1", "4ee0")));
+    let o = gadget(&other, Some("0525:a4a7"), &bus, &[]);
+    assert_eq!(o.status.code(), Some(1), "{}", said(&o));
+    assert!(
+        String::from_utf8_lossy(&o.stderr).contains("0525:a4a7 is not on the USB bus"),
+        "{}",
+        said(&o)
+    );
+}
+
+#[test]
+fn a_device_without_the_usb_id_fails_the_dry_run_naming_the_key_and_touches_nothing() {
+    for args in [&["--dry-run"][..], &[][..]] {
+        let dir = tmp("gadget-missing");
+        let bus = usb_tree(&dir, Some(("18d1", "4ee0")));
+        let o = gadget(&dir, None, &bus, args);
+        let t = said(&o);
+        assert_eq!(o.status.code(), Some(2), "{t}");
+        assert!(
+            t.contains("[[host.gadget]] usb_id") && t.contains("device.toml"),
+            "{t}"
+        );
+        assert!(!t.contains("dry run, not run"), "a step was walked: {t}");
+    }
+}
+
+#[test]
+fn the_first_gadget_that_declares_a_usb_id_is_the_one_waited_for() {
+    let dir = tmp("gadget-second");
+    let bus = usb_tree(&dir, Some(("18d1", "4ee0")));
+    let o = gadget(&dir, None, &bus, &[]);
+    assert_eq!(o.status.code(), Some(2), "{}", said(&o));
+    fs::write(
+        dir.join("device.toml"),
+        format!(
+            "{}[[host.gadget]]\nserial = \"a\"\naccess = [\"tty\"]\n[[host.gadget]]\nserial = \"b\"\naccess = [\"tty\"]\nusb_id = \"18d1:4ee0\"\n",
+            manifest("xiaomi-surya")
+        ),
+    )
+    .unwrap();
+    let o = Command::new("rust-script")
+        .arg(example_named(&dir, "library"))
+        .args(["--dry-run"])
+        .env("CASE", "gadget-seen")
+        .current_dir(&dir)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(0), "{}", said(&o));
+    assert!(
+        said(&o).contains("USB device 18d1:4ee0 is on the bus"),
+        "{}",
+        said(&o)
+    );
+}

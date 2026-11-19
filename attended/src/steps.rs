@@ -159,6 +159,15 @@ pub fn wait_for_usb(id: &str, tries: u32, every: u64) -> Step {
     .keyed("gadget-enumerates")
 }
 
+/// [`wait_for_usb`] for the id the device declares: the first `[[host.gadget]] usb_id` of its device.toml. A device that
+/// declares none ends the run (exit 2, dry run too) naming the key.
+pub fn wait_for_gadget(tries: u32, every: u64) -> Step {
+    let id = crate::declared("[[host.gadget]] usb_id", "wait_for_gadget", |m| {
+        m.host.gadget.iter().find_map(|g| g.usb_id.clone())
+    });
+    wait_for_usb(&id, tries, every)
+}
+
 /// Boot the named test kernel once, through devlab's `kernel try` (never around it): devlab refuses an entry with
 /// no try left, reboots, waits for the phone and measures the boot it came to; its output is the step's.
 /// Any later boot is the default again. The name is the kernel's own (lowercase letters, digits, `-`: devlab's
