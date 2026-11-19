@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.24.0...lpoco-bringup-v0.24.1) - 2026-11-19
+
+### Added
+
+- *(layer)* lpoco layer pack - the device layer as nfpm packages for apk, deb, rpm and archlinux ([#217](https://github.com/linux-phone-oco/lab-tools/pull/217))
+
 ## [0.24.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.23.0...lpoco-bringup-v0.24.0) - 2026-11-19
 
 ### Added
