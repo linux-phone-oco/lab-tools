@@ -303,3 +303,97 @@ fn a_flag_that_is_not_declared_is_refused_naming_it_and_nothing_runs() {
     assert!(text(&o).contains("--bogus"), "{}", text(&o));
     assert!(!d.join("runs").exists(), "the procedure was not started");
 }
+
+/// A devlab stand-in: `--version` says `version`; any other call is recorded in `dir/devlab-calls` and answered
+/// with `answer` (exit `code`).
+fn stand_in_devlab(dir: &Path, version: &str, code: i32, answer: &str) -> PathBuf {
+    let f = dir.join("fake-devlab");
+    fs::write(
+        &f,
+        format!(
+            "#!/bin/sh\nif [ \"$1\" = --version ]; then echo 'lpoco-lab {version}'; exit 0; fi\necho \"$*\" >> {d}/devlab-calls\necho '{answer}'\nexit {code}\n",
+            d = dir.display()
+        ),
+    )
+    .unwrap();
+    Command::new("chmod").arg("+x").arg(&f).status().unwrap();
+    f
+}
+
+fn host_check(dir: &Path, devlab: &Path, args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_lpoco-attended"))
+        .args(args)
+        .current_dir(dir)
+        .env("LPOCO_ATTENDED_LIB", lib())
+        .env("LPOCO_ATTENDED_RUST_SCRIPT", stand_in(dir))
+        .env("LPOCO_ATTENDED_DEVLAB", devlab)
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn check_host_fails_naming_an_installed_devlab_that_cannot_read_the_manifest() {
+    let d = tmp("host-old");
+    proc_file(&d, "boot", "exit 0\n");
+    let old = stand_in_devlab(&d, "0.24.0", 2, "device.toml: unknown field `kernels`");
+    let o = host_check(&d, &old, &["check", "--host"]);
+    let t = text(&o);
+    assert_eq!(o.status.code(), Some(1), "{t}");
+    assert!(
+        t.contains(old.to_str().unwrap())
+            && t.contains("0.24.0")
+            && t.contains("unknown field `kernels`"),
+        "names the binary, its version and its refusal: {t}"
+    );
+}
+
+#[test]
+fn check_host_passes_with_an_installed_devlab_that_reads_the_manifest_and_calls_it_once() {
+    let d = tmp("host-ok");
+    proc_file(&d, "boot", "exit 0\n");
+    let ok = stand_in_devlab(&d, "0.32.1", 0, "free");
+    let o = host_check(&d, &ok, &["check", "--host"]);
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o));
+    let calls = fs::read_to_string(d.join("devlab-calls")).unwrap();
+    assert_eq!(calls.lines().count(), 1, "{calls}");
+    let want = format!("--device {}/device.toml keeper status", d.display());
+    assert_eq!(
+        calls.trim(),
+        want,
+        "a read-only command, handed the very file"
+    );
+}
+
+#[test]
+fn check_without_host_never_calls_the_installed_devlab() {
+    let d = tmp("host-off");
+    proc_file(&d, "boot", "exit 0\n");
+    let old = stand_in_devlab(&d, "0.24.0", 2, "refused");
+    let o = host_check(&d, &old, &["check"]);
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o));
+    assert!(!d.join("devlab-calls").exists());
+}
+
+#[test]
+fn check_host_fails_for_a_devlab_that_is_missing_or_has_no_version() {
+    let d = tmp("host-bad");
+    proc_file(&d, "boot", "exit 0\n");
+    let o = host_check(&d, &d.join("no-such-devlab"), &["check", "--host"]);
+    let t = text(&o);
+    assert_eq!(o.status.code(), Some(1), "{t}");
+    assert!(
+        t.contains("boot: ok") && t.contains("host: FAILED") && t.contains("no-such-devlab"),
+        "{t}"
+    );
+
+    let mute = d.join("mute-devlab");
+    fs::write(&mute, "#!/bin/sh\nexit 2\n").unwrap();
+    Command::new("chmod").arg("+x").arg(&mute).status().unwrap();
+    let o = host_check(&d, &mute, &["check", "--host"]);
+    assert_eq!(o.status.code(), Some(1), "{}", text(&o));
+    assert!(
+        text(&o).contains("does not say its version"),
+        "{}",
+        text(&o)
+    );
+}

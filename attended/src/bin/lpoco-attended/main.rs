@@ -33,9 +33,9 @@ fn main() {
 fn run(r: &Resolution) -> Result<i32, String> {
     let verb = Contract::VERB
         .get_from(r)
-        .ok_or("usage: lpoco attended new NAME | run NAME [--dry-run] | check")?;
+        .ok_or("usage: lpoco attended new NAME | run NAME [--dry-run] | check [--host]")?;
     if let Some(extra) = Contract::EXTRA.get_from(r) {
-        return Err(format!("{extra:?} is one word too many: usage: lpoco attended new NAME | run NAME [--dry-run] | check"));
+        return Err(format!("{extra:?} is one word too many: usage: lpoco attended new NAME | run NAME [--dry-run] | check [--host]"));
     }
     let device = Contract::DEVICE.get_from(r);
     let repo = repo::find(device.as_deref())?;
@@ -45,7 +45,7 @@ fn run(r: &Resolution) -> Result<i32, String> {
     match verb {
         Verb::New => new(r, &repo),
         Verb::Run => run_one(r, &repo, &rust_script),
-        Verb::Check => check(&repo, &rust_script, device.as_deref()),
+        Verb::Check => check(r, &repo, &rust_script, device.as_deref()),
     }
 }
 
@@ -108,7 +108,12 @@ fn run_one(r: &Resolution, repo: &repo::Repo, rust_script: &str) -> Result<i32, 
     Ok(status.code().unwrap_or(1))
 }
 
-fn check(repo: &repo::Repo, rust_script: &str, device: Option<&str>) -> Result<i32, String> {
+fn check(
+    r: &Resolution,
+    repo: &repo::Repo,
+    rust_script: &str,
+    device: Option<&str>,
+) -> Result<i32, String> {
     let names = repo.procedures()?;
     let mut failed = 0;
     let dir = scratch_dir()?;
@@ -129,6 +134,9 @@ fn check(repo: &repo::Repo, rust_script: &str, device: Option<&str>) -> Result<i
         }
     }
     let _ = std::fs::remove_dir_all(&dir);
+    if Contract::HOST.get_from(r).unwrap_or(false) {
+        failed += host_line(r, &repo.manifest);
+    }
     Ok(if failed == 0 { 0 } else { 1 })
 }
 
@@ -172,4 +180,66 @@ fn scratch_dir() -> Result<std::path::PathBuf, String> {
     ));
     std::fs::create_dir(&dir).map_err(|e| format!("cannot make {}: {e}", dir.display()))?;
     Ok(dir)
+}
+
+/// The `host:` line of `check --host`: 0 when the installed devlab reads the manifest, else 1.
+fn host_line(r: &Resolution, manifest: &Path) -> i32 {
+    let devlab = Contract::DEVLAB
+        .get_from(r)
+        .unwrap_or_else(|| "devlab".into());
+    match host_ready(&devlab, manifest) {
+        Ok(said) => {
+            println!("host: ok ({said})");
+            0
+        }
+        Err(e) => {
+            println!("host: FAILED\n    {e}");
+            1
+        }
+    }
+}
+
+/// How long each read-only call to the installed devlab may take: a lease folder that hangs must not hang the gate.
+const HOST_CALL_LIMIT: std::time::Duration = std::time::Duration::from_secs(30);
+
+fn devlab_call(devlab: &str, args: &[&std::ffi::OsStr]) -> Result<std::process::Output, String> {
+    let mut cmd = Command::new(devlab);
+    cmd.args(args);
+    lpoco_attended::call::run_limited(cmd, "", Some(HOST_CALL_LIMIT))
+        .map_err(|e| format!("{devlab}: {e}"))
+}
+
+/// The installed devlab, run for real on this device's manifest with a read-only command: ready only when it
+/// reads the file. A refusal names the binary, its version and what it said.
+fn host_ready(devlab: &str, manifest: &Path) -> Result<String, String> {
+    use std::ffi::OsStr;
+    let v = devlab_call(devlab, &[OsStr::new("--version")])?;
+    let version = String::from_utf8_lossy(&v.stdout).trim().to_string();
+    if !v.status.success() || version.is_empty() {
+        return Err(format!(
+            "{devlab} does not say its version (--version): it is not the lab's devlab"
+        ));
+    }
+    let out = devlab_call(
+        devlab,
+        &[
+            OsStr::new("--device"),
+            manifest.as_os_str(),
+            OsStr::new("keeper"),
+            OsStr::new("status"),
+        ],
+    )?;
+    if out.status.success() {
+        return Ok(format!("{devlab}, {version}"));
+    }
+    let said = format!(
+        "{} {}",
+        String::from_utf8_lossy(&out.stdout).trim(),
+        String::from_utf8_lossy(&out.stderr).trim()
+    );
+    Err(format!(
+        "the installed {devlab} ({version}) cannot read {}: {}",
+        manifest.display(),
+        said.trim()
+    ))
 }

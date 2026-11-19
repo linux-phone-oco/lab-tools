@@ -23,7 +23,8 @@
 //! health run are the same chain. A library step (like [`steps::ask`]) is a function that returns a `Step`.
 
 pub mod bench;
-mod call;
+#[doc(hidden)]
+pub mod call;
 mod cli;
 mod device;
 pub mod steps;
