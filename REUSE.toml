@@ -21,10 +21,3 @@ precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 grenudi"
 SPDX-License-Identifier = "GPL-2.0-only OR BSD-2-Clause"
 
-# Third-party packaging keeps its own licence: the sxmo-utils lab apk is sxmo-utils', AGPL-3.0-only (its APKBUILD names it).
-# This annotates it; it does not relicense it. It wins over the kinds above where they overlap (a .conf, a .toml).
-[[annotations]]
-path = ["packaging/sxmo-utils/**"]
-precedence = "override"
-SPDX-FileCopyrightText = "sxmo-utils contributors"
-SPDX-License-Identifier = "AGPL-3.0-only"

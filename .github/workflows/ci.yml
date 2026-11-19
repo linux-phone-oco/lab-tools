@@ -24,8 +24,6 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: release-plz@0.4.3
-      # the sxmo-utils lab apk (packaging/sxmo-utils): its declaration and what its source tag carries
-      - run: .github/check-sxmo-utils-apk.sh
       # every lab apk names its licence, url, origin and a public source (AGPL-3.0 6(d))
       - run: .github/check-apk-origin.sh
       - run: .github/test-check-apk-origin.sh
