@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.4](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-tone-v0.29.3...lpoco-tone-v0.29.4) - 2026-11-19
+
+### Added
+
+- *(attended)* wait_for_usb is keyed to bring-up step gadget-enumerates ([#255](https://github.com/linux-phone-oco/lab-tools/pull/255))
+
 ## [0.29.3](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-tone-v0.29.2...lpoco-tone-v0.29.3) - 2026-11-19
 
 ### Added
