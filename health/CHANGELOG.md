@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.30.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-health-v0.29.6...lpoco-health-v0.30.0) - 2026-11-19
+
+### Added
+
+- *(attended)* wait_for_gadget reads the usb_id the device declares; [[host.gadget]] usb_id ([#264](https://github.com/linux-phone-oco/lab-tools/pull/264))
+- *(attended)* the log files what the phone said to a passing step ([#262](https://github.com/linux-phone-oco/lab-tools/pull/262))
+
 ## [0.29.6](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-health-v0.29.5...lpoco-health-v0.29.6) - 2026-11-19
 
 ### Added
