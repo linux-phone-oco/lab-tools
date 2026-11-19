@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.2](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-layer-v0.27.1...lpoco-layer-v0.27.2) - 2026-11-19
+
+### Added
+
+- *(layer)* refuse a modules/ symlink that leaves the module tree ([#233](https://github.com/linux-phone-oco/lab-tools/pull/233))
+
 ## [0.27.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-layer-v0.27.0...lpoco-layer-v0.27.1) - 2026-11-19
 
 ### Added
