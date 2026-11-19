@@ -620,3 +620,42 @@ fn apk_names_its_modules_as_mkinitfs_reads_them_and_turns_the_feature_on_once() 
         .iter()
         .all(|p| p.name != "xiaomi-surya-boot"));
 }
+
+#[test]
+fn a_modules_symlink_that_leaves_the_tree_is_refused_and_one_inside_is_kept() {
+    let b = kernel_build("k8", "7.1.0");
+    let m = Manifest::parse(DEVICE).unwrap();
+    let layer = m.layer.as_ref().unwrap();
+    // a link inside the tree stays a link in the package
+    fs::create_dir_all(b.join("modules/kernel/a")).unwrap();
+    fs::write(b.join("modules/kernel/a/x.ko"), "x").unwrap();
+    std::os::unix::fs::symlink("kernel/a/x.ko", b.join("modules/x.ko")).unwrap();
+    let r = kernel_package(layer, &b);
+    assert!(r.is_ok(), "{:?}", r.err());
+    // `build` and `source` point at the build machine's tree: they would dangle on the phone
+    std::os::unix::fs::symlink("/home/lab/linux", b.join("modules/build")).unwrap();
+    let e = kernel_package(layer, &b).unwrap_err();
+    assert!(e.contains("modules/build") && e.contains("outside"), "{e}");
+    fs::remove_file(b.join("modules/build")).unwrap();
+    std::os::unix::fs::symlink("../../../linux", b.join("modules/source")).unwrap();
+    let e = kernel_package(layer, &b).unwrap_err();
+    assert!(e.contains("modules/source"), "{e}");
+}
+
+#[test]
+fn a_link_that_climbs_out_through_another_link_or_a_linked_modules_folder_is_refused() {
+    let b = kernel_build("k9", "7.1.0");
+    let layer_m = Manifest::parse(DEVICE).unwrap();
+    let layer = layer_m.layer.as_ref().unwrap();
+    fs::create_dir_all(b.join("modules/kernel/a/b")).unwrap();
+    std::os::unix::fs::symlink("../..", b.join("modules/kernel/a/b/l1")).unwrap();
+    std::os::unix::fs::symlink("kernel/a/b/l1/../..", b.join("modules/x")).unwrap();
+    assert!(kernel_package(layer, &b).unwrap_err().contains("modules/x"));
+    fs::remove_file(b.join("modules/x")).unwrap();
+    fs::remove_file(b.join("modules/kernel/a/b/l1")).unwrap();
+    assert!(kernel_package(layer, &b).is_ok());
+    let real = b.join("elsewhere");
+    fs::rename(b.join("modules"), &real).unwrap();
+    std::os::unix::fs::symlink(&real, b.join("modules")).unwrap();
+    assert!(kernel_package(layer, &b).unwrap_err().contains("is a link"));
+}
