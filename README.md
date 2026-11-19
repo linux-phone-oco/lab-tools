@@ -71,7 +71,7 @@ The suite's check `awake-wakelock-held` reads the lock and the unit, not an inst
 The device declares in its manifest's `[health]` its **way back** - `suspend_guard`, a command that succeeds while
 the phone's watchdog is armed (surya: the kept-armed watchdog) - and the wake sources to quiet for the cycle,
 `suspend_quiet` (wakeup files, e.g. a UART's `power/wakeup`, put to `disabled` and put back after, however the cycle
-ends). **Without a way back, or with one that is not armed, the cycle is refused** (exit 2, nothing suspended). It
+ends), and the services to stop for it, `suspend_stop` (systemd units - surya: `sensorspd` - stopped, in the order named, before the suspend and started again after it, last stopped first, however the cycle ends; the report names them in `stopped` and any that would not start in `not_started`; the plan names them in `stop`). **Without a way back, or with one that is not armed, the cycle is refused** (exit 2, nothing suspended). It
 reads before and after the SoC's own counters (qcom_stats), the suspend counter, the cpu idle states (cluster states
 among them, summed over the cpus) and the wakeup sources, prints one JSON report and keeps it as this boot's cycle
 (`/var/lib/lpoco-health/suspend/cycle.json`); exit 0 when the SoC slept, 1 when it did not. The check `soc-sleeps`
