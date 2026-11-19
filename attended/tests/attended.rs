@@ -1329,3 +1329,47 @@ fn a_missing_key_fails_the_dry_run_naming_it_before_any_step() {
         "{t}"
     );
 }
+
+#[test]
+fn a_call_that_outlasts_the_limit_is_cut_and_fails_its_step_naming_the_limit() {
+    let dir = tmp("limit");
+    let devlab = dir.join("devlab");
+    // a phone that hangs: the call never answers, and what it started stays on the pipes
+    fs::write(&devlab, "#!/bin/sh\nsleep 60\n").unwrap();
+    Command::new("chmod")
+        .arg("+x")
+        .arg(&devlab)
+        .status()
+        .unwrap();
+    let log = dir.join("limit.log");
+    let began = std::time::Instant::now();
+    let o = run(
+        &dir,
+        &devlab,
+        &["--log", log.to_str().unwrap(), "--call-limit", "2"],
+        "ok\n",
+    );
+    let t = said(&o);
+    assert!(
+        began.elapsed().as_secs() < 30,
+        "the hang was waited out: {t}"
+    );
+    assert_eq!(o.status.code(), Some(1), "{t}");
+    assert!(
+        t.contains("the phone answers") && t.contains("2 s"),
+        "the step and the limit are not named: {t}"
+    );
+    let l = fs::read_to_string(&log).unwrap();
+    assert!(l.contains("FAIL") && l.contains("2 s"), "{l}");
+}
+
+#[test]
+fn a_call_limit_that_is_not_a_number_of_seconds_is_refused_before_any_step() {
+    let dir = tmp("limit-bad");
+    let devlab = stand_in(&dir, "x");
+    let o = run(&dir, &devlab, &["--call-limit", "soon"], "ok\n");
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(2), "{t}");
+    assert!(t.contains("call-limit") || t.contains("call limit"), "{t}");
+    assert!(!dir.join("calls").exists(), "a step ran: {t}");
+}

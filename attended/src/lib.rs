@@ -23,6 +23,7 @@
 //! health run are the same chain. A library step (like [`steps::ask`]) is a function that returns a `Step`.
 
 pub mod bench;
+mod call;
 mod cli;
 mod device;
 pub mod steps;
@@ -33,7 +34,7 @@ use argenv_resolve::{InputResolveExt, OnProblems};
 use std::fmt::Display;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -160,6 +161,8 @@ struct Config {
     raw: toml::Value,
     devlab: String,
     sysfs_usb: String,
+    /// the longest one call to the phone may take; none unless asked for
+    call_limit: Option<std::time::Duration>,
     name: String,
 }
 
@@ -306,6 +309,10 @@ pub fn procedure(name: &str, device: &str) -> Run {
     let sysfs_usb = cli::Contract::SYSFS_USB
         .get_from(&r)
         .unwrap_or_else(|| "/sys/bus/usb/devices".into());
+    let call_limit = call_limit(cli::Contract::CALL_LIMIT.get_from(&r)).unwrap_or_else(|e| {
+        eprintln!("{name}: {e}");
+        std::process::exit(2)
+    });
     let c = Config {
         dry,
         until_first_prompt,
@@ -315,6 +322,7 @@ pub fn procedure(name: &str, device: &str) -> Run {
         raw,
         devlab,
         sysfs_usb,
+        call_limit,
         name: name.to_string(),
     };
     CONFIG.set(c).ok().expect("procedure() is called once");
@@ -554,19 +562,31 @@ pub(crate) fn sysfs_usb() -> &'static str {
     &config().sysfs_usb
 }
 
-/// Run devlab itself on this computer (`devlab ARGS`, e.g. `kernel try NAME`): its output when it exits 0, its
-/// output named when it does not. A dry run reaches nothing.
-pub(crate) fn devlab(args: &[&str]) -> Result<String, String> {
-    if config().dry {
-        return Err("dry run: devlab is not reached".into());
+/// The call limit, parsed at the edge: whole seconds, at least one; none when none is given (a call waits as
+/// long as devlab does: its own boot wait is ten minutes and more).
+fn call_limit(given: Option<String>) -> Result<Option<std::time::Duration>, String> {
+    let Some(s) = given else {
+        return Ok(None);
+    };
+    match s.trim().parse::<u64>() {
+        Ok(n) if n >= 1 => Ok(Some(std::time::Duration::from_secs(n))),
+        _ => Err(format!(
+            "--call-limit wants whole seconds, at least 1; got '{s}'"
+        )),
     }
-    let o = Command::new(&config().devlab)
-        .arg("--device")
-        .arg(&config().device)
-        .args(args)
-        .stdin(Stdio::null())
-        .output()
-        .map_err(|e| format!("cannot start {}: {e}", config().devlab))?;
+}
+
+/// One call to devlab for the device of this run, its input on standard input; what it said (standard output and
+/// error) when it exits 0. `reached` names what a dry run does not reach, `failed` how a failure is worded. A
+/// call past the call limit is cut and fails.
+fn call_devlab(args: &[&str], stdin: &str, reached: &str, failed: &str) -> Result<String, String> {
+    if config().dry {
+        return Err(format!("dry run: {reached} is not reached"));
+    }
+    let mut cmd = Command::new(&config().devlab);
+    cmd.arg("--device").arg(&config().device).args(args);
+    let o =
+        call::run_limited(cmd, stdin, config().call_limit).map_err(|e| format!("{failed}: {e}"))?;
     let out = format!(
         "{}{}",
         String::from_utf8_lossy(&o.stdout),
@@ -577,14 +597,19 @@ pub(crate) fn devlab(args: &[&str]) -> Result<String, String> {
         Ok(out)
     } else {
         Err(format!(
-            "devlab {} exited {}: {}",
-            args.join(" "),
+            "{failed} exited {}: {}",
             o.status
                 .code()
                 .map_or("by signal".into(), |c| c.to_string()),
             out.trim()
         ))
     }
+}
+
+/// Run devlab itself on this computer (`devlab ARGS`, e.g. `kernel try NAME`): its output when it exits 0, its
+/// output named when it does not. A dry run reaches nothing.
+pub(crate) fn devlab(args: &[&str]) -> Result<String, String> {
+    call_devlab(args, "", "devlab", &format!("devlab {}", args.join(" ")))
 }
 
 /// The phone, reached through devlab.
@@ -606,41 +631,7 @@ impl Phone {
     }
 
     fn via(&self, who: &str, script: &str) -> Result<String, String> {
-        if config().dry {
-            return Err("dry run: the phone is not reached".into());
-        }
-        let mut child = Command::new(&config().devlab)
-            .arg("--device")
-            .arg(&config().device)
-            .args(["phone", who])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| format!("cannot start {}: {e}", config().devlab))?;
-        let mut stdin = child.stdin.take().unwrap();
-        let _ = stdin.write_all(script.as_bytes());
-        drop(stdin);
-        let o = child
-            .wait_with_output()
-            .map_err(|e| format!("cannot wait for devlab: {e}"))?;
-        let out = format!(
-            "{}{}",
-            String::from_utf8_lossy(&o.stdout),
-            String::from_utf8_lossy(&o.stderr)
-        );
-        if o.status.success() {
-            note_out(&out);
-            Ok(out)
-        } else {
-            Err(format!(
-                "the phone's script exited {}: {}",
-                o.status
-                    .code()
-                    .map_or("by signal".into(), |c| c.to_string()),
-                out.trim()
-            ))
-        }
+        call_devlab(&["phone", who], script, "the phone", "the phone's script")
     }
 }
 

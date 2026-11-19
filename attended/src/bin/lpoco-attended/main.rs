@@ -87,6 +87,7 @@ fn passed_on(r: &Resolution) -> Vec<String> {
         ("--device", Contract::DEVICE.get_from(r)),
         ("--until", Contract::UNTIL.get_from(r)),
         ("--part", Contract::PART.get_from(r)),
+        ("--call-limit", Contract::CALL_LIMIT.get_from(r)),
     ] {
         if let Some(v) = v {
             a.push(flag.to_string());
