@@ -125,6 +125,7 @@ impl Step {
 struct Config {
     dry: bool,
     devlab: String,
+    sysfs_usb: String,
     name: String,
 }
 
@@ -225,9 +226,13 @@ pub fn procedure(name: &str, device: &str) -> Run {
     let devlab = cli::Contract::DEVLAB
         .get_from(&r)
         .unwrap_or_else(|| "devlab".into());
+    let sysfs_usb = cli::Contract::SYSFS_USB
+        .get_from(&r)
+        .unwrap_or_else(|| "/sys/bus/usb/devices".into());
     let c = Config {
         dry,
         devlab,
+        sysfs_usb,
         name: name.to_string(),
     };
     CONFIG.set(c).ok().expect("procedure() is called once");
@@ -306,6 +311,10 @@ pub fn retry<R: Outcome>(tries: u32, every: u64, mut run: impl FnMut() -> R) -> 
         }
     }
     last
+}
+
+pub(crate) fn sysfs_usb() -> &'static str {
+    &config().sysfs_usb
 }
 
 /// The phone, reached through devlab.
