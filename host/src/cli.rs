@@ -4,6 +4,7 @@
 //!
 //!   lpoco-host [plan]            what the lab host needs, as a diff per file and the exact root commands; changes nothing on the host (each device clone is fetched)
 //!   lpoco-host prepare now       do it: files written, udev reloaded, modules loaded, tools installed - only where they differ
+//!   lpoco-host follow [now]      a newer family release: installed when every keeper lease is free, checked, the pin landed; stepped back on a failing check
 //!   lpoco-host check             the lab user can open each declared node that is present; each tool at its pin
 //!   lpoco-host --version         this program's version (the lpoco family's one version)
 
@@ -16,10 +17,11 @@ pub enum Command {
     Prepare,
     Check,
     Revoke,
+    Follow,
 }
 
 impl Command {
-    pub const TOKENS: &'static [&'static str] = &["plan", "prepare", "check", "revoke"];
+    pub const TOKENS: &'static [&'static str] = &["plan", "prepare", "check", "revoke", "follow"];
 }
 
 impl FromRaw for Command {
@@ -29,6 +31,7 @@ impl FromRaw for Command {
             "prepare" => Command::Prepare,
             "check" => Command::Check,
             "revoke" => Command::Revoke,
+            "follow" => Command::Follow,
             _ => return None,
         })
     }
@@ -48,9 +51,9 @@ contract! {
         key: "now",
         ty: Type::Enum,
         allowed: &["now"],
-        subcommands: &[Command::Prepare, Command::Revoke],
+        subcommands: &[Command::Prepare, Command::Revoke, Command::Follow],
         arg: Some(Arg::positional(0)),
-        summary: "prepare changes the host only when it is told `now`.",
+        summary: "prepare and follow change the host only when told `now`.",
         ..Input::EMPTY
     };
 
@@ -84,6 +87,14 @@ contract! {
         ty: Type::String,
         env: Some(Env::new("LPOCO_RELEASE_BASE")),
         summary: "Where the family's release assets are (the GitHub releases of lab-tools when none is given): a tag's folder holds NAME-x86_64-unknown-linux-gnu and its .sha256. A file:// folder serves tests.",
+        ..Input::EMPTY
+    };
+
+    RELEASES: String = Input {
+        key: "releases",
+        ty: Type::String,
+        env: Some(Env::new("LPOCO_RELEASES")),
+        summary: "Where follow reads the family's releases list (GitHub's releases of lab-tools when none is given): a JSON array of objects with a tag_name. A file:// file serves tests.",
         ..Input::EMPTY
     };
 
