@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.2](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-v0.22.1...lpoco-v0.22.2) - 2026-11-19
+
+### Added
+
+- *(health)* test-layer-quiet base check, and each report says which layer the phone booted ([#207](https://github.com/linux-phone-oco/lab-tools/pull/207))
+
 ## [0.22.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-v0.22.0...lpoco-v0.22.1) - 2026-11-19
 
 ### Fixed
