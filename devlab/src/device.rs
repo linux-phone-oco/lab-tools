@@ -27,6 +27,8 @@ pub struct Device {
     /// What must never be touched on this phone, whoever asks: a command devlab carries to the phone
     /// (phone sh|root, the MCP door) that names one is refused, saying why
     pub hazard: Vec<Hazard>,
+    /// How the phone shows on the lab machine's USB bus ([[host.gadget]]): the try reads the host's log for it
+    pub gadgets: Vec<lpoco_manifest::Gadget>,
     /// Config files the phone keeps outside any git: the health suite reports their blobs, the lab compares
     pub user_config: Vec<lpoco_manifest::UserConfig>,
 }
@@ -105,6 +107,7 @@ impl Device {
             hear: m.hear,
             health: m.health,
             hazard: m.hazard,
+            gadgets: m.host.gadget,
             user_config: m.user_config,
         })
     }
