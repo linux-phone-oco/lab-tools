@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-manifest-v0.28.0...lpoco-manifest-v0.28.1) - 2026-11-19
+
+### Other
+
+- *(devlab)* the hold test locks a folder of its own, not the lab user's state folder ([#239](https://github.com/linux-phone-oco/lab-tools/pull/239))
+
 ## [0.28.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-manifest-v0.27.3...lpoco-manifest-v0.28.0) - 2026-11-19
 
 ### Added

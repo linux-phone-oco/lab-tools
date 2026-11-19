@@ -1,6 +1,6 @@
 [package]
 name = "lpoco-manifest"
-version = "0.28.0"
+version = "0.28.1"
 edition = "2021"
 description = "lpoco manifest: device.toml declared once - the types every lpoco program reads, unknown fields refused, its JSON Schema projected"
 license = "MIT OR Apache-2.0"
