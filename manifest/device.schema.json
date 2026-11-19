@@ -163,6 +163,25 @@
     "Connection": {
       "type": "object",
       "properties": {
+        "transport": {
+          "description": "How the phone is reached: ssh (as it always was), telnet on `shell_address`:`shell_port`, or adb by the\nphone's serial ([fastboot] or the first [[host.gadget]])",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Transport"
+            }
+          ]
+        },
+        "login": {
+          "description": "Whether the phone has a login: password (ssh, the default) or none (telnet, adb: the default there)",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Login"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "user": {
           "type": "string"
         },
@@ -195,6 +214,21 @@
       "required": [
         "user",
         "addresses"
+      ]
+    },
+    "Transport": {
+      "type": "string",
+      "enum": [
+        "ssh",
+        "telnet",
+        "adb"
+      ]
+    },
+    "Login": {
+      "type": "string",
+      "enum": [
+        "password",
+        "none"
       ]
     },
     "Tests": {

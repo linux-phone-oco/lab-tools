@@ -34,6 +34,27 @@ pub struct Device {
 }
 
 impl Device {
+    /// The serial adb reaches this phone by: its fastboot serial, else the first gadget serial the manifest names.
+    pub fn adb_serial(&self) -> Result<String> {
+        let from_fastboot = self.fastboot.serial.trim();
+        let serial = if from_fastboot.is_empty() {
+            self.gadgets
+                .iter()
+                .map(|g| g.serial.trim())
+                .find(|s| !s.is_empty())
+                .unwrap_or("")
+        } else {
+            from_fastboot
+        };
+        if serial.is_empty() {
+            bail!(
+                "{} is reached by adb but device.toml names no serial: say [fastboot] serial (or a [[host.gadget]] serial)",
+                self.device.codename
+            );
+        }
+        Ok(serial.to_string())
+    }
+
     /// The first hazard a script names, if any: a refusal, in words.
     pub fn hazard_in(&self, script: &str) -> Option<String> {
         self.hazard
@@ -94,7 +115,8 @@ impl Device {
         let connection = m
             .connection
             .context("device.toml: [connection] is missing")?;
-        if connection.addresses.is_empty() {
+        if connection.addresses.is_empty() && connection.transport == lpoco_manifest::Transport::Ssh
+        {
             bail!("device.toml: connection.addresses is empty");
         }
         Ok(Device {
