@@ -1329,6 +1329,9 @@ fn follow(st: &State, now: bool) -> Result<i32, String> {
     let Some(ToolPin::Version(pinned)) = st.lab.tools.get("lpoco") else {
         return Err("lab.toml pins no lpoco release: nothing to follow from".into());
     };
+    if now {
+        step_back_a_killed_follow(&st.home, pinned)?;
+    }
     let newest = newest_release(st)?;
     let Some(newest) = newest.filter(|n| follow::is_newer(n, pinned)) else {
         println!("up to date: lpoco {pinned} is the newest family release");
@@ -1357,9 +1360,11 @@ fn follow(st: &State, now: bool) -> Result<i32, String> {
         return Ok(0);
     }
     let previous = save_programs(&st.home)?;
+    write_journal(&st.home, &previous, &newest)?;
     println!("following: lpoco {pinned} -> {newest}");
     let stepped_back = |why: String| {
-        restore_programs(&previous);
+        restore_programs(&previous).map_err(|e| format!("{why}; and the programs could not be put back ({e}): the journal is kept for the next run"))?;
+        clear_journal(&st.home);
         Err(format!(
             "{why}; the programs of {pinned} are back and the pin stays"
         ))
@@ -1367,7 +1372,10 @@ fn follow(st: &State, now: bool) -> Result<i32, String> {
     if let Err(why) = install_family(st, &newest) {
         return stepped_back(why);
     }
-    let after = Judged::of(&format!("{}/.local/bin/lpoco-host", st.home), &staged)?;
+    let after = match Judged::of(&format!("{}/.local/bin/lpoco-host", st.home), &staged) {
+        Ok(a) => a,
+        Err(why) => return stepped_back(why),
+    };
     if !after.check_ok {
         return stepped_back(format!(
             "lpoco-host {newest} check failed: {}",
@@ -1395,12 +1403,14 @@ fn follow(st: &State, now: bool) -> Result<i32, String> {
     }
     // a keeper that came during the install holds programs of two versions: step back, wait for the next window
     if waits_for_keeper(st, &newest) {
-        restore_programs(&previous);
+        restore_programs(&previous).map_err(|e| format!("a keeper came, and the programs could not be put back ({e}): the journal is kept for the next run"))?;
+        clear_journal(&st.home);
         return Ok(0);
     }
     if let Err(why) = land_pin(st, pinned, &newest) {
         return stepped_back(format!("the pin was not landed ({why})"));
     }
+    clear_journal(&st.home);
     restart_watchers(st);
     println!("followed: lpoco {newest} is installed, checked, and its pin landed");
     Ok(0)
@@ -1559,19 +1569,135 @@ fn save_programs(home: &str) -> Result<Saved, String> {
         .collect()
 }
 
-fn restore_programs(previous: &Saved) {
-    for (to, bytes) in previous {
-        match bytes {
-            Some(b) => {
-                if let Err(e) = replace_file(to, b, 0o755) {
-                    eprintln!("lpoco-host: cannot put {to} back: {e}");
-                }
+/// Puts each program back; every one is tried, and what could not be put back is named.
+fn restore_programs(previous: &Saved) -> Result<(), String> {
+    let failed: Vec<String> = previous
+        .iter()
+        .filter_map(|(to, bytes)| match bytes {
+            Some(b) => replace_file(to, b, 0o755)
+                .err()
+                .map(|e| format!("{to}: {e}")),
+            None => match fs::remove_file(to) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => Some(format!("{to}: {e}")),
+                _ => None,
+            },
+        })
+        .collect();
+    if failed.is_empty() {
+        Ok(())
+    } else {
+        Err(failed.join("; "))
+    }
+}
+
+/// Where the programs to step back to are kept while an install runs: a folder with each program's bytes under its
+/// name (`NAME.absent`, empty, for one that was not there) and `TARGET`, the release being installed. It stands from
+/// before the first program is touched until the follow has put them back or has landed: a run that finds it is a
+/// follow that was killed in between.
+fn journal_dir(home: &str) -> String {
+    format!("{home}/.cache/lpoco-host/follow/journal")
+}
+
+const JOURNAL_TARGET: &str = "TARGET";
+
+fn sync_dir(dir: &str) -> std::io::Result<()> {
+    fs::File::open(dir)?.sync_all()
+}
+
+/// Writes the journal whole or not at all, and to disk before the first program is touched: built beside, synced,
+/// then moved into place.
+fn write_journal(home: &str, previous: &Saved, target: &str) -> Result<(), String> {
+    use std::io::Write;
+    let dir = journal_dir(home);
+    let building = format!("{dir}.new");
+    let _ = fs::remove_dir_all(&building);
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&building).map_err(|e| format!("cannot make {building}: {e}"))?;
+    let mut entries: Vec<(String, Vec<u8>)> = previous
+        .iter()
+        .map(|(to, bytes)| {
+            let name = Path::new(to)
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned();
+            match bytes {
+                Some(b) => (name, b.clone()),
+                None => (format!("{name}.absent"), Vec::new()),
             }
+        })
+        .collect();
+    entries.push((JOURNAL_TARGET.into(), target.as_bytes().to_vec()));
+    for (file, body) in &entries {
+        fs::File::create(format!("{building}/{file}"))
+            .and_then(|mut f| f.write_all(body).and_then(|_| f.sync_all()))
+            .map_err(|e| format!("cannot keep {file} in the journal: {e}"))?;
+    }
+    sync_dir(&building).map_err(|e| format!("cannot sync {building}: {e}"))?;
+    fs::rename(&building, &dir).map_err(|e| format!("cannot place the journal {dir}: {e}"))?;
+    let parent = format!("{home}/.cache/lpoco-host/follow");
+    sync_dir(&parent).map_err(|e| format!("cannot sync {parent}: {e}"))
+}
+
+/// What a killed follow was going to step back to: None when no follow was cut short; else the release it was
+/// installing and the programs it replaced, read from what the journal holds. A journal without its TARGET was not
+/// written whole: an error, and nothing is put back from it.
+fn read_journal(home: &str) -> Result<Option<(String, Saved)>, String> {
+    let dir = journal_dir(home);
+    if !Path::new(&dir).is_dir() {
+        return Ok(None);
+    }
+    let torn = |why: String| {
+        format!("the journal {dir} is not whole ({why}): nothing is put back from it; remove it with `rm -r {dir}` once the programs are known good")
+    };
+    let target = fs::read_to_string(format!("{dir}/{JOURNAL_TARGET}"))
+        .map_err(|e| torn(format!("{JOURNAL_TARGET}: {e}")))?;
+    let mut saved = Saved::new();
+    let listing = fs::read_dir(&dir).map_err(|e| torn(e.to_string()))?;
+    for entry in listing {
+        let name = entry
+            .map_err(|e| torn(e.to_string()))?
+            .file_name()
+            .to_string_lossy()
+            .into_owned();
+        if name == JOURNAL_TARGET {
+            continue;
+        }
+        match name.strip_suffix(".absent") {
+            Some(program) => saved.push((format!("{home}/.local/bin/{program}"), None)),
             None => {
-                let _ = fs::remove_file(to);
+                let bytes =
+                    fs::read(format!("{dir}/{name}")).map_err(|e| torn(format!("{name}: {e}")))?;
+                saved.push((format!("{home}/.local/bin/{name}"), Some(bytes)));
             }
         }
     }
+    if saved.is_empty() {
+        return Err(torn("it names no program".into()));
+    }
+    Ok(Some((target.trim().to_string(), saved)))
+}
+
+fn clear_journal(home: &str) {
+    let _ = fs::remove_dir_all(journal_dir(home));
+}
+
+/// A follow that was killed after it began to install left programs of two versions: they are put back first, unless
+/// its pin had already landed, when the programs are the new release's and the journal is only dropped.
+fn step_back_a_killed_follow(home: &str, pinned: &str) -> Result<(), String> {
+    let Some((target, previous)) = read_journal(home)? else {
+        return Ok(());
+    };
+    if target == pinned {
+        println!("a follow was killed after its pin landed: lpoco {target} stays installed");
+    } else {
+        println!("a follow was killed mid-install: the programs it was replacing are put back");
+        restore_programs(&previous).map_err(|e| {
+            format!("cannot put back the programs of a killed follow ({e}): the journal is kept")
+        })?;
+    }
+    clear_journal(home);
+    Ok(())
 }
 
 /// Installs the family's programs at release `newest`, each from its asset after the hash matches.
