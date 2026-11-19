@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-attended-v0.37.0...lpoco-attended-v0.37.1) - 2026-11-19
+
+### Added
+
+- *(host)* a follow killed mid-install is stepped back by the next run ([#298](https://github.com/linux-phone-oco/lab-tools/pull/298))
+
 ## [0.37.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-attended-v0.36.0...lpoco-attended-v0.37.0) - 2026-11-19
 
 ### Added
