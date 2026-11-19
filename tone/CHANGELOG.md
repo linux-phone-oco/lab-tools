@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.36.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-tone-v0.35.1...lpoco-tone-v0.36.0) - 2026-11-19
+
+### Added
+
+- *(host)* follow and prepare take one flock, so two runs never change the host together ([#293](https://github.com/linux-phone-oco/lab-tools/pull/293))
+
+### Fixed
+
+- *(host)* clones moves only commons places, names any other ([#295](https://github.com/linux-phone-oco/lab-tools/pull/295))
+
 ## [0.35.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-tone-v0.35.0...lpoco-tone-v0.35.1) - 2026-11-19
 
 ### Added
