@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.38.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-host-v0.37.3...lpoco-host-v0.38.0) - 2026-11-19
+
+### Added
+
+- *(lab)* the phone is reached by its declared transport (ssh, telnet, adb) and login ([#304](https://github.com/linux-phone-oco/lab-tools/pull/304))
+
 ## [0.37.3](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-host-v0.37.2...lpoco-host-v0.37.3) - 2026-11-19
 
 ### Added
