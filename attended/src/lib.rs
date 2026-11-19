@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! lpoco-attended: a lane's attended procedure as a plain list of named steps. The entry file reads like a
-//! shell script; the plumbing lives here: the arguments (`--dry-run`, `--log`, `--until FIRST_PROMPT`, `--part`, `--help`), running each step,
+//! shell script; the plumbing lives here: the arguments (`--dry-run`, `--log`, `--device`, `--until FIRST_PROMPT`, `--part`, `--help`), running each step,
 //! stopping the run at the first that fails and naming it, the prompt-and-wait point, the log a lane files.
-//! The phone is reached through devlab (`devlab phone sh|root`, the script on its standard input).
+//! The phone is reached through devlab (`devlab --device FILE phone sh|root`, the script on its standard input).
+//! `procedure(name, device)` finds that device's `device.toml` (`--device FILE`, else from the folder upwards), refuses a
+//! manifest that is another phone's, and hands devlab that very file, so two phones on the bench are never mixed up.
 //! A file to copy: `examples/attended.rs`.
 //!
 //! ```no_run
@@ -21,6 +23,7 @@
 //! health run are the same chain. A library step (like [`steps::ask`]) is a function that returns a `Step`.
 
 mod cli;
+mod device;
 pub mod steps;
 
 use argenv_resolve::{InputResolveExt, OnProblems};
@@ -130,6 +133,8 @@ struct Config {
     dry: bool,
     until_first_prompt: bool,
     part: Option<String>,
+    /// the device.toml of the procedure's device, the one devlab is handed
+    device: std::path::PathBuf,
     devlab: String,
     sysfs_usb: String,
     name: String,
@@ -210,9 +215,9 @@ impl Drop for Run {
     }
 }
 
-/// Begin the procedure: read the arguments (`--dry-run`, `--log FILE`, `--until FIRST_PROMPT`, `--part NAME`, `--help`), open the log. Call it once,
+/// Begin the procedure: read the arguments (`--dry-run`, `--log FILE`, `--device FILE`, `--until FIRST_PROMPT`, `--part NAME`, `--help`), load the device's manifest, open the log. Call it once,
 /// first, and keep what it returns until the end of main. Exits 0 for `--help`; 1 for a wrong argument (as
-/// argenv does in every lpoco program); 2 when the log cannot be written, or when `--part` names a part the procedure has not got (a run stopped by `--until` exits 0 and leaves the log without an `end` line).
+/// argenv does in every lpoco program); 2 when the device's device.toml is missing, invalid or another phone's (even in a dry run; only its schema and codename are checked, devlab judges the rest), when the log cannot be written, or when `--part` names a part the procedure has not got (a run stopped by `--until` exits 0 and leaves the log without an `end` line).
 pub fn procedure(name: &str, device: &str) -> Run {
     let r = cli::Contract::parse_and_lint(OnProblems::FailOnError);
     if cli::Contract::HELP.get_from(&r).unwrap_or(false) {
@@ -220,6 +225,11 @@ pub fn procedure(name: &str, device: &str) -> Run {
         std::process::exit(0);
     }
     let dry = cli::Contract::DRY_RUN.get_from(&r).unwrap_or(false);
+    let device_file = device::load(cli::Contract::DEVICE.get_from(&r).as_deref(), device)
+        .unwrap_or_else(|e| {
+            eprintln!("{name}: {e}");
+            std::process::exit(2)
+        });
     let path = cli::Contract::LOG
         .get_from(&r)
         .unwrap_or_else(|| format!("attended-{}.log", slug(name)));
@@ -243,6 +253,7 @@ pub fn procedure(name: &str, device: &str) -> Run {
         dry,
         until_first_prompt,
         part,
+        device: device_file,
         devlab,
         sysfs_usb,
         name: name.to_string(),
@@ -380,6 +391,8 @@ pub(crate) fn devlab(args: &[&str]) -> Result<String, String> {
         return Err("dry run: devlab is not reached".into());
     }
     let o = Command::new(&config().devlab)
+        .arg("--device")
+        .arg(&config().device)
         .args(args)
         .stdin(Stdio::null())
         .output()
@@ -426,6 +439,8 @@ impl Phone {
             return Err("dry run: the phone is not reached".into());
         }
         let mut child = Command::new(&config().devlab)
+            .arg("--device")
+            .arg(&config().device)
             .args(["phone", who])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

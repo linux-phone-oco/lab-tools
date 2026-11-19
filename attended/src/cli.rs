@@ -2,7 +2,7 @@
 //! The invocation surface every attended procedure has, declared once with argenv: its arguments and the
 //! environment variables the library reads. A lane's entry file declares none of it.
 //!
-//!   PROCEDURE [--dry-run] [--log FILE] [--until FIRST_PROMPT] [--part NAME]
+//!   PROCEDURE [--dry-run] [--log FILE] [--device DEVICE] [--until FIRST_PROMPT] [--part NAME]
 //!   PROCEDURE --help
 
 use argenv_resolve::*;
@@ -14,6 +14,14 @@ contract! {
         default: Some(false),
         arg: Some(Arg::long("dry-run")),
         summary: "Walk every step and say what it would do; reach no phone, ask no one, change nothing.",
+        ..Input::EMPTY
+    };
+
+    DEVICE: String = Input {
+        key: "device",
+        ty: Type::String,
+        arg: Some(Arg { value_name: "DEVICE", ..Arg::long("device") }),
+        summary: "The device manifest the procedure is for (default: device.toml here or in a folder above); devlab is handed this very file.",
         ..Input::EMPTY
     };
 

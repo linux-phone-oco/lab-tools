@@ -13,7 +13,20 @@ fn tmp(name: &str) -> PathBuf {
     let d = std::env::temp_dir().join(format!("lpoco-attended-{}-{name}", std::process::id()));
     let _ = fs::remove_dir_all(&d);
     fs::create_dir_all(&d).unwrap();
+    fs::write(d.join("device.toml"), manifest("xiaomi-surya")).unwrap();
     d
+}
+
+/// A folder with no device.toml in it (a temp folder is not under any other).
+fn bare(name: &str) -> PathBuf {
+    let d = tmp(name);
+    fs::remove_file(d.join("device.toml")).unwrap();
+    d
+}
+
+/// The least a device repo holds: its codename.
+fn manifest(codename: &str) -> String {
+    format!("[device]\ncodename = \"{codename}\"\n")
 }
 
 /// The example, its git dependency pointed at this checkout (as rust_script_step.rs does), compiled once per test dir.
@@ -45,7 +58,7 @@ fn stand_in(dir: &Path, lsmod: &str) -> PathBuf {
     fs::write(
         &devlab,
         format!(
-            "#!/bin/sh\necho \"$1 $2\" >> {calls}\nPATH={bin}:$PATH exec sh -s\n",
+            "#!/bin/sh\necho \"$*\" >> {calls}\nPATH={bin}:$PATH exec sh -s\n",
             calls = dir.join("calls").display(),
             bin = bin.display()
         ),
@@ -212,6 +225,7 @@ fn a_panic_in_a_step_is_not_reported_as_a_pass() {
         .arg(dir.join("attended.rs"))
         .args(["--log", log.to_str().unwrap()])
         .env("LPOCO_ATTENDED_DEVLAB", &devlab)
+        .current_dir(&dir)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -252,6 +266,7 @@ fn run_file(dir: &Path, devlab: &Path, args: &[&str]) -> Output {
         .arg(dir.join("attended.rs"))
         .args(args)
         .env("LPOCO_ATTENDED_DEVLAB", devlab)
+        .current_dir(dir)
         .stdin(Stdio::null())
         .output()
         .unwrap()
@@ -490,7 +505,8 @@ fn devlab_calls(dir: &Path, case: &str, kernel: &str, code: u32) -> Output {
     fs::write(
         &devlab,
         format!(
-            "#!/bin/sh\necho \"$*\" >> {args}\ncase \"$1 $2\" in \"kernel try\") echo 'trying once'; exit {code};; esac\nPATH={bin}:$PATH exec sh -s\n",
+            "#!/bin/sh\necho \"$*\" >> {args}\n[ \"$1\" = --device ] && shift 2
+case \"$1 $2\" in \"kernel try\") echo 'trying once'; exit {code};; esac\nPATH={bin}:$PATH exec sh -s\n",
             args = dir.join("args").display(),
             bin = dir.join("phone/bin").display()
         ),
@@ -519,7 +535,7 @@ fn boot_once_asks_devlab_for_one_try_of_the_named_kernel_and_names_a_refusal() {
     assert_eq!(o.status.code(), Some(0), "{}", said(&o));
     assert_eq!(
         fs::read_to_string(dir.join("args")).unwrap().trim(),
-        "kernel try calls4"
+        format!("--device {}/device.toml kernel try calls4", dir.display())
     );
     let o = devlab_calls(&tmp("boot-once-refused"), "boot-once", "calls4", 1);
     let t = said(&o);
@@ -549,7 +565,7 @@ fn back_to_known_good_reboots_the_phone_into_its_default_and_a_dry_run_does_not(
     assert_eq!(o.status.code(), Some(0), "{}", said(&o));
     assert_eq!(
         fs::read_to_string(dir.join("args")).unwrap().trim(),
-        "phone root"
+        format!("--device {}/device.toml phone root", dir.display())
     );
     assert!(
         fs::read_to_string(dir.join("rebooted"))
@@ -686,4 +702,132 @@ fn a_part_asked_of_a_procedure_that_has_none_runs_nothing() {
     assert_eq!(o.status.code(), Some(2), "{t}");
     assert!(t.contains("no parts"), "{t}");
     assert!(!dir.join("calls").exists(), "the phone was reached: {t}");
+}
+
+/// The example run from `cwd`, against the stand-in `devlab` of `dir`, with `args`.
+fn run_from(cwd: &Path, dir: &Path, args: &[&str]) -> Output {
+    let devlab = stand_in(dir, "pmicwdt 16384 0");
+    Command::new("rust-script")
+        .arg(example(dir))
+        .args(args)
+        .env("LPOCO_ATTENDED_DEVLAB", devlab)
+        .current_dir(cwd)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap()
+}
+
+/// Every line devlab was called with, from the stand-in's file.
+fn devlab_lines(dir: &Path) -> Vec<String> {
+    fs::read_to_string(dir.join("calls"))
+        .unwrap()
+        .lines()
+        .map(String::from)
+        .collect()
+}
+
+#[test]
+fn devlab_is_handed_the_manifest_named_by_the_flag_not_the_one_the_folder_finds() {
+    let dir = tmp("device-flag");
+    let other = tmp("device-flag-other");
+    fs::write(other.join("device.toml"), manifest("xiaomi-surya")).unwrap();
+    // run from `other`, whose own device.toml is also surya's; the flag points at dir's
+    let flagged = dir.join("device.toml");
+    let o = run_from(&other, &dir, &["--device", flagged.to_str().unwrap()]);
+    assert_eq!(
+        o.status.code(),
+        Some(1),
+        "stops at the ask, no answer: {}",
+        said(&o)
+    );
+    let lines = devlab_lines(&dir);
+    assert!(!lines.is_empty());
+    for l in &lines {
+        assert!(
+            l.starts_with(&format!("--device {} phone ", flagged.display())),
+            "{l}"
+        );
+    }
+    assert!(lines.iter().any(|l| l.contains("phone sh")), "{lines:?}");
+}
+
+#[test]
+fn the_manifest_is_found_from_a_folder_below_it_and_a_relative_flag_is_made_absolute() {
+    let dir = tmp("device-found");
+    let below = dir.join("procedures/deep");
+    fs::create_dir_all(&below).unwrap();
+    let o = run_from(&below, &dir, &[]);
+    assert_eq!(o.status.code(), Some(1), "{}", said(&o));
+    let want = format!("--device {}/device.toml phone sh", dir.display());
+    assert!(
+        devlab_lines(&dir)[0].starts_with(&want),
+        "{:?}",
+        devlab_lines(&dir)
+    );
+    let dir = tmp("device-relative");
+    let o = run_from(&dir, &dir, &["--device", "device.toml"]);
+    assert_eq!(o.status.code(), Some(1), "{}", said(&o));
+    let want = format!("--device {}/device.toml phone sh", dir.display());
+    assert!(
+        devlab_lines(&dir)[0].starts_with(&want),
+        "{:?}",
+        devlab_lines(&dir)
+    );
+}
+
+#[test]
+fn a_procedure_for_another_device_is_refused_before_any_step_even_in_a_dry_run() {
+    let dir = tmp("other-device");
+    fs::write(dir.join("device.toml"), manifest("google-walleye")).unwrap();
+    let o = run_from(&dir, &dir, &["--dry-run"]);
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(2), "{t}");
+    assert!(
+        t.contains("xiaomi-surya") && t.contains("google-walleye"),
+        "{t}"
+    );
+    assert!(!t.contains("the phone answers"), "a step ran: {t}");
+    assert!(!dir.join("calls").exists());
+}
+
+#[test]
+fn no_device_manifest_or_a_wrong_one_is_named_before_any_step() {
+    let dir = bare("no-manifest");
+    let o = run_from(&dir, &dir, &["--dry-run"]);
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(2), "{t}");
+    assert!(t.contains("device.toml") && t.contains("--device"), "{t}");
+    let dir = tmp("bad-manifest");
+    fs::write(dir.join("device.toml"), "[devise]\ncodename = \"x\"\n").unwrap();
+    let o = run_from(&dir, &dir, &["--dry-run"]);
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(2), "{t}");
+    assert!(t.contains("device.toml") && t.contains("devise"), "{t}");
+    assert!(!t.contains("the phone answers"), "a step ran: {t}");
+}
+
+#[test]
+fn a_refusal_comes_before_the_log_and_names_a_manifest_that_is_missing_or_has_no_device() {
+    let dir = tmp("refuse-log");
+    fs::write(dir.join("device.toml"), manifest("google-walleye")).unwrap();
+    let log = dir.join("refused.log");
+    let o = run_from(&dir, &dir, &["--dry-run", "--log", log.to_str().unwrap()]);
+    assert_eq!(o.status.code(), Some(2), "{}", said(&o));
+    assert!(
+        !log.exists(),
+        "the log was opened before the device was checked"
+    );
+    assert!(!dir.join("attended-boot-the-pmicwdt-kernel.log").exists());
+    fs::write(dir.join("device.toml"), "[hear]\n").unwrap();
+    let t = said(&run_from(&dir, &dir, &["--dry-run"]));
+    assert!(t.contains("codename is missing"), "{t}");
+    let t = said(&run_from(
+        &dir,
+        &dir,
+        &["--dry-run", "--device", "nowhere.toml"],
+    ));
+    assert!(
+        t.contains("cannot read") && t.contains("nowhere.toml"),
+        "{t}"
+    );
 }
