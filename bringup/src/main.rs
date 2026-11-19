@@ -21,7 +21,7 @@ fn main() {
             "{}",
             cli::usage(
                 "lpoco-bringup",
-                "Boot images and bring-up steps. Commands: image info|unpack|pack|check|swap|bisect."
+                "Boot images and bring-up steps. Commands: image info|unpack|pack|check|swap|bisect; dt-check binding|dtbs."
             )
         );
         return;
@@ -58,6 +58,12 @@ fn run(r: &argenv_resolve::Resolution) -> Result<i32, String> {
     let command = Contract::COMMAND.get_from(r);
     if matches!(verb, Verb::Capture | Verb::Diff) != (command == Some(Command::Reference)) {
         return Err("capture and diff are for the reference: lpoco-bringup reference capture --via COMMAND --out DIR | reference diff PART --live DIR --ours DIR".into());
+    }
+    if (command == Some(Command::DtCheck)) != matches!(verb, Verb::Binding | Verb::Dtbs) {
+        return Err("binding and dtbs are for dt-check: lpoco-bringup dt-check binding|dtbs SRC --image NAME@sha256:DIGEST --out SCRATCH".into());
+    }
+    if command == Some(Command::DtCheck) {
+        return dt_check(verb, r);
     }
     if command == Some(Command::Reference) {
         return reference(verb, r);
@@ -203,7 +209,7 @@ fn run(r: &argenv_resolve::Resolution) -> Result<i32, String> {
             println!("{out}: {} (net {net})", names.join(", "));
             Ok(0)
         }
-        Verb::Capture | Verb::Diff => unreachable!("handled above"),
+        Verb::Capture | Verb::Diff | Verb::Binding | Verb::Dtbs => unreachable!("handled above"),
         Verb::Check => {
             let path = need(Contract::IMAGE.get_from(r), "an image (IMG)")?;
             let bytes = read(&path)?;
@@ -259,6 +265,40 @@ fn net_of(r: &argenv_resolve::Resolution) -> Result<u8, String> {
             .parse::<u8>()
             .map_err(|_| format!("--net {n}: a number from 0 to 255")),
     }
+}
+
+/// `dt-check binding|dtbs`: the kernel's devicetree checks in a container.
+fn dt_check(verb: Verb, r: &argenv_resolve::Resolution) -> Result<i32, String> {
+    let src = need(Contract::SRC.get_from(r), "the kernel source (SRC)")?;
+    let image = need(Contract::DT_IMAGE.get_from(r), "--image NAME@sha256:DIGEST")?;
+    let out = need(Contract::OUT.get_from(r), "--out SCRATCH")?;
+    let docker = Contract::DOCKER
+        .get_from(r)
+        .unwrap_or_else(|| "docker".into());
+    let arch = Contract::ARCH.get_from(r).unwrap_or_else(|| "arm64".into());
+    lpoco_bringup::dt_check::check_target(&arch)?;
+    let (schema, dtbs) = (
+        Contract::SCHEMA_FILES.get_from(r),
+        Contract::DTBS.get_from(r),
+    );
+    if (verb == Verb::Binding && dtbs.is_some()) || (verb == Verb::Dtbs && schema.is_some()) {
+        return Err("--schema-files goes with binding and --dtbs with dtbs".into());
+    }
+    let mut make = vec![format!("ARCH={arch}")];
+    if verb == Verb::Binding {
+        if let Some(f) = schema {
+            make.push(format!("DT_SCHEMA_FILES={f}"));
+        }
+        make.push("dt_binding_check".into());
+    } else {
+        let dtbs = need(dtbs, "--dtbs A.dtb,B.dtb")?;
+        make.push("CHECK_DTBS=y".into());
+        for d in dtbs.split(',').map(str::trim) {
+            lpoco_bringup::dt_check::check_target(d)?;
+            make.push(d.to_string());
+        }
+    }
+    lpoco_bringup::dt_check::run(&docker, &image, Path::new(&src), Path::new(&out), &make)
 }
 
 /// `reference capture` and `reference diff`: a stock OS's snapshot, and two snapshots compared for one part.

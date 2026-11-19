@@ -33,10 +33,12 @@ pub enum Command {
     Image,
     Initramfs,
     Reference,
+    #[serde(rename = "dt-check")]
+    DtCheck,
 }
 
 impl Command {
-    pub const TOKENS: &'static [&'static str] = &["image", "initramfs", "reference"];
+    pub const TOKENS: &'static [&'static str] = &["image", "initramfs", "reference", "dt-check"];
 }
 
 impl FromRaw for Command {
@@ -45,6 +47,7 @@ impl FromRaw for Command {
             "image" => Command::Image,
             "initramfs" => Command::Initramfs,
             "reference" => Command::Reference,
+            "dt-check" => Command::DtCheck,
             _ => return None,
         })
     }
@@ -64,12 +67,14 @@ pub enum Verb {
     Files,
     Capture,
     Diff,
+    Binding,
+    Dtbs,
 }
 
 impl Verb {
     pub const TOKENS: &'static [&'static str] = &[
         "info", "unpack", "pack", "check", "swap", "bisect", "build", "init", "files", "capture",
-        "diff",
+        "diff", "binding", "dtbs",
     ];
 }
 
@@ -87,6 +92,8 @@ impl FromRaw for Verb {
             "files" => Verb::Files,
             "capture" => Verb::Capture,
             "diff" => Verb::Diff,
+            "binding" => Verb::Binding,
+            "dtbs" => Verb::Dtbs,
             _ => return None,
         })
     }
@@ -106,9 +113,9 @@ contract! {
         key: "verb",
         ty: Type::Enum,
         allowed: Verb::TOKENS,
-        subcommands: &[Command::Image, Command::Initramfs, Command::Reference],
+        subcommands: &[Command::Image, Command::Initramfs, Command::Reference, Command::DtCheck],
         arg: Some(Arg::positional(0)),
-        summary: "What to do: image info, unpack, pack, check, swap or bisect; initramfs build, init or files; reference capture or diff.",
+        summary: "What to do: image info, unpack, pack, check, swap or bisect; initramfs build, init or files; reference capture or diff; dt-check binding or dtbs.",
         ..Input::EMPTY
     };
 
@@ -170,9 +177,9 @@ contract! {
     OUT: String, Command = Input {
         key: "out",
         ty: Type::String,
-        subcommands: &[Command::Image, Command::Initramfs, Command::Reference],
+        subcommands: &[Command::Image, Command::Initramfs, Command::Reference, Command::DtCheck],
         arg: Some(Arg { value_name: "PATH", ..Arg::long("out") }),
-        summary: "pack, swap: the image to write; bisect: the folder the images are written to; unpack: the folder to write the parts to; initramfs build: the archive to write; initramfs init: the init script to write (standard output when none is given); initramfs files: the folder to write the files to; reference capture: the snapshot folder to write.",
+        summary: "pack, swap: the image to write; bisect: the folder the images are written to; unpack: the folder to write the parts to; initramfs build: the archive to write; initramfs init: the init script to write (standard output when none is given); initramfs files: the folder to write the files to; reference capture: the snapshot folder to write; dt-check: the scratch folder the container writes to (O=).",
         ..Input::EMPTY
     };
 
@@ -256,6 +263,62 @@ contract! {
         arg: Some(Arg { value_name: "COMMAND", ..Arg::long("via") }),
         env: Some(Env::new("LPOCO_REFERENCE_VIA")),
         summary: "reference capture: the transport to a phone with a root shell, run with the capture script on its standard input (adb shell su 0 sh; ssh phone sudo sh).",
+        ..Input::EMPTY
+    };
+
+    SRC: String, Command = Input {
+        key: "src",
+        ty: Type::String,
+        subcommands: &[Command::DtCheck],
+        arg: Some(Arg { value_name: "SRC", ..Arg::positional(1) }),
+        summary: "dt-check: the kernel source folder, mounted read-only in the container.",
+        ..Input::EMPTY
+    };
+
+    DT_IMAGE: String, Command = Input {
+        key: "dt_image",
+        ty: Type::String,
+        subcommands: &[Command::DtCheck],
+        arg: Some(Arg { value_name: "NAME@sha256:DIGEST", ..Arg::long("image") }),
+        env: Some(Env::new("LPOCO_DT_IMAGE")),
+        summary: "dt-check: the container image, by digest and never a tag (alpine:edge pinned, with dtschema from py3-dt-schema).",
+        ..Input::EMPTY
+    };
+
+    SCHEMA_FILES: String, Command = Input {
+        key: "schema_files",
+        ty: Type::String,
+        subcommands: &[Command::DtCheck],
+        arg: Some(Arg { value_name: "FILES", ..Arg::long("schema-files") }),
+        summary: "dt-check binding: DT_SCHEMA_FILES, the binding schemas to check (all of them when none is given).",
+        ..Input::EMPTY
+    };
+
+    DTBS: String, Command = Input {
+        key: "dtbs",
+        ty: Type::String,
+        subcommands: &[Command::DtCheck],
+        arg: Some(Arg { value_name: "A.dtb,B.dtb", ..Arg::long("dtbs") }),
+        summary: "dt-check dtbs: the comma-separated dtbs to build and check, as make names them (qcom/sm7125-xiaomi-joyeuse.dtb).",
+        ..Input::EMPTY
+    };
+
+    ARCH: String, Command = Input {
+        key: "arch",
+        ty: Type::String,
+        subcommands: &[Command::DtCheck],
+        arg: Some(Arg { value_name: "ARCH", ..Arg::long("arch") }),
+        summary: "dt-check: the kernel ARCH (arm64 when none is given).",
+        ..Input::EMPTY
+    };
+
+    DOCKER: String, Command = Input {
+        key: "docker",
+        ty: Type::String,
+        subcommands: &[Command::DtCheck],
+        arg: Some(Arg { value_name: "PROGRAM", ..Arg::long("docker") }),
+        env: Some(Env::new("LPOCO_DOCKER")),
+        summary: "dt-check: the container program (docker when none is given).",
         ..Input::EMPTY
     };
 
