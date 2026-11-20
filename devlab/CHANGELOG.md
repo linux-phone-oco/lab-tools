@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.41.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-lab-v0.40.0...lpoco-lab-v0.41.0) - 2026-11-20
+
+### Added
+
+- *(attended)* boot_once runs declared [kernels] pre_boot gates before fastboot boot ([#317](https://github.com/linux-phone-oco/lab-tools/pull/317))
+
 ## [0.40.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-lab-v0.39.2...lpoco-lab-v0.40.0) - 2026-11-20
 
 ### Added
