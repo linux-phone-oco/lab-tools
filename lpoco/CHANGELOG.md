@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.39.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-v0.39.0...lpoco-v0.39.1) - 2026-11-20
+
+### Added
+
+- *(attended)* boot_once checks the image's sha256 and the gadget's serial ([#310](https://github.com/linux-phone-oco/lab-tools/pull/310))
+
 ## [0.39.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-v0.38.1...lpoco-v0.39.0) - 2026-11-20
 
 ### Added
