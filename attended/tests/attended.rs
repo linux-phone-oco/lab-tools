@@ -53,7 +53,7 @@ fn stand_in(dir: &Path, lsmod: &str) -> PathBuf {
     let bin = dir.join("phone/bin");
     fs::create_dir_all(&bin).unwrap();
     fs::write(bin.join("lsmod"), format!("#!/bin/sh\necho '{lsmod}'\n")).unwrap();
-    fs::write(bin.join("uname"), "#!/bin/sh\necho 6.1.0-pmicwdt\n").unwrap();
+    fs::write(bin.join("uname"), format!("#!/bin/sh\nif [ -e {d}/uname-release ]; then cat {d}/uname-release; else echo 6.1.0-pmicwdt; fi\n", d = dir.display())).unwrap();
     let devlab = dir.join("devlab");
     fs::write(
         &devlab,
@@ -520,7 +520,7 @@ fn devlab_calls(dir: &Path, case: &str, kernel: &str, code: u32) -> Output {
         &devlab,
         format!(
             "#!/bin/sh\necho \"$*\" >> {args}\n[ \"$1\" = --device ] && shift 2
-case \"$1 $2\" in \"kernel try\") echo 'trying once'; exit {code};; esac\nPATH={bin}:$PATH exec sh -s\n",
+case \"$1 $2\" in \"kernel try\") echo 'trying once'; exit {code};; \"fastboot boot\") echo 'booted from memory'; exit {code};; esac\nPATH={bin}:$PATH exec sh -s\n",
             args = dir.join("args").display(),
             bin = dir.join("phone/bin").display()
         ),
@@ -535,6 +535,11 @@ case \"$1 $2\" in \"kernel try\") echo 'trying once'; exit {code};; esac\nPATH={
         } else {
             vec![]
         })
+        .envs(
+            dir.join("sysusb")
+                .exists()
+                .then_some(("LPOCO_ATTENDED_SYSFS_USB", dir.join("sysusb"))),
+        )
         .env("LPOCO_ATTENDED_DEVLAB", &devlab)
         .current_dir(dir)
         .stdin(Stdio::null())
@@ -1512,4 +1517,96 @@ fn back_to_known_good_is_skipped_when_the_kept_kernel_already_runs_and_not_other
     let o = devlab_calls(&dir, "back", "", 0);
     assert_eq!(o.status.code(), Some(0), "{}", said(&o));
     assert!(dir.join("rebooted").exists(), "the phone was not rebooted");
+}
+
+/// A device that boots its test kernel from memory: its image, its fastboot serial, the gadget it then shows.
+fn declare_fastboot_boot(dir: &Path, device_wait: u32) {
+    let mut m = fs::read_to_string(dir.join("device.toml")).unwrap();
+    m.push_str(&format!(
+        "[fastboot]\nserial = \"FA81\"\n[[host.gadget]]\nserial = \"s\"\naccess = [\"tty\"]\nusb_id = \"1d6b:0104\"\n\
+         [boot]\nkernel_offset = 0\nramdisk_offset = 0\ntags_offset = 0\npagesize = 4096\ncmdline = \"x\"\ndevice_wait = {device_wait}\n\
+         [kernels]\ntest = [\"z21\"]\nboot = \"fastboot\"\n[images]\ndir = \"build/images\"\n[images.z21]\npath = \"images-z21/boot-z21.img\"\n"
+    ));
+    fs::write(dir.join("device.toml"), m).unwrap();
+}
+
+#[test]
+fn boot_once_on_a_fastboot_device_boots_the_declared_image_from_memory_and_waits_for_its_gadget() {
+    let dir = tmp("boot-fastboot");
+    declare_fastboot_boot(&dir, 4);
+    usb_tree(&dir, Some(("1d6b", "0104")));
+    let o = devlab_calls(&dir, "boot-once", "z21", 0);
+    assert_eq!(o.status.code(), Some(0), "{}", said(&o));
+    // the image of [images.z21] under [images] dir goes to fastboot boot; no boot entry is tried and no login is asked
+    let args = fs::read_to_string(dir.join("args")).unwrap();
+    let want = format!(
+        "--device {d}/device.toml fastboot boot now {d}/build/images/images-z21/boot-z21.img",
+        d = dir.display()
+    );
+    assert!(args.lines().any(|l| l == want), "{args}");
+    assert!(!args.contains("kernel try"), "{args}");
+    // the gadget never shows: the step fails naming the id it waited for
+    let dir = tmp("boot-fastboot-nogadget");
+    declare_fastboot_boot(&dir, 1);
+    usb_tree(&dir, None);
+    let o = devlab_calls(&dir, "boot-once", "z21", 0);
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(1), "{t}");
+    assert!(t.contains("1d6b:0104 is not on the USB bus"), "{t}");
+    // fastboot refuses: the step fails with what it said, and no gadget is waited for
+    let dir = tmp("boot-fastboot-refused");
+    declare_fastboot_boot(&dir, 4);
+    usb_tree(&dir, None);
+    let o = devlab_calls(&dir, "boot-once", "z21", 1);
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(1), "{t}");
+    assert!(
+        t.contains("booted from memory") && !t.contains("not on the USB bus"),
+        "{t}"
+    );
+    // a dry run reaches nothing
+    let dir = tmp("boot-fastboot-dry");
+    declare_fastboot_boot(&dir, 4);
+    let o = devlab_calls(&dir, "boot-once-dry", "z21", 0);
+    assert_eq!(o.status.code(), Some(0), "{}", said(&o));
+    assert!(!dir.join("args").exists(), "a dry run reached devlab");
+}
+
+#[test]
+fn the_way_back_of_a_fastboot_device_reboots_even_when_the_kept_kernel_runs_from_memory() {
+    // a kernel booted from memory is gone at the next reboot: "kept" names the image the way back returns to, so
+    // that the running kernel carries its name must not make the way back skip itself
+    let dir = tmp("back-fastboot");
+    declare_fastboot_boot(&dir, 4);
+    let mut m = fs::read_to_string(dir.join("device.toml")).unwrap();
+    m = m.replace("boot = \"fastboot\"", "boot = \"fastboot\"\nkept = \"z21\"");
+    fs::write(dir.join("device.toml"), m).unwrap();
+    fs::write(dir.join("uname-release"), "6.1.0-z21\n").unwrap();
+    let o = devlab_calls(&dir, "back", "", 0);
+    assert_eq!(o.status.code(), Some(0), "{}", said(&o));
+    assert!(
+        fs::read_to_string(dir.join("rebooted"))
+            .unwrap()
+            .contains("systemctl reboot"),
+        "the way back skipped its reboot: {}",
+        said(&o)
+    );
+}
+
+#[test]
+fn the_gadget_may_come_up_within_device_wait_and_the_step_waits_that_long_for_it() {
+    // device_wait = 2: the gadget shows 1 s after fastboot returns; one try with no wait would have failed
+    let dir = tmp("boot-fastboot-late");
+    declare_fastboot_boot(&dir, 2);
+    let root = usb_tree(&dir, None);
+    let late = root.join("1-2");
+    let t = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(1000));
+        fs::create_dir_all(&late).unwrap();
+        fs::write(late.join("idVendor"), "1d6b\n").unwrap();
+        fs::write(late.join("idProduct"), "0104\n").unwrap();
+    });
+    let o = devlab_calls(&dir, "boot-once", "z21", 0);
+    t.join().unwrap();
+    assert_eq!(o.status.code(), Some(0), "{}", said(&o));
 }

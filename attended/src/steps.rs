@@ -195,25 +195,28 @@ pub fn wait_for_usb(id: &str, tries: u32, every: u64) -> Step {
     Step::new(
         Kind::Check,
         &format!("USB device {id} is on the bus"),
-        move || {
-            let ok = id.split_once(':').is_some_and(|(v, p)| {
-                [v, p]
-                    .iter()
-                    .all(|h| h.len() == 4 && h.chars().all(|c| c.is_ascii_hexdigit()))
-            });
-            if !ok {
-                return Err(format!("not a USB id (vendor:product): {id:?}"));
-            }
-            let root = crate::sysfs_usb();
-            crate::retry(tries, every, || {
-                usb_ids(root)?
-                    .contains(&id)
-                    .then_some(())
-                    .ok_or(format!("{id} is not on the USB bus"))
-            })
-        },
+        move || usb_on_bus(&id, tries, every),
     )
     .keyed("gadget-enumerates")
+}
+
+/// [`wait_for_usb`]'s work, shared with [`boot_once`]: the id (lowercase) is on the bus within the tries.
+fn usb_on_bus(id: &str, tries: u32, every: u64) -> Result<(), String> {
+    let ok = id.split_once(':').is_some_and(|(v, p)| {
+        [v, p]
+            .iter()
+            .all(|h| h.len() == 4 && h.chars().all(|c| c.is_ascii_hexdigit()))
+    });
+    if !ok {
+        return Err(format!("not a USB id (vendor:product): {id:?}"));
+    }
+    let root = crate::sysfs_usb();
+    crate::retry(tries, every, || {
+        usb_ids(root)?
+            .contains(&id.to_string())
+            .then_some(())
+            .ok_or(format!("{id} is not on the USB bus"))
+    })
 }
 
 /// [`wait_for_usb`] for the id the device declares: the first `[[host.gadget]] usb_id` of its device.toml. A device that
@@ -225,7 +228,9 @@ pub fn wait_for_gadget(tries: u32, every: u64) -> Step {
     wait_for_usb(&id, tries, every)
 }
 
-/// Boot the named test kernel once, through devlab's `kernel try` (never around it): devlab refuses an entry with
+/// Boot the named test kernel once. A device with `[kernels] boot = "fastboot"` boots its `[images.NAME]` from memory
+/// (`devlab fastboot boot now`, nothing written; the phone must be in fastboot) and waits for its gadget. Any other goes
+/// through devlab's `kernel try` (never around it): devlab refuses an entry with
 /// no try left, reboots, waits for the phone and measures the boot it came to; its output is the step's.
 /// Any later boot is the default again. The name is the kernel's own (lowercase letters, digits, `-`: devlab's
 /// rule, so a `+`, which is systemd-boot's try counter, is refused here before the phone is reached) and one the
@@ -233,6 +238,7 @@ pub fn wait_for_gadget(tries: u32, every: u64) -> Step {
 pub fn boot_once(name: &str) -> Step {
     let name = name.to_string();
     declared_test_kernel(&name);
+    let memory = memory_boot_of(&name);
     Step::new(Kind::Do, &format!("boot {name} once"), move || {
         if !is_kernel_name(&name) {
             return Err(format!(
@@ -242,10 +248,56 @@ pub fn boot_once(name: &str) -> Step {
         if phone_runs(&name) {
             return already_running(&format!("boot {name} once"));
         }
-        let out = crate::devlab(&["kernel", "try", &name])?;
+        let out = match &memory {
+            None => crate::devlab(&["kernel", "try", &name])?,
+            Some(m) => boot_from_memory(m)?,
+        };
         print!("{out}");
         Ok::<(), String>(())
     })
+}
+
+/// What a boot from memory reads, taken from the device at the step's making: the image, the gadget, the wait.
+struct FromMemory {
+    image: String,
+    usb_id: String,
+    tries: u32,
+}
+
+/// The fastboot boot of a test kernel, when the device declares `[kernels] boot = "fastboot"`: its `[images.NAME]`
+/// under `[images] dir`, in the device's folder, and the gadget it then shows. The manifest has judged every piece present.
+fn memory_boot_of(name: &str) -> Option<FromMemory> {
+    let c = crate::config();
+    let m = &c.manifest;
+    if m.kernels.as_ref()?.boot != lpoco_manifest::KernelBoot::Fastboot || !is_kernel_name(name) {
+        return None;
+    }
+    // the manifest judged these present; were one missing, the run ends (exit 2) rather than boot by another way
+    let image = crate::declared(&format!("[images.{name}]"), "boot_once", |m| {
+        m.images.as_ref()?.named.get(name).map(|i| i.path.clone())
+    });
+    let dir = m
+        .images
+        .as_ref()
+        .and_then(|i| i.dir.clone())
+        .unwrap_or_default();
+    let usb_id = crate::declared("[[host.gadget]] usb_id", "boot_once", |m| {
+        m.host.gadget.iter().find_map(|g| g.usb_id.clone())
+    });
+    let folder = c.device.parent().unwrap_or(std::path::Path::new("."));
+    let wait = m.boot.as_ref().and_then(|b| b.device_wait).unwrap_or(60);
+    Some(FromMemory {
+        image: folder.join(dir).join(image).display().to_string(),
+        usb_id,
+        tries: wait / 2 + 1,
+    })
+}
+
+/// Boot the image from the phone's memory (devlab fastboot boot now: nothing is written), then wait for its gadget.
+fn boot_from_memory(m: &FromMemory) -> Result<String, String> {
+    let out = crate::devlab(&["fastboot", "boot", "now", &m.image])?;
+    usb_on_bus(&m.usb_id, m.tries, 2).map_err(|e| format!("{out}{e}"))?;
+    Ok(out)
 }
 
 /// Whether the phone's running kernel (`uname -r`, one line) is the one of this name: the release is a version
@@ -300,8 +352,14 @@ fn declared_test_kernel(name: &str) {
 /// has gone down, as that step says. The device declares a `[kernels]` table; its `kept` kernel is named in the
 /// step, and without one the step says stock. The name is what the device declares, not what the phone is checked to boot.
 pub fn back_to_known_good() -> Step {
-    let kept = crate::declared("[kernels]", "back_to_known_good", |m| {
-        m.kernels.as_ref().map(|k| k.kept.clone())
+    // a kernel booted from memory is gone at the next reboot, so only an entry kept on the phone can already be the default
+    let (kept, from_memory) = crate::declared("[kernels]", "back_to_known_good", |m| {
+        m.kernels.as_ref().map(|k| {
+            (
+                k.kept.clone(),
+                k.boot == lpoco_manifest::KernelBoot::Fastboot,
+            )
+        })
     });
     let default = kept
         .clone()
@@ -309,7 +367,7 @@ pub fn back_to_known_good() -> Step {
     let name = format!("reboot into the default kernel ({default})");
     Step::new(Kind::Do, &name.clone(), move || {
         // the kept kernel already runs: a reboot would only be a risk (a stock default cannot be told by name)
-        if kept.as_deref().is_some_and(phone_runs) {
+        if !from_memory && kept.as_deref().is_some_and(phone_runs) {
             return already_running(&name);
         }
         crate::phone()
