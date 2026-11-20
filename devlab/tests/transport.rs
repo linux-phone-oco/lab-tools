@@ -294,3 +294,113 @@ fn the_watch_of_a_device_with_no_login_says_so_and_ends_instead_of_asking_after_
     );
     assert!(!out.contains("suite is not on the phone"), "{out}");
 }
+
+fn key_device(identity: &Path) -> String {
+    key_device_as(identity, "root")
+}
+
+fn key_device_as(identity: &Path, user: &str) -> String {
+    format!("[device]\ncodename = \"k\"\n[connection]\nlogin = \"key\"\nidentity = \"{}\"\nuser = \"{user}\"\naddresses = [\"10.9.9.8\"]\n", identity.display())
+}
+
+fn write_key(s: &Scratch, mode: u32) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let k = s.0.join("id_test");
+    std::fs::write(&k, "not a real key\n").unwrap();
+    std::fs::set_permissions(&k, std::fs::Permissions::from_mode(mode)).unwrap();
+    k
+}
+
+#[test]
+fn a_key_phone_is_reached_by_ssh_dash_i_its_identity_with_no_password_asked() {
+    let s = Scratch::new("key");
+    let calls = s.0.join("calls");
+    stand_in(
+        &s.0,
+        "ssh",
+        &format!(
+            "echo \"$*\" >> {}\ncase \"$*\" in *' true') exit 0;; esac\nexec sh -s",
+            calls.display()
+        ),
+    );
+    stand_in(&s.0, "sshpass", "echo sshpass was used >&2; exit 9");
+    let key = write_key(&s, 0o600);
+    for verb in ["sh", "root"] {
+        let (code, out, err) = run(&s, &key_device(&key), &["phone", verb], "echo over-key\n");
+        assert_eq!((code, out.as_str()), (0, "over-key\n"), "{verb}: {err}");
+        assert!(
+            !err.contains("sshpass") && !err.contains("password"),
+            "{err}"
+        );
+    }
+    let said = std::fs::read_to_string(&calls).unwrap();
+    let id = format!("-i {} -o IdentitiesOnly=yes", key.display());
+    assert!(
+        said.lines().all(|l| l.contains(&id)
+            && l.contains("-o BatchMode=yes")
+            && l.contains("root@10.9.9.8")),
+        "{said}"
+    );
+}
+
+#[test]
+fn a_missing_or_world_readable_identity_is_refused_naming_the_path() {
+    let s = Scratch::new("key-refused");
+    stand_in(&s.0, "ssh", "exit 0");
+    let missing = s.0.join("no_such_key");
+    let (code, _, err) = run(&s, &key_device(&missing), &["phone", "sh"], "true\n");
+    assert_ne!(code, 0);
+    assert!(err.contains(&missing.display().to_string()), "{err}");
+    let open = write_key(&s, 0o644);
+    let (code, _, err) = run(&s, &key_device(&open), &["phone", "sh"], "true\n");
+    assert_ne!(code, 0);
+    assert!(
+        err.contains(&open.display().to_string()) && err.contains("600"),
+        "{err}"
+    );
+}
+
+#[test]
+fn a_key_phone_has_the_suite_and_asks_no_password() {
+    let s = Scratch::new("key-suite");
+    stand_in(&s.0, "ssh", "exit 1");
+    let key = write_key(&s, 0o600);
+    let (_, out, err) = run(&s, &key_device(&key), &["suite", "latest"], "");
+    assert!(
+        !out.contains("not applicable"),
+        "a key login has a suite: {out}"
+    );
+    assert!(!err.contains("PHONE_PASS"), "no password was asked: {err}");
+}
+
+#[test]
+fn root_over_a_key_is_the_login_itself_for_root_and_sudo_dash_n_for_another_user() {
+    let s = Scratch::new("key-root");
+    let calls = s.0.join("calls");
+    stand_in(
+        &s.0,
+        "ssh",
+        &format!(
+            "echo \"$*\" >> {}\ncase \"$*\" in *' true') exit 0;; esac\nexec sh -s",
+            calls.display()
+        ),
+    );
+    let key = write_key(&s, 0o600);
+    let (code, _, err) = run(&s, &key_device(&key), &["phone", "root"], "true\n");
+    assert_eq!(code, 0, "{err}");
+    let said = std::fs::read_to_string(&calls).unwrap();
+    assert!(!said.contains("sudo") && said.contains(" sh -s"), "{said}");
+    std::fs::remove_file(&calls).unwrap();
+    let (code, _, err) = run(
+        &s,
+        &key_device_as(&key, "lab"),
+        &["phone", "root"],
+        "true\n",
+    );
+    assert_eq!(code, 0, "{err}");
+    let said = std::fs::read_to_string(&calls).unwrap();
+    assert!(
+        said.contains("lab@10.9.9.8") && said.contains("sudo -n sh -s"),
+        "{said}"
+    );
+}

@@ -526,8 +526,10 @@ pub struct Connection {
     /// phone's serial ([fastboot] or the first [[host.gadget]])
     #[serde(default)]
     pub transport: Transport,
-    /// Whether the phone has a login: password (ssh, the default) or none (telnet, adb: the default there)
+    /// Whether the phone has a login: password (ssh, the default), key (ssh by `identity`) or none (telnet, adb: the default there)
     pub login: Option<Login>,
+    /// The private key file login = key uses: an absolute path on the lab machine, mode 600, never in a repository
+    pub identity: Option<String>,
     pub user: String,
     /// Addresses to try, in order (USB networking first, as a rule)
     pub addresses: Vec<String>,
@@ -550,6 +552,8 @@ pub enum Transport {
 #[serde(rename_all = "lowercase")]
 pub enum Login {
     Password,
+    /// ssh by a private key file the device declares (`identity`), no password
+    Key,
     None,
 }
 
@@ -565,7 +569,19 @@ impl Connection {
 
     fn validate(&self) -> Result<(), String> {
         match (self.transport, self.login()) {
-            (Transport::Ssh, Login::None) => Err("connection: transport ssh has a password login; login = none is for telnet and adb".into()),
+            (Transport::Ssh, Login::None) => Err("connection: transport ssh has a password or key login; login = none is for telnet and adb".into()),
+            (Transport::Adb, Login::Key) | (Transport::Telnet, Login::Key) => {
+                Err("connection: login = key is for transport ssh; adb and telnet have no login".into())
+            }
+            (Transport::Ssh, Login::Key) if self.identity.as_deref().is_some_and(|i| !i.starts_with('/')) => {
+                Err("connection: identity must be an absolute path (no ~, no relative path)".into())
+            }
+            (Transport::Ssh, Login::Key) if self.identity.is_none() => {
+                Err("connection: login = key needs identity, the path of the private key file".into())
+            }
+            (_, login) if login != Login::Key && self.identity.is_some() => {
+                Err("connection: identity belongs to login = key".into())
+            }
             (Transport::Adb, Login::Password) => Err("connection: transport adb has no login; say login = none or leave it out".into()),
             (Transport::Telnet, Login::Password) => Err("connection: transport telnet has no login; say login = none or leave it out".into()),
             (Transport::Telnet, Login::None) if self.shell_port.is_none() => {

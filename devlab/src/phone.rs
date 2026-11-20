@@ -4,9 +4,10 @@
 
 use crate::device::{candidates, Device};
 use anyhow::{bail, Context, Result};
-use lpoco_manifest::Transport;
+use lpoco_manifest::{Login, Transport};
 use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 #[derive(Clone)]
@@ -42,11 +43,50 @@ pub const AS_USER: &str = "export XDG_RUNTIME_DIR=/run/user/$(id -u); sh -s";
 /// As root: sudo reads exactly one line - the password - and the shell it starts reads the rest.
 pub const AS_ROOT: &str = "sudo -S -p '' sh -s";
 
+/// How ssh proves who the lab is: the phone user's password (through sshpass) or a private key file.
+#[derive(Clone)]
+enum Auth {
+    Password(String),
+    Key(PathBuf),
+}
+
+impl Auth {
+    /// `program` (ssh or scp) with `args`, authenticated: sshpass carries a password in its environment;
+    /// a key is named with -i and ssh may use no other, and is never asked for a password.
+    fn command(&self, program: &str, args: Vec<String>) -> Command {
+        match self {
+            Auth::Password(password) => {
+                let mut c = Command::new("sshpass");
+                c.arg("-e").arg(program).args(args).env("SSHPASS", password);
+                c
+            }
+            Auth::Key(identity) => {
+                let mut c = Command::new(program);
+                c.arg("-i")
+                    .arg(identity)
+                    .args(["-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes"])
+                    .args(args);
+                c
+            }
+        }
+    }
+
+    /// How a script runs as root, and what is sent before it: sudo reads the password as its first line;
+    /// a key login is root itself, or asks sudo for no password.
+    fn as_root(&self, user: &str) -> (&'static str, String) {
+        match self {
+            Auth::Password(password) => (AS_ROOT, format!("{password}\n")),
+            Auth::Key(_) if user == "root" => ("sh -s", String::new()),
+            Auth::Key(_) => ("sudo -n sh -s", String::new()),
+        }
+    }
+}
+
 /// How this phone is reached, as its device.toml declares ([connection] transport and login).
 #[derive(Clone)]
 enum Reach {
-    /// ssh with the phone user's password
-    Ssh { password: String },
+    /// ssh, by the phone user's password or by a key file
+    Ssh { auth: Auth },
     /// the phone's own shell on a TCP port, no login
     Telnet { address: String, port: u16 },
     /// adb by serial, no login
@@ -98,7 +138,7 @@ impl Phone {
             Transport::Ssh => (
                 format!("{}@{addr}", c.user),
                 Reach::Ssh {
-                    password: password(device)?,
+                    auth: auth(device)?,
                 },
             ),
             Transport::Telnet => {
@@ -131,17 +171,14 @@ impl Phone {
             bail!(no);
         }
         match &self.reach {
-            Reach::Ssh { password } => {
-                let mut child = Command::new("sshpass")
-                    .arg("-e")
-                    .arg("ssh")
-                    .args(ssh_args(&self.target, how))
-                    .env("SSHPASS", password)
+            Reach::Ssh { auth } => {
+                let mut child = auth
+                    .command("ssh", ssh_args(&self.target, how))
                     .stdin(Stdio::piped())
                     .stdout(Stdio::piped())
                     .stderr(Stdio::inherit())
                     .spawn()
-                    .context("starting sshpass (is it installed?)")?;
+                    .context("starting ssh (sshpass for a password login; is it installed?)")?;
                 let mut stdin = child.stdin.take().context("ssh stdin")?;
                 stdin.write_all(prefix.as_bytes())?;
                 stdin.write_all(script.as_bytes())?;
@@ -166,11 +203,8 @@ impl Phone {
     /// Whether this address answers - quietly: an address that does not is no error worth showing.
     fn answers(&self) -> bool {
         match &self.reach {
-            Reach::Ssh { password } => Command::new("sshpass")
-                .arg("-e")
-                .arg("ssh")
-                .args(ssh_args(&self.target, "true"))
-                .env("SSHPASS", password)
+            Reach::Ssh { auth } => auth
+                .command("ssh", ssh_args(&self.target, "true"))
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
@@ -191,7 +225,10 @@ impl Phone {
     /// runs the script as it is.
     pub fn root(&self, script: &str) -> Result<(bool, String)> {
         match &self.reach {
-            Reach::Ssh { password } => self.run(script, AS_ROOT, &format!("{password}\n")),
+            Reach::Ssh { auth } => {
+                let (how, prefix) = auth.as_root(&self.device.connection.user);
+                self.run(script, how, &prefix)
+            }
             Reach::Telnet { .. } | Reach::Adb { .. } => self.run(script, "", ""),
         }
     }
@@ -202,19 +239,17 @@ impl Phone {
             bail!(no);
         }
         let out = match &self.reach {
-            Reach::Ssh { password } => {
-                let mut child = Command::new("sshpass")
-                    .arg("-e")
-                    .arg("ssh")
-                    .args(ssh_args(&self.target, AS_ROOT))
-                    .env("SSHPASS", password)
+            Reach::Ssh { auth } => {
+                let (how, prefix) = auth.as_root(&self.device.connection.user);
+                let mut child = auth
+                    .command("ssh", ssh_args(&self.target, how))
                     .stdin(Stdio::piped())
                     .stdout(Stdio::piped())
                     .stderr(Stdio::inherit())
                     .spawn()
-                    .context("starting sshpass")?;
+                    .context("starting ssh")?;
                 let mut stdin = child.stdin.take().context("ssh stdin")?;
-                stdin.write_all(format!("{password}\n{script}").as_bytes())?;
+                stdin.write_all(format!("{prefix}{script}").as_bytes())?;
                 drop(stdin);
                 child.wait_with_output()?
             }
@@ -230,17 +265,11 @@ impl Phone {
     /// Copies a local file to the phone.
     pub fn put(&self, local: &str, remote: &str) -> Result<()> {
         let ok = match &self.reach {
-            Reach::Ssh { password } => {
+            Reach::Ssh { auth } => {
                 let mut a: Vec<String> = SSH_OPTS.iter().map(|s| s.to_string()).collect();
                 a.push(local.to_string());
                 a.push(format!("{}:{remote}", self.target));
-                Command::new("sshpass")
-                    .arg("-e")
-                    .arg("scp")
-                    .args(a)
-                    .env("SSHPASS", password)
-                    .status()?
-                    .success()
+                auth.command("scp", a).status()?.success()
             }
             Reach::Adb { serial } => Command::new("adb")
                 .args(["-s", serial, "push", local, remote])
@@ -411,6 +440,44 @@ fn adb_shell(serial: &str, script: &str, stderr: Stdio) -> Result<std::process::
     stdin.write_all(script.as_bytes())?;
     drop(stdin);
     Ok(child.wait_with_output()?)
+}
+
+/// How ssh logs in: a declared key (its file must exist and be private to the lab user), else the password.
+fn auth(device: &Device) -> Result<Auth> {
+    let c = &device.connection;
+    if c.login() != Login::Key {
+        return Ok(Auth::Password(password(device)?));
+    }
+    let identity = PathBuf::from(
+        c.identity
+            .as_deref()
+            .context("device.toml: login = key needs identity")?,
+    );
+    private_key(&identity)?;
+    Ok(Auth::Key(identity))
+}
+
+/// A key file that exists and that no one else can read (mode 600): ssh would refuse it anyway, and the lab says which.
+fn private_key(identity: &std::path::Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let meta = std::fs::metadata(identity).with_context(|| {
+        format!(
+            "no identity file at {} (device.toml [connection] identity)",
+            identity.display()
+        )
+    })?;
+    if !meta.is_file() {
+        bail!("identity {} is not a file", identity.display());
+    }
+    let mode = meta.permissions().mode();
+    if mode & 0o077 != 0 {
+        bail!(
+            "identity file {} is readable by others (mode {:o}): chmod 600 it",
+            identity.display(),
+            mode & 0o777
+        );
+    }
+    Ok(())
 }
 
 /// The phone's password: $PHONE_PASS, else ~/.config/devlab/CODENAME/password (keep it mode 600).
