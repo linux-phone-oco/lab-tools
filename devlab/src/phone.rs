@@ -54,6 +54,11 @@ enum Reach {
 }
 
 impl Phone {
+    /// The manifest this phone was reached by.
+    pub fn device(&self) -> &Device {
+        &self.device
+    }
+
     /// The phone at one given address, if it answers there (ssh: the address; telnet and adb: the declared one).
     pub fn at(device: &Device, addr: &str) -> Result<Phone> {
         let p = Phone::reaching(device, addr)?;

@@ -259,3 +259,38 @@ fn a_script_that_ends_the_telnet_shell_is_an_error_saying_so_never_a_pass() {
         "{err}"
     );
 }
+
+#[test]
+fn test_and_health_say_not_applicable_where_the_device_has_no_login_and_are_not_a_pass() {
+    let s = Scratch::new("test-health");
+    let port = serve_a_shell();
+    for args in [&["test"][..], &["health"][..]] {
+        let (code, out, err) = run(&s, &telnet_device(port), args, "");
+        assert_eq!(
+            code, 2,
+            "{args:?}: a suite that did not run is not a pass: {err}"
+        );
+        assert!(
+            out.contains("not applicable: device.toml declares no login"),
+            "{args:?}: {out}"
+        );
+        assert!(
+            !err.contains("password"),
+            "{args:?}: no password was asked: {err}"
+        );
+    }
+}
+
+#[test]
+fn the_watch_of_a_device_with_no_login_says_so_and_ends_instead_of_asking_after_a_suite_every_minute(
+) {
+    let s = Scratch::new("watch");
+    let port = serve_a_shell();
+    let (code, out, err) = run(&s, &telnet_device(port), &["watch"], "");
+    assert_eq!(code, 0, "nothing to watch is not a failure: {err}");
+    assert!(
+        out.contains("not applicable: device.toml declares no login"),
+        "{out}"
+    );
+    assert!(!out.contains("suite is not on the phone"), "{out}");
+}

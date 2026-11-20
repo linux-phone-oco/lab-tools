@@ -19,6 +19,11 @@ pub fn alert_text(codename: &str, well: bool, verdict: &str) -> Option<String> {
 }
 
 pub fn watch(device: &Device, manifest_dir: &Path) -> Result<()> {
+    if let Some(said) = suite::not_applicable(device) {
+        // nothing to wait for: a phone with no login carries no suite, so asking after one each minute is noise
+        println!("lpoco-lab watch: {said}");
+        return Ok(());
+    }
     let codename = &device.device.codename;
     let mut last_boot: Option<String> = None;
     let mut alerting: Option<String> = None;

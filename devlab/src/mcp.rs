@@ -186,6 +186,9 @@ impl Door {
     /// The phone's health as its latest report says it (written after every boot by the phone itself).
     #[tool]
     async fn health_report(&self) -> Result<String, String> {
+        if let Some(said) = suite::not_applicable(&self.device) {
+            return Ok(said);
+        }
         let report = said(suite::latest(&self.phone()?))?;
         let rows = suite::rows(&report);
         if rows.is_empty() {
@@ -208,6 +211,9 @@ impl Door {
     /// out about itself right now (no SIM card, no network, no modem).
     #[tool]
     async fn health_switches(&self) -> Result<String, String> {
+        if let Some(said) = suite::not_applicable(&self.device) {
+            return Ok(said);
+        }
         said(suite::list(&self.phone()?))
     }
 
@@ -218,6 +224,9 @@ impl Door {
         &self,
         Parameters(a): Parameters<SwitchOff>,
     ) -> Result<String, String> {
+        if let Some(said) = suite::not_applicable(&self.device) {
+            return Err(said);
+        }
         said(suite::off(
             &self.phone()?,
             &a.test,
@@ -232,12 +241,18 @@ impl Door {
         &self,
         Parameters(a): Parameters<SwitchOn>,
     ) -> Result<String, String> {
+        if let Some(said) = suite::not_applicable(&self.device) {
+            return Err(said);
+        }
         said(suite::on(&self.phone()?, &a.test))
     }
 
     /// Measure the phone's health now (its own suite, on the phone): every test, and the phone's verdict.
     #[tool]
     async fn health_run(&self) -> Result<String, String> {
+        if let Some(said) = suite::not_applicable(&self.device) {
+            return Err(said); // the suite did not run: not a pass
+        }
         let ran = said(suite::run(&self.phone()?))?;
         Ok(format!(
             "{}the phone says: {}",

@@ -439,11 +439,27 @@ pub fn of_this_boot(phone: &Phone) -> Result<Option<Ran>> {
     }
 }
 
+/// What a device that declares no login says of the health suite: it lives on a phone that has a login,
+/// so here it is not a blocker and no password is asked (decision 2026-11-19-phone-reached-by-its-declared-transport).
+pub fn not_applicable(device: &Device) -> Option<String> {
+    (device.connection.login() == lpoco_manifest::Login::None).then(|| {
+        format!(
+            "not applicable: device.toml declares no login on {} - the suite runs where there is one; \
+             the phone's state here: lpoco lab phone sh, or the device's own procedures",
+            device.device.codename
+        )
+    })
+}
+
 /// What every change to the phone ends with: its health, said, and the report brought to the lab.
 /// `rebooted`: the change booted the phone anew, so the report is the one that boot writes by itself;
 /// otherwise the suite runs now. Returns whether the phone is well (true where it has no suite yet,
 /// said as such), and what to say of it.
 pub fn after_change(phone: &Phone, rebooted: bool) -> Result<(bool, String)> {
+    if let Some(said) = not_applicable(phone.device()) {
+        // no suite to wait for: a change that came back is well by what the change itself checked
+        return Ok((true, format!("health: {said}")));
+    }
     let ran = if rebooted {
         of_this_boot(phone)?
     } else {
@@ -512,6 +528,28 @@ fn tempdir() -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_device_that_declares_no_login_finds_the_suite_not_applicable() {
+        let with = Device::parse(
+            "[device]\ncodename = \"x\"\n[connection]\nuser = \"u\"\naddresses = [\"a\"]\n",
+        )
+        .unwrap();
+        assert_eq!(
+            not_applicable(&with),
+            None,
+            "a password login has the suite"
+        );
+        let without = Device::parse(
+            "[device]\ncodename = \"x\"\n[connection]\ntransport = \"adb\"\nlogin = \"none\"\nuser = \"root\"\naddresses = [\"a\"]\n[fastboot]\nserial = \"S\"\n",
+        )
+        .unwrap();
+        let said = not_applicable(&without).expect("no login, no suite");
+        assert!(
+            said.starts_with("not applicable: device.toml declares no login on x"),
+            "{said}"
+        );
+    }
 
     #[test]
     fn a_report_reads_as_rows_and_noise_is_ignored() {
