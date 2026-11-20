@@ -397,6 +397,7 @@ fn usb_tree(dir: &Path, id: Option<(&str, &str)>) -> PathBuf {
         fs::create_dir_all(root.join("1-2")).unwrap();
         fs::write(root.join("1-2/idVendor"), format!("{v}\n")).unwrap();
         fs::write(root.join("1-2/idProduct"), format!("{p}\n")).unwrap();
+        fs::write(root.join("1-2/serial"), "s\n").unwrap();
     }
     root
 }
@@ -1605,8 +1606,130 @@ fn the_gadget_may_come_up_within_device_wait_and_the_step_waits_that_long_for_it
         fs::create_dir_all(&late).unwrap();
         fs::write(late.join("idVendor"), "1d6b\n").unwrap();
         fs::write(late.join("idProduct"), "0104\n").unwrap();
+        fs::write(late.join("serial"), "s\n").unwrap();
     });
     let o = devlab_calls(&dir, "boot-once", "z21", 0);
     t.join().unwrap();
+    assert_eq!(o.status.code(), Some(0), "{}", said(&o));
+}
+
+/// sha256 of the three bytes "abc"
+const ABC: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+
+/// The fastboot device with its image on disk and the checksum it declares.
+fn fastboot_with_image(name: &str, bytes: &str, sha256: &str) -> PathBuf {
+    let dir = tmp(name);
+    declare_fastboot_boot(&dir, 4);
+    let m = fs::read_to_string(dir.join("device.toml")).unwrap();
+    fs::write(
+        dir.join("device.toml"),
+        m.replace(
+            "boot-z21.img\"",
+            &format!("boot-z21.img\"\nsha256 = \"{sha256}\""),
+        ),
+    )
+    .unwrap();
+    let img = dir.join("build/images/images-z21/boot-z21.img");
+    fs::create_dir_all(img.parent().unwrap()).unwrap();
+    fs::write(img, bytes).unwrap();
+    dir
+}
+
+#[test]
+fn an_image_whose_checksum_is_not_the_declared_one_is_not_booted_and_both_are_named() {
+    let dir = fastboot_with_image("image-sum-bad", "abd", ABC);
+    usb_tree(&dir, Some(("1d6b", "0104")));
+    let o = devlab_calls(&dir, "boot-once", "z21", 0);
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(1), "{t}");
+    assert!(
+        t.contains(ABC)
+            && t.contains("a52d159f262b2c6ddb724a61840befc36eb30c88877a4030b65cbe86298449c9"),
+        "{t}"
+    );
+    let args = fs::read_to_string(dir.join("args")).unwrap_or_default();
+    assert!(
+        !args.contains("fastboot boot"),
+        "a wrong image reached fastboot: {args}"
+    );
+    // the checksum that matches boots it
+    let dir = fastboot_with_image("image-sum-ok", "abc", ABC);
+    usb_tree(&dir, Some(("1d6b", "0104")));
+    let o = devlab_calls(&dir, "boot-once", "z21", 0);
+    assert_eq!(o.status.code(), Some(0), "{}", said(&o));
+    assert!(fs::read_to_string(dir.join("args"))
+        .unwrap()
+        .contains("fastboot boot now"));
+}
+
+#[test]
+fn the_gadget_is_the_one_with_the_declared_serial_not_another_phone_with_the_same_id() {
+    let dir = tmp("gadget-serial-other");
+    declare_fastboot_boot(&dir, 1);
+    let root = usb_tree(&dir, Some(("1d6b", "0104")));
+    fs::write(root.join("1-2/serial"), "someone-else\n").unwrap();
+    let o = devlab_calls(&dir, "boot-once", "z21", 0);
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(1), "{t}");
+    assert!(t.contains("1d6b:0104") && t.contains("serial \"s\""), "{t}");
+}
+
+#[test]
+fn a_declared_checksum_with_no_image_on_disk_stops_the_step_and_a_dry_run_reads_nothing() {
+    let dir = fastboot_with_image("image-sum-missing", "abc", ABC);
+    fs::remove_file(dir.join("build/images/images-z21/boot-z21.img")).unwrap();
+    usb_tree(&dir, Some(("1d6b", "0104")));
+    let o = devlab_calls(&dir, "boot-once", "z21", 0);
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(1), "{t}");
+    assert!(t.contains("cannot read the image"), "{t}");
+    let args = fs::read_to_string(dir.join("args")).unwrap_or_default();
+    assert!(!args.contains("fastboot boot"), "{args}");
+    // a wrong image in a dry run: nothing is read or run
+    let dir = fastboot_with_image("image-sum-dry", "abd", ABC);
+    let o = devlab_calls(&dir, "boot-once-dry", "z21", 0);
+    assert_eq!(o.status.code(), Some(0), "{}", said(&o));
+    assert!(!dir.join("args").exists());
+}
+
+#[test]
+fn the_serial_is_found_among_devices_of_one_id_and_is_compared_as_written() {
+    // two phones show 1d6b:0104: the one with the serial is enough, wherever it sits
+    let dir = tmp("gadget-two");
+    declare_fastboot_boot(&dir, 1);
+    let root = usb_tree(&dir, Some(("1d6b", "0104")));
+    fs::write(root.join("1-2/serial"), "someone-else\n").unwrap();
+    fs::create_dir_all(root.join("1-3")).unwrap();
+    fs::write(root.join("1-3/idVendor"), "1d6b\n").unwrap();
+    fs::write(root.join("1-3/idProduct"), "0104\n").unwrap();
+    fs::write(root.join("1-3/serial"), "s\n").unwrap();
+    let o = devlab_calls(&dir, "boot-once", "z21", 0);
+    assert_eq!(o.status.code(), Some(0), "{}", said(&o));
+    // the serial in another case is another serial
+    let dir = tmp("gadget-case");
+    declare_fastboot_boot(&dir, 1);
+    let root = usb_tree(&dir, Some(("1d6b", "0104")));
+    fs::write(root.join("1-2/serial"), "S\n").unwrap();
+    assert_eq!(
+        devlab_calls(&dir, "boot-once", "z21", 0).status.code(),
+        Some(1)
+    );
+    // a device with no serial file is no match for a declared serial
+    let dir = tmp("gadget-noserial");
+    declare_fastboot_boot(&dir, 1);
+    let root = usb_tree(&dir, Some(("1d6b", "0104")));
+    fs::remove_file(root.join("1-2/serial")).unwrap();
+    assert_eq!(
+        devlab_calls(&dir, "boot-once", "z21", 0).status.code(),
+        Some(1)
+    );
+}
+
+#[test]
+fn wait_for_usb_still_goes_by_vendor_and_product_alone() {
+    let dir = tmp("usb-no-serial");
+    let bus = usb_tree(&dir, Some(("18d1", "4ee0")));
+    fs::remove_file(bus.join("1-2/serial")).unwrap();
+    let o = usb(&dir, &bus);
     assert_eq!(o.status.code(), Some(0), "{}", said(&o));
 }

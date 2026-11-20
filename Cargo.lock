@@ -575,6 +575,7 @@ dependencies = [
  "argenv-resolve",
  "lpoco-manifest",
  "serde",
+ "sha2",
  "toml",
 ]
 

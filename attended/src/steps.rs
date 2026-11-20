@@ -195,13 +195,14 @@ pub fn wait_for_usb(id: &str, tries: u32, every: u64) -> Step {
     Step::new(
         Kind::Check,
         &format!("USB device {id} is on the bus"),
-        move || usb_on_bus(&id, tries, every),
+        move || usb_on_bus(&id, None, tries, every),
     )
     .keyed("gadget-enumerates")
 }
 
-/// [`wait_for_usb`]'s work, shared with [`boot_once`]: the id (lowercase) is on the bus within the tries.
-fn usb_on_bus(id: &str, tries: u32, every: u64) -> Result<(), String> {
+/// [`wait_for_usb`]'s work, shared with [`boot_once`]: the id (lowercase) is on the bus within the tries, and when a
+/// serial is given, a device of that id has it (two phones can show the same vendor:product).
+fn usb_on_bus(id: &str, serial: Option<&str>, tries: u32, every: u64) -> Result<(), String> {
     let ok = id.split_once(':').is_some_and(|(v, p)| {
         [v, p]
             .iter()
@@ -213,9 +214,13 @@ fn usb_on_bus(id: &str, tries: u32, every: u64) -> Result<(), String> {
     let root = crate::sysfs_usb();
     crate::retry(tries, every, || {
         usb_ids(root)?
-            .contains(&id.to_string())
+            .iter()
+            .any(|(there, has)| there == id && serial.is_none_or(|s| has.as_deref() == Some(s)))
             .then_some(())
-            .ok_or(format!("{id} is not on the USB bus"))
+            .ok_or(match serial {
+                None => format!("{id} is not on the USB bus"),
+                Some(s) => format!("{id} is not on the USB bus (serial \"{s}\")"),
+            })
     })
 }
 
@@ -260,7 +265,9 @@ pub fn boot_once(name: &str) -> Step {
 /// What a boot from memory reads, taken from the device at the step's making: the image, the gadget, the wait.
 struct FromMemory {
     image: String,
+    sha256: Option<String>,
     usb_id: String,
+    serial: String,
     tries: u32,
 }
 
@@ -273,31 +280,72 @@ fn memory_boot_of(name: &str) -> Option<FromMemory> {
         return None;
     }
     // the manifest judged these present; were one missing, the run ends (exit 2) rather than boot by another way
-    let image = crate::declared(&format!("[images.{name}]"), "boot_once", |m| {
-        m.images.as_ref()?.named.get(name).map(|i| i.path.clone())
+    let (image, sha256) = crate::declared(&format!("[images.{name}]"), "boot_once", |m| {
+        m.images
+            .as_ref()?
+            .named
+            .get(name)
+            .map(|i| (i.path.clone(), i.sha256.clone()))
     });
     let dir = m
         .images
         .as_ref()
         .and_then(|i| i.dir.clone())
         .unwrap_or_default();
-    let usb_id = crate::declared("[[host.gadget]] usb_id", "boot_once", |m| {
-        m.host.gadget.iter().find_map(|g| g.usb_id.clone())
+    let (usb_id, serial) = crate::declared("[[host.gadget]] usb_id", "boot_once", |m| {
+        m.host
+            .gadget
+            .iter()
+            .find_map(|g| g.usb_id.clone().map(|id| (id, g.serial.clone())))
     });
     let folder = c.device.parent().unwrap_or(std::path::Path::new("."));
     let wait = m.boot.as_ref().and_then(|b| b.device_wait).unwrap_or(60);
     Some(FromMemory {
         image: folder.join(dir).join(image).display().to_string(),
+        sha256,
         usb_id,
+        serial,
         tries: wait / 2 + 1,
     })
 }
 
 /// Boot the image from the phone's memory (devlab fastboot boot now: nothing is written), then wait for its gadget.
 fn boot_from_memory(m: &FromMemory) -> Result<String, String> {
+    if let Some(want) = &m.sha256 {
+        check_checksum(&m.image, want)?;
+    }
     let out = crate::devlab(&["fastboot", "boot", "now", &m.image])?;
-    usb_on_bus(&m.usb_id, m.tries, 2).map_err(|e| format!("{out}{e}"))?;
+    usb_on_bus(&m.usb_id, Some(&m.serial), m.tries, 2).map_err(|e| format!("{out}{e}"))?;
     Ok(out)
+}
+
+/// The image on disk is the one the device declared: its sha256 is the declared one, or nothing is booted (the error
+/// names both). A phone's boot partition is never touched by a boot from memory, but a wrong image still wastes a try.
+fn check_checksum(path: &str, want: &str) -> Result<(), String> {
+    use sha2::{Digest, Sha256};
+    let mut file =
+        std::fs::File::open(path).map_err(|e| format!("cannot read the image {path}: {e}"))?;
+    let mut hasher = Sha256::new();
+    let mut chunk = [0u8; 64 * 1024];
+    loop {
+        let n = std::io::Read::read(&mut file, &mut chunk)
+            .map_err(|e| format!("cannot read the image {path}: {e}"))?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&chunk[..n]);
+    }
+    let got: String = hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    if got == want {
+        return Ok(());
+    }
+    Err(format!(
+        "the image {path} has sha256 {got}, the device declares {want}: not booted"
+    ))
 }
 
 /// Whether the phone's running kernel (`uname -r`, one line) is the one of this name: the release is a version
@@ -417,8 +465,8 @@ pub fn leave_known_good() -> crate::Group {
     .settling()
 }
 
-/// The `vendor:product` of every device under a sysfs USB devices folder.
-fn usb_ids(root: &str) -> Result<Vec<String>, String> {
+/// The `vendor:product` and the serial (when it has one) of every device under a sysfs USB devices folder.
+fn usb_ids(root: &str) -> Result<Vec<(String, Option<String>)>, String> {
     let read = |d: &std::path::Path, f: &str| {
         std::fs::read_to_string(d.join(f))
             .ok()
@@ -428,11 +476,16 @@ fn usb_ids(root: &str) -> Result<Vec<String>, String> {
     Ok(dir
         .flatten()
         .filter_map(|e| {
-            Some(format!(
+            let id = format!(
                 "{}:{}",
                 read(&e.path(), "idVendor")?,
                 read(&e.path(), "idProduct")?
-            ))
+            );
+            // the serial as the device wrote it: a declared serial is compared as written
+            let serial = std::fs::read_to_string(e.path().join("serial"))
+                .ok()
+                .map(|s| s.trim().to_string());
+            Some((id, serial))
         })
         .collect())
 }
