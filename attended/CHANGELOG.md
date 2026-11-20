@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.39.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-attended-v0.38.1...lpoco-attended-v0.39.0) - 2026-11-20
+
+### Added
+
+- *(attended)* boot_once boots by fastboot from memory where the device says so ([#308](https://github.com/linux-phone-oco/lab-tools/pull/308))
+
 ## [0.38.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-attended-v0.38.0...lpoco-attended-v0.38.1) - 2026-11-19
 
 ### Fixed
