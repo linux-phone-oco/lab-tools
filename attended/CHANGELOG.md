@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.40.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-attended-v0.39.2...lpoco-attended-v0.40.0) - 2026-11-20
+
+### Added
+
+- *(devlab)* [connection] login = key reaches the phone by ssh -i its declared identity ([#316](https://github.com/linux-phone-oco/lab-tools/pull/316))
+
 ## [0.39.2](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-attended-v0.39.1...lpoco-attended-v0.39.2) - 2026-11-20
 
 ### Added
