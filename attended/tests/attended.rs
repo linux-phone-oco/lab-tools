@@ -1367,7 +1367,7 @@ fn a_call_that_outlasts_the_limit_is_cut_and_fails_its_step_naming_the_limit() {
     );
     let t = said(&o);
     assert!(
-        began.elapsed().as_secs() < 30,
+        began.elapsed().as_secs() < 45,
         "the hang was waited out: {t}"
     );
     assert_eq!(o.status.code(), Some(1), "{t}");

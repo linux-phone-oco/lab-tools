@@ -519,6 +519,22 @@ fn main() -> Result<()> {
         .map(std::path::Path::to_path_buf)
         .unwrap_or_default();
     match cli.cmd {
+        Cmd::Test | Cmd::Health { .. } | Cmd::Suite { .. }
+            if suite::not_applicable(&dev).is_some() =>
+        {
+            // the health suite lives on a phone that has a login; this one has none, so it is not a blocker
+            // and no password is asked (decision 2026-11-19-phone-reached-by-its-declared-transport)
+            println!("{}", suite::not_applicable(&dev).expect("the guard held"));
+            let only_reads = matches!(
+                cli.cmd,
+                Cmd::Suite {
+                    action: SuiteCmd::Latest | SuiteCmd::List
+                }
+            );
+            if !only_reads {
+                std::process::exit(2);
+            }
+        }
         Cmd::Flash {
             now,
             image,
@@ -584,18 +600,6 @@ fn main() -> Result<()> {
                 bail!("usage: lpoco-lab gather now [--docs DIR] [--land] - it writes into this lab (and docs without a base)");
             }
             println!("{}", gather::gather(&dev, &here, docs, land)?);
-        }
-        Cmd::Suite { action } if dev.connection.login() == lpoco_manifest::Login::None => {
-            // the health suite lives on a phone that has a login; this one has none, so it is not a blocker
-            // and no password is asked for (decision 2026-11-19-phone-reached-by-its-declared-transport)
-            println!(
-                "not applicable: device.toml declares no login on {} - the suite runs where there is one; \
-                 the phone's state here: lpoco lab phone sh, or the device's own procedures",
-                dev.device.codename
-            );
-            if !matches!(action, SuiteCmd::Latest | SuiteCmd::List) {
-                std::process::exit(2);
-            }
         }
         Cmd::Suite { action } => {
             let p = phone::Phone::find(&dev)?;
