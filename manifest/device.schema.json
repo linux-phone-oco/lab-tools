@@ -172,7 +172,7 @@
           ]
         },
         "login": {
-          "description": "Whether the phone has a login: password (ssh, the default) or none (telnet, adb: the default there)",
+          "description": "Whether the phone has a login: password (ssh, the default), key (ssh by `identity`) or none (telnet, adb: the default there)",
           "anyOf": [
             {
               "$ref": "#/definitions/Login"
@@ -180,6 +180,13 @@
             {
               "type": "null"
             }
+          ]
+        },
+        "identity": {
+          "description": "The private key file login = key uses: an absolute path on the lab machine, mode 600, never in a repository",
+          "type": [
+            "string",
+            "null"
           ]
         },
         "user": {
@@ -225,10 +232,19 @@
       ]
     },
     "Login": {
-      "type": "string",
-      "enum": [
-        "password",
-        "none"
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "password",
+            "none"
+          ]
+        },
+        {
+          "description": "ssh by a private key file the device declares (`identity`), no password",
+          "type": "string",
+          "const": "key"
+        }
       ]
     },
     "Tests": {

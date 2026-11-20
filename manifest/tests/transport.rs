@@ -37,7 +37,7 @@ fn telnet_and_adb_are_reached_with_no_login_unless_said() {
 fn an_unknown_transport_or_login_is_refused_naming_it() {
     for (text, word) in [
         ("transport = \"carrier-pigeon\"\n", "carrier-pigeon"),
-        ("login = \"key\"\n", "key"),
+        ("login = \"fingerprint\"\n", "fingerprint"),
     ] {
         let e = parse(text).unwrap_err();
         assert!(e.contains(word), "{text}: {e}");
@@ -53,5 +53,48 @@ fn a_transport_that_cannot_work_as_declared_is_refused() {
     ] {
         let e = parse(text).unwrap_err();
         assert!(e.contains("connection") && e.contains(word), "{text}: {e}");
+    }
+}
+
+#[test]
+fn an_ssh_phone_may_be_reached_by_a_key_whose_identity_path_is_declared() {
+    let c = parse("login = \"key\"\nidentity = \"/home/lab/.config/devlab/p/id_ed25519\"\n")
+        .unwrap()
+        .connection
+        .unwrap();
+    assert_eq!((c.transport, c.login()), (Transport::Ssh, Login::Key));
+    assert_eq!(
+        c.identity.as_deref(),
+        Some("/home/lab/.config/devlab/p/id_ed25519")
+    );
+}
+
+#[test]
+fn a_key_login_without_an_identity_and_an_identity_without_a_key_login_are_refused() {
+    for (text, words) in [
+        ("login = \"key\"\n", ["connection", "identity"]),
+        ("identity = \"/k\"\n", ["connection", "identity"]),
+        (
+            "transport = \"adb\"\nlogin = \"none\"\nidentity = \"/k\"\n",
+            ["connection", "identity"],
+        ),
+        (
+            "transport = \"adb\"\nlogin = \"key\"\nidentity = \"/k\"\n",
+            ["connection", "adb"],
+        ),
+    ] {
+        let e = parse(text).unwrap_err();
+        assert!(words.iter().all(|w| e.contains(w)), "{text}: {e}");
+    }
+}
+
+#[test]
+fn an_identity_that_is_empty_or_not_absolute_is_refused() {
+    for id in ["", "~/.ssh/id", "id_key"] {
+        let e = parse(&format!("login = \"key\"\nidentity = \"{id}\"\n")).unwrap_err();
+        assert!(
+            e.contains("connection") && e.contains("identity"),
+            "{id}: {e}"
+        );
     }
 }
