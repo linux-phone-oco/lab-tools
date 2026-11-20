@@ -140,6 +140,10 @@ pub struct Kernels {
     /// `fastboot` (the image of `[images.NAME]` booted from memory, nothing written: `lpoco lab fastboot boot now`)
     #[serde(default)]
     pub boot: KernelBoot,
+    /// Gates a fastboot boot passes first: each a command line run in order as argv (split on spaces, no shell, no
+    /// quoting) in the device's folder, each exiting 0; one that does not stops the boot before the phone is touched
+    #[serde(default)]
+    pub pre_boot: Vec<String>,
 }
 
 /// How a test kernel gets booted (`[kernels] boot`).
@@ -181,7 +185,18 @@ impl Kernels {
         Ok(())
     }
 
+    fn validate_gates(&self) -> Result<(), String> {
+        if self.pre_boot.iter().any(|g| g.trim().is_empty()) {
+            return Err("kernels: pre_boot lists a blank gate (each is a command line)".into());
+        }
+        if !self.pre_boot.is_empty() && self.boot != KernelBoot::Fastboot {
+            return Err("kernels: pre_boot gates a fastboot boot; say boot = \"fastboot\" or leave pre_boot out".into());
+        }
+        Ok(())
+    }
+
     fn validate(&self) -> Result<(), String> {
+        self.validate_gates()?;
         for (i, n) in self.test.iter().chain(self.kept.iter()).enumerate() {
             if !is_kernel_name(n) {
                 return Err(format!(

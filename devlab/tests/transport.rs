@@ -76,7 +76,8 @@ fn run(s: &Scratch, manifest: &str, args: &[&str], stdin: &str) -> (i32, String,
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    c.stdin.take().unwrap().write_all(stdin.as_bytes()).unwrap();
+    // the binary may refuse and exit before it reads its input: a closed pipe is then its answer, not a failure
+    let _ = c.stdin.take().unwrap().write_all(stdin.as_bytes());
     let o = c.wait_with_output().unwrap();
     (
         o.status.code().unwrap_or(-1),

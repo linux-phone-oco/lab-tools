@@ -98,3 +98,23 @@ fn an_identity_that_is_empty_or_not_absolute_is_refused() {
         );
     }
 }
+
+fn kernels(extra: &str) -> Result<Manifest, String> {
+    Manifest::parse(&format!(
+        "{HEAD}[connection]\nuser = \"u\"\naddresses = [\"a\"]\n[fastboot]\nserial = \"S\"\n[[host.gadget]]\nserial = \"s\"\naccess = [\"tty\"]\nusb_id = \"1d6b:0104\"\n[kernels]\ntest = [\"z\"]\n{extra}"
+    ))
+}
+
+#[test]
+fn pre_boot_belongs_to_a_fastboot_boot_and_its_gates_are_not_blank() {
+    let ok = "boot = \"fastboot\"\npre_boot = [\"true\"]\n[images]\ndir = \".\"\n[images.z]\npath = \"z.img\"\n";
+    let m = kernels(ok).unwrap();
+    assert_eq!(m.kernels.unwrap().pre_boot, ["true"]);
+    for (text, word) in [
+        ("pre_boot = [\"true\"]\n", "pre_boot"),
+        (&ok.replace("\"true\"", "\"  \""), "pre_boot"),
+    ] {
+        let e = kernels(text).unwrap_err();
+        assert!(e.contains("kernels") && e.contains(word), "{text}: {e}");
+    }
+}
