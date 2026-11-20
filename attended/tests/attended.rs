@@ -521,8 +521,9 @@ fn devlab_calls(dir: &Path, case: &str, kernel: &str, code: u32) -> Output {
         &devlab,
         format!(
             "#!/bin/sh\necho \"$*\" >> {args}\n[ \"$1\" = --device ] && shift 2
-case \"$1 $2\" in \"kernel try\") echo 'trying once'; exit {code};; \"fastboot boot\") echo 'booted from memory'; exit {code};; esac\nPATH={bin}:$PATH exec sh -s\n",
+case \"$1 $2\" in \"kernel try\") echo 'trying once'; exit {code};; \"fastboot boot\") echo 'booted from memory'; exit {code};; \"fastboot state\") if [ -e {dir}/state-fails ]; then echo 'no serial' >&2; exit 1; fi; if {{ [ -e {dir}/not-in-fastboot ] && ! grep -q 'reboot bootloader' {dir}/rebooted 2>/dev/null; }} || [ -e {dir}/never-in-fastboot ]; then echo 'x: S is not in fastboot now (off)'; else echo 'x: S is in fastboot'; fi; exit 0;; esac\nPATH={bin}:$PATH exec sh -s\n",
             args = dir.join("args").display(),
+            dir = dir.display(),
             bin = dir.join("phone/bin").display()
         ),
     )
@@ -1732,4 +1733,71 @@ fn wait_for_usb_still_goes_by_vendor_and_product_alone() {
     fs::remove_file(bus.join("1-2/serial")).unwrap();
     let o = usb(&dir, &bus);
     assert_eq!(o.status.code(), Some(0), "{}", said(&o));
+}
+
+#[test]
+fn boot_once_on_a_fastboot_device_puts_a_phone_that_is_not_in_fastboot_there_over_its_transport_first(
+) {
+    // the phone runs Android or a test image: `reboot bootloader` through the declared transport, then fastboot boot
+    let dir = tmp("boot-fastboot-from-android");
+    declare_fastboot_boot(&dir, 4);
+    usb_tree(&dir, Some(("1d6b", "0104")));
+    fs::write(dir.join("not-in-fastboot"), "").unwrap();
+    let o = devlab_calls(&dir, "boot-once", "z21", 0);
+    assert_eq!(o.status.code(), Some(0), "{}", said(&o));
+    assert!(
+        fs::read_to_string(dir.join("rebooted"))
+            .unwrap()
+            .contains("reboot bootloader"),
+        "{}",
+        said(&o)
+    );
+    let args = fs::read_to_string(dir.join("args")).unwrap();
+    let lines: Vec<&str> = args.lines().collect();
+    let at = |what: &str| lines.iter().position(|l| l.contains(what));
+    assert!(
+        at("phone root").unwrap() < at("fastboot boot now").unwrap(),
+        "the phone is put into fastboot before the boot: {args}"
+    );
+    // a phone already in fastboot is not rebooted
+    let dir = tmp("boot-fastboot-already");
+    declare_fastboot_boot(&dir, 4);
+    usb_tree(&dir, Some(("1d6b", "0104")));
+    let o = devlab_calls(&dir, "boot-once", "z21", 0);
+    assert_eq!(o.status.code(), Some(0), "{}", said(&o));
+    assert!(!dir.join("rebooted").exists(), "{}", said(&o));
+}
+
+#[test]
+fn a_phone_that_never_reaches_fastboot_ends_the_step_naming_it_and_boots_nothing() {
+    let dir = tmp("boot-fastboot-never");
+    declare_fastboot_boot(&dir, 1);
+    usb_tree(&dir, Some(("1d6b", "0104")));
+    fs::write(dir.join("never-in-fastboot"), "").unwrap();
+    let o = devlab_calls(&dir, "boot-once", "z21", 0);
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(1), "{t}");
+    assert!(t.contains("did not reach fastboot"), "{t}");
+    let args = fs::read_to_string(dir.join("args")).unwrap();
+    assert!(!args.contains("fastboot boot now"), "{args}");
+}
+
+#[test]
+fn a_fastboot_state_devlab_cannot_read_reboots_nothing_and_ends_the_step() {
+    let dir = tmp("boot-fastboot-state-fails");
+    declare_fastboot_boot(&dir, 4);
+    usb_tree(&dir, Some(("1d6b", "0104")));
+    fs::write(dir.join("state-fails"), "").unwrap();
+    let o = devlab_calls(&dir, "boot-once", "z21", 0);
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(1), "{t}");
+    assert!(
+        !dir.join("rebooted").exists(),
+        "the phone was rebooted on a guess: {t}"
+    );
+    let args = fs::read_to_string(dir.join("args")).unwrap();
+    assert!(
+        !args.contains("phone root") && !args.contains("fastboot boot now"),
+        "{args}"
+    );
 }
