@@ -1801,3 +1801,84 @@ fn a_fastboot_state_devlab_cannot_read_reboots_nothing_and_ends_the_step() {
         "{args}"
     );
 }
+
+fn declare_pre_boot(dir: &Path, gates: &[String]) {
+    let list = gates
+        .iter()
+        .map(|g| format!("{g:?}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let m = fs::read_to_string(dir.join("device.toml"))
+        .unwrap()
+        .replace(
+            "boot = \"fastboot\"",
+            &format!("boot = \"fastboot\"\npre_boot = [{list}]"),
+        );
+    fs::write(dir.join("device.toml"), m).unwrap();
+}
+
+#[test]
+fn pre_boot_gates_run_in_order_as_argv_before_fastboot_boot_and_all_must_pass() {
+    let dir = tmp("pre-boot-pass");
+    declare_fastboot_boot(&dir, 4);
+    usb_tree(&dir, Some(("1d6b", "0104")));
+    let (a, b) = (dir.join("gate-a"), dir.join("x;y"));
+    // argv, not a shell string: `;` is no operator (a file literally named x;y is made), and the second gate sees the first's file
+    declare_pre_boot(
+        &dir,
+        &[
+            format!("touch {}", a.display()),
+            format!("test -e {}", a.display()),
+            format!("touch {}", b.display()),
+        ],
+    );
+    let o = devlab_calls(&dir, "boot-once", "z21", 0);
+    assert_eq!(o.status.code(), Some(0), "{}", said(&o));
+    assert!(a.exists() && b.exists(), "the gates ran as argv");
+    let args = fs::read_to_string(dir.join("args")).unwrap();
+    assert!(args.contains("fastboot boot now"), "{args}");
+}
+
+#[test]
+fn a_failing_pre_boot_gate_boots_nothing_and_names_itself_and_its_output() {
+    let dir = tmp("pre-boot-fail");
+    declare_fastboot_boot(&dir, 4);
+    usb_tree(&dir, Some(("1d6b", "0104")));
+    let after = dir.join("after-the-failure");
+    declare_pre_boot(
+        &dir,
+        &[
+            format!("ls {}/no-such-gate-file", dir.display()),
+            format!("touch {}", after.display()),
+        ],
+    );
+    let o = devlab_calls(&dir, "boot-once", "z21", 0);
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(1), "{t}");
+    assert!(
+        t.contains("pre_boot") && t.contains("no-such-gate-file"),
+        "{t}"
+    );
+    assert!(!after.exists(), "a gate ran after one had failed");
+    let args = fs::read_to_string(dir.join("args")).unwrap_or_default();
+    assert!(
+        !args.contains("fastboot"),
+        "nothing reached the phone: {args}"
+    );
+}
+
+#[test]
+fn the_dry_run_lists_the_pre_boot_gates_and_runs_none() {
+    let dir = tmp("pre-boot-dry");
+    declare_fastboot_boot(&dir, 4);
+    let made = dir.join("made-in-a-dry-run");
+    declare_pre_boot(&dir, &[format!("touch {}", made.display())]);
+    let o = devlab_calls(&dir, "boot-once-dry", "z21", 0);
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(0), "{t}");
+    assert!(
+        t.contains("pre_boot") && t.contains(&format!("touch {}", made.display())),
+        "{t}"
+    );
+    assert!(!made.exists(), "a dry run ran a gate");
+}

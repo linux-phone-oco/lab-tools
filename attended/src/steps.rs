@@ -244,7 +244,10 @@ pub fn boot_once(name: &str) -> Step {
     let name = name.to_string();
     declared_test_kernel(&name);
     let memory = memory_boot_of(&name);
-    Step::new(Kind::Do, &format!("boot {name} once"), move || {
+    let gates = memory
+        .as_ref()
+        .map_or(String::new(), |m| gates_said(&m.gates));
+    Step::new(Kind::Do, &format!("boot {name} once{gates}"), move || {
         if !is_kernel_name(&name) {
             return Err(format!(
                 "not a test kernel name: {name:?} (lowercase letters, digits and -)"
@@ -264,6 +267,9 @@ pub fn boot_once(name: &str) -> Step {
 
 /// What a boot from memory reads, taken from the device at the step's making: the image, the gadget, the wait.
 struct FromMemory {
+    /// `[kernels] pre_boot`: the command lines that must exit 0 first, and where they run (the device's folder)
+    gates: Vec<String>,
+    folder: std::path::PathBuf,
     image: String,
     sha256: Option<String>,
     usb_id: String,
@@ -301,6 +307,11 @@ fn memory_boot_of(name: &str) -> Option<FromMemory> {
     let folder = c.device.parent().unwrap_or(std::path::Path::new("."));
     let wait = m.boot.as_ref().and_then(|b| b.device_wait).unwrap_or(60);
     Some(FromMemory {
+        gates: m
+            .kernels
+            .as_ref()
+            .map_or(Vec::new(), |k| k.pre_boot.clone()),
+        folder: folder.to_path_buf(),
         image: folder.join(dir).join(image).display().to_string(),
         sha256,
         usb_id,
@@ -345,8 +356,42 @@ fn into_fastboot(tries: u32) -> Result<(), String> {
     Err(format!("the phone did not reach fastboot after `reboot bootloader` over its declared transport{transport} - needs hands (volume down + power)"))
 }
 
+/// What the step's name says of its gates in a dry run: none, nothing; else the command lines in order.
+fn gates_said(gates: &[String]) -> String {
+    if gates.is_empty() {
+        return String::new();
+    }
+    format!(" (after pre_boot: {})", gates.join("; "))
+}
+
+/// Each `[kernels] pre_boot` gate as argv (split on spaces: no shell, no expansion), in order, in the device's folder;
+/// the first that does not exit 0 ends the step, naming it and what it said, before the phone is touched.
+fn run_gates(gates: &[String], folder: &std::path::Path) -> Result<(), String> {
+    for gate in gates {
+        let mut argv = gate.split_whitespace();
+        let program = argv.next().ok_or("pre_boot: a blank gate")?;
+        let out = std::process::Command::new(program)
+            .args(argv)
+            .current_dir(folder)
+            .stdin(std::process::Stdio::null())
+            .output()
+            .map_err(|e| format!("pre_boot gate {gate:?} could not start: {e}: nothing booted"))?;
+        if !out.status.success() {
+            return Err(format!(
+                "pre_boot gate {gate:?} failed ({}): nothing booted\n{}{}",
+                out.status,
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr)
+            ));
+        }
+        println!("  pre_boot gate passed: {gate}");
+    }
+    Ok(())
+}
+
 /// Boot the image from the phone's memory (devlab fastboot boot now: nothing is written), then wait for its gadget.
 fn boot_from_memory(m: &FromMemory) -> Result<String, String> {
+    run_gates(&m.gates, &m.folder)?;
     if let Some(want) = &m.sha256 {
         check_checksum(&m.image, want)?;
     }

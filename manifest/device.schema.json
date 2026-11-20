@@ -1246,6 +1246,14 @@
               "$ref": "#/definitions/KernelBoot"
             }
           ]
+        },
+        "pre_boot": {
+          "description": "Gates a fastboot boot passes first: each a command line run in order as argv (split on spaces, no shell, no\nquoting) in the device's folder, each exiting 0; one that does not stops the boot before the phone is touched",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
         }
       },
       "additionalProperties": false
