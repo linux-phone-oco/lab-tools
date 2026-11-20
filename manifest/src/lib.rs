@@ -94,6 +94,7 @@ impl Manifest {
         m.health.validate()?;
         if let Some(k) = &m.kernels {
             k.validate()?;
+            k.validate_boot(&m)?;
         }
         for (i, c) in m.user_config.iter().enumerate() {
             if m.user_config[..i].iter().any(|o| o.path == c.path) {
@@ -135,6 +136,21 @@ pub struct Kernels {
     pub test: Vec<String>,
     /// the test kernel kept as the default (it must be listed in `test`); none means stock is the default
     pub kept: Option<String>,
+    /// how a test kernel is booted: `entry` (a boot entry on the phone, tried once: `lpoco lab kernel try`) or
+    /// `fastboot` (the image of `[images.NAME]` booted from memory, nothing written: `lpoco lab fastboot boot now`)
+    #[serde(default)]
+    pub boot: KernelBoot,
+}
+
+/// How a test kernel gets booted (`[kernels] boot`).
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum KernelBoot {
+    /// a boot entry kept on the phone beside stock
+    #[default]
+    Entry,
+    /// an Android boot image booted from memory over fastboot, nothing written to the phone
+    Fastboot,
 }
 
 /// A kernel entry's name: lowercase letters, digits and `-` (devlab's rule; `+` is systemd-boot's try counter).
@@ -145,6 +161,26 @@ pub fn is_kernel_name(n: &str) -> bool {
 }
 
 impl Kernels {
+    /// A fastboot boot reads, for each test kernel, its image, and for the phone its fastboot serial and the gadget it
+    /// then waits for: each is named when missing.
+    fn validate_boot(&self, m: &Manifest) -> Result<(), String> {
+        if self.boot != KernelBoot::Fastboot {
+            return Ok(());
+        }
+        if m.fastboot.serial.trim().is_empty() {
+            return Err("kernels: boot = \"fastboot\" needs [fastboot] serial".into());
+        }
+        if !m.host.gadget.iter().any(|g| g.usb_id.is_some()) {
+            return Err("kernels: boot = \"fastboot\" needs a [[host.gadget]] usb_id (the gadget it waits for)".into());
+        }
+        for n in &self.test {
+            if !m.images.as_ref().is_some_and(|i| i.named.contains_key(n)) {
+                return Err(format!("kernels: boot = \"fastboot\" needs [images.{n}] (the image of test kernel {n:?})"));
+            }
+        }
+        Ok(())
+    }
+
     fn validate(&self) -> Result<(), String> {
         for (i, n) in self.test.iter().chain(self.kept.iter()).enumerate() {
             if !is_kernel_name(n) {

@@ -1222,9 +1222,32 @@
             "string",
             "null"
           ]
+        },
+        "boot": {
+          "description": "how a test kernel is booted: `entry` (a boot entry on the phone, tried once: `lpoco lab kernel try`) or\n`fastboot` (the image of `[images.NAME]` booted from memory, nothing written: `lpoco lab fastboot boot now`)",
+          "allOf": [
+            {
+              "$ref": "#/definitions/KernelBoot"
+            }
+          ]
         }
       },
       "additionalProperties": false
+    },
+    "KernelBoot": {
+      "description": "How a test kernel gets booted (`[kernels] boot`).",
+      "oneOf": [
+        {
+          "description": "a boot entry kept on the phone beside stock",
+          "type": "string",
+          "const": "entry"
+        },
+        {
+          "description": "an Android boot image booted from memory over fastboot, nothing written to the phone",
+          "type": "string",
+          "const": "fastboot"
+        }
+      ]
     },
     "Images": {
       "description": "`[images]`: `dir` is the folder the images live in, relative to the device repo; each `[images.NAME]` is one.",
