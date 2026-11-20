@@ -309,11 +309,48 @@ fn memory_boot_of(name: &str) -> Option<FromMemory> {
     })
 }
 
+/// Whether devlab says the phone is in fastboot (its first line: "CODENAME: SERIAL is in fastboot" or "... is not in
+/// fastboot now"). A state devlab cannot read (no serial declared, no fastboot program, a call that failed) is an
+/// error, never "not in fastboot": the phone is not rebooted on a guess.
+fn in_fastboot() -> Result<bool, String> {
+    let said = crate::devlab(&["fastboot", "state"])?;
+    let first = said.lines().next().unwrap_or("");
+    Ok(first.ends_with("is in fastboot"))
+}
+
+/// The phone is in fastboot before an image is booted from memory: one already there is left alone; one running
+/// Android or a test image is sent there with `reboot bootloader` through the declared transport (devlab phone
+/// root), then waited for (`tries` states, two seconds apart, at least one). It never reaches fastboot: the step
+/// ends, booting nothing, with what the transport said of the reboot.
+fn into_fastboot(tries: u32) -> Result<(), String> {
+    if in_fastboot()? {
+        return Ok(());
+    }
+    // the connection ends with the reboot, so its failing is not yet the answer; it is said if fastboot never comes
+    let sent = crate::phone().root("reboot bootloader\n");
+    for turn in 0..tries.max(1) {
+        std::thread::sleep(std::time::Duration::from_secs(if turn == 0 {
+            0
+        } else {
+            2
+        }));
+        if in_fastboot()? {
+            return Ok(());
+        }
+    }
+    let transport = match sent {
+        Ok(_) => String::new(),
+        Err(e) => format!(" ({e})"),
+    };
+    Err(format!("the phone did not reach fastboot after `reboot bootloader` over its declared transport{transport} - needs hands (volume down + power)"))
+}
+
 /// Boot the image from the phone's memory (devlab fastboot boot now: nothing is written), then wait for its gadget.
 fn boot_from_memory(m: &FromMemory) -> Result<String, String> {
     if let Some(want) = &m.sha256 {
         check_checksum(&m.image, want)?;
     }
+    into_fastboot(m.tries)?;
     let out = crate::devlab(&["fastboot", "boot", "now", &m.image])?;
     usb_on_bus(&m.usb_id, Some(&m.serial), m.tries, 2).map_err(|e| format!("{out}{e}"))?;
     Ok(out)
