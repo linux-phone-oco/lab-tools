@@ -6,7 +6,7 @@
 //!
 //!   devlab keeper take NAME      take the lease (exit 1, saying who holds it, when another keeper is live)
 //!   devlab keeper renew NAME     a keeper renews it as it works: one left unrenewed for LAPSE has ended
-//!   devlab keeper release NAME   a keeper that ends gives it back
+//!   devlab keeper release NAME   a keeper that ends gives it back: found by its name from any folder, no device.toml needed
 //!   devlab keeper status         who holds it, and since when it was renewed; or free
 //!
 //! The lease is a directory, STATE/keeper.lease (made atomically: two takers cannot both have it),
@@ -87,15 +87,38 @@ pub fn renew_at(dir: &Path, name: &str) -> Result<String> {
     }
 }
 
-pub fn release_at(dir: &Path, name: &str) -> Result<String> {
-    match holder(dir) {
-        Some((who, _)) if who == name => {
-            std::fs::remove_dir_all(dir)?;
-            Ok(format!("{name} gave the phone's lease back"))
+/// Gives back every lease under `root` (one folder per codename) that `name` holds; an error naming the leases
+/// held when it holds none. No device.toml is needed: a keeper whose worktree is gone still releases.
+pub fn release_named_at(root: &Path, name: &str) -> Result<String> {
+    valid(name)?;
+    let mut held = Vec::new();
+    let mut mine = Vec::new();
+    let mut codenames: Vec<_> = std::fs::read_dir(root)
+        .map(|d| {
+            d.flatten()
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .collect()
+        })
+        .unwrap_or_default();
+    codenames.sort();
+    for code in codenames {
+        let dir = root.join(&code).join("keeper.lease");
+        if let Some((who, _)) = holder(&dir) {
+            if who == name {
+                std::fs::remove_dir_all(&dir)?;
+                mine.push(code);
+            } else {
+                held.push(format!("{code}: {who}"));
+            }
         }
-        Some((who, _)) => bail!("{who} holds the lease, not {name}"),
-        None => Ok("nobody held the lease".into()),
     }
+    if !mine.is_empty() {
+        return Ok(format!("{name} gave back the lease of {}", mine.join(", ")));
+    }
+    if held.is_empty() {
+        bail!("{name} holds no lease: no lease is held");
+    }
+    bail!("{name} holds no lease; leases held: {}", held.join("; "))
 }
 
 pub fn status_at(dir: &Path, lapse: Duration) -> String {
@@ -117,8 +140,8 @@ pub fn take(device: &Device, name: &str) -> Result<String> {
 pub fn renew(device: &Device, name: &str) -> Result<String> {
     renew_at(&lease(device), name)
 }
-pub fn release(device: &Device, name: &str) -> Result<String> {
-    release_at(&lease(device), name)
+pub fn release(name: &str) -> Result<String> {
+    release_named_at(&crate::device::state_root(), name)
 }
 pub fn status(device: &Device) -> String {
     status_at(&lease(device), LAPSE)
@@ -132,7 +155,7 @@ mod tests {
     fn one_keeper_at_a_time_and_a_lapsed_one_gives_way() {
         let dir = std::env::temp_dir().join(format!("devlab-keeper-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        let l = dir.join("keeper.lease");
+        let l = dir.join("a-phone/keeper.lease");
         let hour = Duration::from_secs(3600);
         assert_eq!(status_at(&l, hour), "free");
         assert!(take_at(&l, "keeper-1", hour).is_ok());
@@ -142,12 +165,13 @@ mod tests {
             take_at(&l, "keeper-1", hour).is_ok(),
             "taking it again is renewing"
         );
-        assert!(renew_at(&l, "keeper-2").is_err() && release_at(&l, "keeper-2").is_err());
+        assert!(renew_at(&l, "keeper-2").is_err());
+        assert!(release_named_at(&dir, "keeper-2").is_err());
         assert!(status_at(&l, hour).starts_with("kept by keeper-1"));
         // a lease not renewed within the lapse is taken by the next keeper
         assert!(take_at(&l, "keeper-2", Duration::ZERO).is_ok());
         assert!(status_at(&l, hour).starts_with("kept by keeper-2"));
-        assert!(release_at(&l, "keeper-2").is_ok());
+        assert!(release_named_at(&dir, "keeper-2").is_ok());
         assert_eq!(status_at(&l, hour), "free");
         assert!(take_at(&l, "../x", hour).is_err());
         let _ = std::fs::remove_dir_all(&dir);

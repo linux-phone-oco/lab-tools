@@ -488,6 +488,13 @@ fn main() -> Result<()> {
         println!("{said}");
         return Ok(());
     }
+    if let Cmd::Keeper {
+        action: KeeperCmd::Release { name },
+    } = &cli.cmd
+    {
+        println!("{}", keeper::release(name)?);
+        return Ok(());
+    }
     if let Cmd::ManifestCheck = &cli.cmd {
         let file = device::Device::locate(cli.device.as_deref(), &std::env::current_dir()?)?;
         println!("{}", device::Device::check(&file, VERSION)?);
@@ -673,7 +680,7 @@ fn main() -> Result<()> {
         Cmd::Keeper { action } => match action {
             KeeperCmd::Take { name } => println!("{}", keeper::take(&dev, &name)?),
             KeeperCmd::Renew { name } => println!("{}", keeper::renew(&dev, &name)?),
-            KeeperCmd::Release { name } => println!("{}", keeper::release(&dev, &name)?),
+            KeeperCmd::Release { .. } => unreachable!("answered before the manifest is read"),
             KeeperCmd::Status => println!("{}", keeper::status(&dev)),
         },
         Cmd::Guard { .. } | Cmd::Job { .. } | Cmd::ManifestCheck => {
