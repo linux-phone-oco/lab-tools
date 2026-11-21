@@ -1327,7 +1327,8 @@ fn finish(work: &str, result: Result<(), String>) -> Result<(), String> {
 
 /// `follow [now]`: a family release newer than lab.toml's pin is installed when no phone's keeper holds the lab,
 /// judged by its own `check` and `plan`, and its pin landed; a failing check or a release that needs root puts the
-/// previous programs back and lands nothing. Without `now` it only says what it would do.
+/// previous programs back and lands nothing. A declared `[follow] window` holds the install until its
+/// hours (a run that began inside it finishes after it closes). Without `now` it only says what it would do.
 fn follow(st: &State, now: bool) -> Result<i32, String> {
     let Some(ToolPin::Version(pinned)) = st.lab.tools.get("lpoco") else {
         return Err("lab.toml pins no lpoco release: nothing to follow from".into());

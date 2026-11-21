@@ -1023,3 +1023,71 @@ fn a_window_that_is_not_two_clock_times_is_refused_where_lab_toml_is_read() {
     assert!(text(&o).contains("window"), "{}", text(&o));
     assert!(installed(&l, "lpoco").contains("old"));
 }
+
+#[test]
+fn a_killed_follow_is_stepped_back_at_any_hour_and_an_up_to_date_host_stays_quiet_outside_the_window(
+) {
+    let w = "[follow]\nevery = \"15min\"\nwindow = \"02:00-05:00\"\n\n";
+    let l = lab("outside-killed", w);
+    releases(&l, &["0.2.1", "0.2.0"]);
+    install_old(&l);
+    let j = journal(&l);
+    fs::create_dir_all(&j).unwrap();
+    for p in FAMILY.iter().chain(&["devlab", "tone"]) {
+        fs::write(j.join(p), format!("#!/bin/sh\necho {p} 0.2.0 kept\n")).unwrap();
+    }
+    fs::write(j.join("TARGET"), "0.2.1\n").unwrap();
+    let o = follow_at(&l, "14:30");
+    let s = text(&o);
+    assert!(o.status.success(), "{s}");
+    assert!(s.contains("put back"), "{s}");
+    assert!(
+        installed(&l, "lpoco").contains("0.2.0 kept"),
+        "{}",
+        installed(&l, "lpoco")
+    );
+    assert!(!j.exists());
+
+    let up = lab("outside-uptodate", w);
+    releases(&up, &["0.2.0"]);
+    install_old(&up);
+    let s = text(&follow_at(&up, "14:30"));
+    assert!(s.contains("up to date") && !s.contains("waits"), "{s}");
+}
+
+#[test]
+fn the_edges_of_a_window_and_a_clock_that_is_not_a_time() {
+    for (clock, installs) in [
+        ("02:00", true),
+        ("04:59", true),
+        ("05:00", false),
+        ("01:59", false),
+    ] {
+        let l = lab(
+            "edge",
+            "[follow]\nevery = \"15min\"\nwindow = \"02:00-05:00\"\n\n",
+        );
+        releases(&l, &["0.2.1", "0.2.0"]);
+        install_old(&l);
+        let o = follow_at(&l, clock);
+        assert!(o.status.success(), "{clock}: {}", text(&o));
+        assert_eq!(
+            installed(&l, "lpoco").contains("0.2.1"),
+            installs,
+            "{clock}"
+        );
+    }
+    let l = lab(
+        "badclock",
+        "[follow]\nevery = \"15min\"\nwindow = \"02:00-05:00\"\n\n",
+    );
+    releases(&l, &["0.2.1", "0.2.0"]);
+    install_old(&l);
+    let o = follow_at(&l, "noon");
+    assert!(
+        !o.status.success() && text(&o).contains("HH:MM"),
+        "{}",
+        text(&o)
+    );
+    assert!(installed(&l, "lpoco").contains("old"));
+}
