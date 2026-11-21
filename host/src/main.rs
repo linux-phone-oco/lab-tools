@@ -1434,14 +1434,11 @@ impl Judged {
         };
         let check = run("check")?;
         let plan = run("plan")?;
+        let (check_ok, check_tail) =
+            follow::judge_check(check.status.code(), &String::from_utf8_lossy(&check.stdout));
         Ok(Judged {
-            check_ok: check.status.success(),
-            check_tail: String::from_utf8_lossy(&check.stdout)
-                .lines()
-                .rev()
-                .take(3)
-                .collect::<Vec<_>>()
-                .join(" | "),
+            check_ok,
+            check_tail,
             root: plan
                 .status
                 .success()
