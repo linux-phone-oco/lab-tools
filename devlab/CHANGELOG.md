@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.42.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-lab-v0.41.1...lpoco-lab-v0.42.0) - 2026-11-21
+
+### Added
+
+- *(host)* follow installs only inside the [follow] window ([#321](https://github.com/linux-phone-oco/lab-tools/pull/321))
+
+### Fixed
+
+- *(devlab)* keeper release finds its lease by name from any folder ([#323](https://github.com/linux-phone-oco/lab-tools/pull/323))
+
 ## [0.41.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-lab-v0.41.0...lpoco-lab-v0.41.1) - 2026-11-21
 
 ### Fixed
