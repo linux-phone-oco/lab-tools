@@ -141,8 +141,9 @@ fn publish_release(l: &Lab, version: &str, check_exit: i32, plan_text: &str) {
         let file = tag.join(format!("{p}-{SUFFIX}"));
         let body = if *p == "lpoco-host" {
             format!(
-                "#!/bin/sh\necho \"lpoco-host {version} $@\" >> {calls}\ncase \"$1\" in check) exit {check_exit};; plan) printf '%s\\n' '{plan_text}';; esac\n",
-                calls = l.dir.join("calls").display()
+                "#!/bin/sh\necho \"lpoco-host {version} $@\" >> {calls}\ncase \"$1\" in check) cat {out} 2>/dev/null; exit {check_exit};; plan) printf '%s\\n' '{plan_text}';; esac\n",
+                calls = l.dir.join("calls").display(),
+                out = l.dir.join("check.out").display()
             )
         } else {
             format!("#!/bin/sh\necho {p} {version} asset\n")
@@ -193,7 +194,8 @@ fn install_old_host(l: &Lab, check_exit: i32, plan_text: &str) {
     exe(
         &bin.join("lpoco-host"),
         &format!(
-            "echo old\ncase \"$1\" in check) exit {check_exit};; plan) printf '%s\\n' '{plan_text}';; esac"
+            "echo old\ncase \"$1\" in check) cat {out} 2>/dev/null; exit {check_exit};; plan) printf '%s\\n' '{plan_text}';; esac",
+            out = l.dir.join("check.out").display()
         ),
     );
 }
@@ -871,4 +873,61 @@ fn a_journal_left_alone_by_follow_without_now() {
     assert!(o.status.success(), "{}", text(&o));
     assert!(j.exists());
     assert!(installed(&l, "lpoco").contains("old"));
+}
+
+const NOT_MEASURED: &str = "tool oco-work: not measured, its pin is not known yet\nshare: not measured, google-walleye: the phone is not attached\n";
+
+#[test]
+fn a_check_that_only_has_not_measured_lines_does_not_hold_a_release_back() {
+    let l = lab("unmeasured", "");
+    releases(&l, &["0.2.1", "0.2.0"]);
+    // an installed host that still exits 1 for what it could not measure, as 0.39 did
+    install_old_host(&l, 1, NO_ROOT);
+    fs::write(l.dir.join("check.out"), NOT_MEASURED).unwrap();
+    let o = follow(&l, &["now"]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert_eq!(landed_pin(&l).0, "lpoco = \"0.2.1\"");
+}
+
+#[test]
+fn a_new_host_that_only_could_not_measure_is_kept() {
+    let l = lab("newunmeasured", "");
+    publish_release(&l, "0.2.1", 1, NO_ROOT);
+    releases(&l, &["0.2.1", "0.2.0"]);
+    install_old(&l);
+    fs::write(l.dir.join("check.out"), NOT_MEASURED).unwrap();
+    let o = follow(&l, &["now"]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert_eq!(landed_pin(&l).0, "lpoco = \"0.2.1\"");
+}
+
+#[test]
+fn a_fail_line_is_what_a_waiting_follow_names_not_the_last_lines_printed() {
+    let l = lab("failnamed", "");
+    releases(&l, &["0.2.1", "0.2.0"]);
+    install_old_host(&l, 1, NO_ROOT);
+    fs::write(
+        l.dir.join("check.out"),
+        format!("tool land: FAIL, pinned a found b\n{NOT_MEASURED}"),
+    )
+    .unwrap();
+    let o = follow(&l, &["now"]);
+    let s = text(&o);
+    assert!(
+        s.contains("own check fails") && s.contains("tool land: FAIL"),
+        "{s}"
+    );
+    assert!(!s.contains("not measured"), "{s}");
+    assert_eq!(landed_pin(&l).0, "lpoco = \"0.2.0\"");
+}
+
+#[test]
+fn a_check_that_errors_is_a_failure_whatever_it_printed() {
+    let l = lab("errored", "");
+    releases(&l, &["0.2.1", "0.2.0"]);
+    install_old_host(&l, 2, NO_ROOT);
+    fs::write(l.dir.join("check.out"), NOT_MEASURED).unwrap();
+    let o = follow(&l, &["now"]);
+    assert!(text(&o).contains("own check fails"), "{}", text(&o));
+    assert_eq!(landed_pin(&l).0, "lpoco = \"0.2.0\"");
 }

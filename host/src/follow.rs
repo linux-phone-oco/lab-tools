@@ -150,6 +150,21 @@ pub fn unit_quoted(s: &str) -> String {
     out
 }
 
+/// What a host's `check` said: whether it failed, and the lines that say why. Only a `FAIL` line fails the lab
+/// (practice 12: what was not measured is not known yet, never failing). An exit of 1 that has no FAIL line but does
+/// have `not measured` lines is such a check, as older hosts exited; any other exit (an error, a signal) fails.
+pub fn judge_check(exit: Option<i32>, stdout: &str) -> (bool, String) {
+    let fails: Vec<&str> = stdout.lines().filter(|l| l.contains("FAIL")).collect();
+    let unmeasured = stdout.lines().any(|l| l.contains("not measured"));
+    let ok = fails.is_empty() && (exit == Some(0) || (exit == Some(1) && unmeasured));
+    let why = if fails.is_empty() {
+        stdout.lines().rev().take(3).collect::<Vec<_>>().join(" | ")
+    } else {
+        fails.join(" | ")
+    };
+    (ok, why)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
