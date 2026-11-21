@@ -1329,6 +1329,9 @@ fn finish(work: &str, result: Result<(), String>) -> Result<(), String> {
 /// judged by its own `check` and `plan`, and its pin landed; a failing check or a release that needs root puts the
 /// previous programs back and lands nothing. A declared `[follow] window` holds the install until its
 /// hours (a run that began inside it finishes after it closes). Without `now` it only says what it would do.
+/// What is installed is judged too: an installed `lpoco` older than the pin (a prepare that did not run after the
+/// pin moved) is reinstalled at the pin, checked the same way, and no pin is landed. Only `lpoco` is read; an
+/// older other family program under a current `lpoco` is not noticed.
 fn follow(st: &State, now: bool) -> Result<i32, String> {
     let Some(ToolPin::Version(pinned)) = st.lab.tools.get("lpoco") else {
         return Err("lab.toml pins no lpoco release: nothing to follow from".into());
@@ -1336,13 +1339,32 @@ fn follow(st: &State, now: bool) -> Result<i32, String> {
     if now {
         step_back_a_killed_follow(&st.home, pinned)?;
     }
-    let newest = newest_release(st)?;
-    let Some(newest) = newest.filter(|n| follow::is_newer(n, pinned)) else {
-        println!("up to date: lpoco {pinned} is the newest family release");
+    let released = newest_release(st)?.filter(|n| follow::is_newer(n, pinned));
+    // what is installed is judged against the release the pin allows, not against the pin alone
+    let installed = version_found(&st.path, &st.home, "lpoco");
+    let newest = released.clone().unwrap_or_else(|| pinned.clone());
+    let drifted = installed
+        .as_deref()
+        .is_some_and(|v| follow::is_newer(&newest, v));
+    if released.is_none() && !drifted {
+        let unread = installed
+            .as_deref()
+            .is_none_or(|v| follow::version_key(v).is_none());
+        println!(
+            "up to date: lpoco {pinned} is the newest family release{}",
+            if unread {
+                " (the installed lpoco's version is not readable: not judged)"
+            } else {
+                ""
+            }
+        );
         return Ok(0);
-    };
+    }
     if !now {
-        println!("lpoco {pinned} is pinned, {newest} is released: `lpoco host follow now` installs it when no keeper holds a phone, checks it and lands the pin");
+        match (&released, &installed) {
+            (Some(_), _) => println!("lpoco {pinned} is pinned, {newest} is released: `lpoco host follow now` installs it when no keeper holds a phone, checks it and lands the pin"),
+            (None, v) => println!("lpoco {} is installed, {pinned} is pinned: `lpoco host follow now` installs {pinned} when no keeper holds a phone and checks it; the pin stays", v.as_deref().unwrap_or("?")),
+        }
         return Ok(0);
     }
     if outside_window(st)? {
@@ -1352,8 +1374,13 @@ fn follow(st: &State, now: bool) -> Result<i32, String> {
         return Ok(0);
     }
     // everything that can be known before a program is touched
-    let staged = stage_lab(st, pinned, &newest)?;
-    preflight_landing(st)?;
+    let staged = if released.is_some() {
+        let staged = stage_lab(st, pinned, &newest)?;
+        preflight_landing(st)?;
+        staged
+    } else {
+        st.lab_path.clone()
+    };
     let before = Judged::of(&host_program(st), &st.lab_path)?;
     if !before.check_ok {
         println!(
@@ -1367,13 +1394,25 @@ fn follow(st: &State, now: bool) -> Result<i32, String> {
         return Ok(0);
     }
     let previous = save_programs(&st.home)?;
-    write_journal(&st.home, &previous, &newest)?;
-    println!("following: lpoco {pinned} -> {newest}");
+    // a drift install lands no pin, so its journal never names the pinned release (that means "the pin landed")
+    let journal_target = if released.is_some() {
+        newest.clone()
+    } else {
+        format!("{newest}-reinstall")
+    };
+    write_journal(&st.home, &previous, &journal_target)?;
+    // what is replaced: the programs of the pinned release, or, on a reinstall, the older ones installed
+    let was = if released.is_some() {
+        pinned.clone()
+    } else {
+        installed.clone().unwrap_or_else(|| "unreadable".into())
+    };
+    println!("following: lpoco {was} -> {newest}");
     let stepped_back = |why: String| {
         restore_programs(&previous).map_err(|e| format!("{why}; and the programs could not be put back ({e}): the journal is kept for the next run"))?;
         clear_journal(&st.home);
         Err(format!(
-            "{why}; the programs of {pinned} are back and the pin stays"
+            "{why}; the programs of {was} are back and the pin stays"
         ))
     };
     if let Err(why) = install_family(st, &newest) {
@@ -1414,12 +1453,18 @@ fn follow(st: &State, now: bool) -> Result<i32, String> {
         clear_journal(&st.home);
         return Ok(0);
     }
-    if let Err(why) = land_pin(st, pinned, &newest) {
-        return stepped_back(format!("the pin was not landed ({why})"));
+    if released.is_some() {
+        if let Err(why) = land_pin(st, pinned, &newest) {
+            return stepped_back(format!("the pin was not landed ({why})"));
+        }
     }
     clear_journal(&st.home);
     restart_watchers(st);
-    println!("followed: lpoco {newest} is installed, checked, and its pin landed");
+    if released.is_some() {
+        println!("followed: lpoco {newest} is installed, checked, and its pin landed");
+    } else {
+        println!("followed: lpoco {newest} (the pin) is installed and checked; the pin stays");
+    }
     Ok(0)
 }
 
