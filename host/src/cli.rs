@@ -102,6 +102,14 @@ contract! {
         ..Input::EMPTY
     };
 
+    CLOCK: String = Input {
+        key: "clock",
+        ty: Type::String,
+        env: Some(Env::new("LPOCO_CLOCK")),
+        summary: "The time of day, HH:MM local, that follow judges its window by (the system clock when none is given), for tests.",
+        ..Input::EMPTY
+    };
+
     HOME: String = Input {
         key: "home",
         ty: Type::String,

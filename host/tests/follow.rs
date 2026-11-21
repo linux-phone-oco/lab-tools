@@ -931,3 +931,163 @@ fn a_check_that_errors_is_a_failure_whatever_it_printed() {
     assert!(text(&o).contains("own check fails"), "{}", text(&o));
     assert_eq!(landed_pin(&l).0, "lpoco = \"0.2.0\"");
 }
+
+fn follow_at(l: &Lab, clock: &str) -> Output {
+    let mut c = Command::new(env!("CARGO_BIN_EXE_lpoco-host"));
+    c.arg("follow").arg("now");
+    c.env_clear()
+        .env("HOME", l.dir.join("home"))
+        .env(
+            "PATH",
+            format!(
+                "{}:{}",
+                l.dir.join("stubs").display(),
+                l.dir.join("home/.local/bin").display()
+            ),
+        )
+        .env(
+            "LPOCO_LAB",
+            l.dir.join("home/Projects/lab-machine/lab.toml"),
+        )
+        .env("LPOCO_ROOT", l.dir.join("stubs/root"))
+        .env("LPOCO_FS_ROOT", l.dir.join("fs"))
+        .env("LPOCO_CLOCK", clock)
+        .env(
+            "LPOCO_RELEASE_BASE",
+            format!("file://{}/release", l.dir.display()),
+        )
+        .env(
+            "LPOCO_RELEASES",
+            format!("file://{}/releases.json", l.dir.display()),
+        );
+    c.output().unwrap()
+}
+
+#[test]
+fn outside_its_window_follow_waits_and_changes_nothing() {
+    let l = lab(
+        "outside",
+        "[follow]\nevery = \"15min\"\nwindow = \"02:00-05:00\"\n\n",
+    );
+    releases(&l, &["0.2.1", "0.2.0"]);
+    install_old(&l);
+    let o = follow_at(&l, "14:30");
+    let s = text(&o);
+    assert!(o.status.success(), "{s}");
+    assert!(
+        s.contains("waits") && s.contains("02:00-05:00") && s.contains("14:30"),
+        "{s}"
+    );
+    assert!(installed(&l, "lpoco").contains("old"));
+    assert_eq!(landed_pin(&l).0, "lpoco = \"0.2.0\"");
+    assert!(
+        !calls(&l).contains(SUFFIX),
+        "a program was fetched outside the window: {}",
+        calls(&l)
+    );
+}
+
+#[test]
+fn inside_its_window_follow_installs_and_a_window_across_midnight_counts() {
+    for (name, window, clock) in [
+        ("inside", "02:00-05:00", "03:10"),
+        ("midnight", "22:00-04:00", "23:59"),
+    ] {
+        let l = lab(
+            name,
+            &format!("[follow]\nevery = \"15min\"\nwindow = \"{window}\"\n\n"),
+        );
+        releases(&l, &["0.2.1", "0.2.0"]);
+        install_old(&l);
+        let o = follow_at(&l, clock);
+        assert!(o.status.success(), "{}", text(&o));
+        assert!(
+            installed(&l, "lpoco").contains("0.2.1"),
+            "{name}: {}",
+            text(&o)
+        );
+        assert_eq!(landed_pin(&l).0, "lpoco = \"0.2.1\"", "{name}");
+    }
+}
+
+#[test]
+fn a_window_that_is_not_two_clock_times_is_refused_where_lab_toml_is_read() {
+    let l = lab(
+        "badwindow",
+        "[follow]\nevery = \"15min\"\nwindow = \"night\"\n\n",
+    );
+    releases(&l, &["0.2.1", "0.2.0"]);
+    install_old(&l);
+    let o = follow_at(&l, "03:00");
+    assert!(!o.status.success(), "{}", text(&o));
+    assert!(text(&o).contains("window"), "{}", text(&o));
+    assert!(installed(&l, "lpoco").contains("old"));
+}
+
+#[test]
+fn a_killed_follow_is_stepped_back_at_any_hour_and_an_up_to_date_host_stays_quiet_outside_the_window(
+) {
+    let w = "[follow]\nevery = \"15min\"\nwindow = \"02:00-05:00\"\n\n";
+    let l = lab("outside-killed", w);
+    releases(&l, &["0.2.1", "0.2.0"]);
+    install_old(&l);
+    let j = journal(&l);
+    fs::create_dir_all(&j).unwrap();
+    for p in FAMILY.iter().chain(&["devlab", "tone"]) {
+        fs::write(j.join(p), format!("#!/bin/sh\necho {p} 0.2.0 kept\n")).unwrap();
+    }
+    fs::write(j.join("TARGET"), "0.2.1\n").unwrap();
+    let o = follow_at(&l, "14:30");
+    let s = text(&o);
+    assert!(o.status.success(), "{s}");
+    assert!(s.contains("put back"), "{s}");
+    assert!(
+        installed(&l, "lpoco").contains("0.2.0 kept"),
+        "{}",
+        installed(&l, "lpoco")
+    );
+    assert!(!j.exists());
+
+    let up = lab("outside-uptodate", w);
+    releases(&up, &["0.2.0"]);
+    install_old(&up);
+    let s = text(&follow_at(&up, "14:30"));
+    assert!(s.contains("up to date") && !s.contains("waits"), "{s}");
+}
+
+#[test]
+fn the_edges_of_a_window_and_a_clock_that_is_not_a_time() {
+    for (clock, installs) in [
+        ("02:00", true),
+        ("04:59", true),
+        ("05:00", false),
+        ("01:59", false),
+    ] {
+        let l = lab(
+            "edge",
+            "[follow]\nevery = \"15min\"\nwindow = \"02:00-05:00\"\n\n",
+        );
+        releases(&l, &["0.2.1", "0.2.0"]);
+        install_old(&l);
+        let o = follow_at(&l, clock);
+        assert!(o.status.success(), "{clock}: {}", text(&o));
+        assert_eq!(
+            installed(&l, "lpoco").contains("0.2.1"),
+            installs,
+            "{clock}"
+        );
+    }
+    let l = lab(
+        "badclock",
+        "[follow]\nevery = \"15min\"\nwindow = \"02:00-05:00\"\n\n",
+    );
+    releases(&l, &["0.2.1", "0.2.0"]);
+    install_old(&l);
+    let o = follow_at(&l, "noon");
+    assert!(
+        !o.status.success() && text(&o).contains("HH:MM"),
+        "{}",
+        text(&o)
+    );
+    assert!(installed(&l, "lpoco").contains("old"));
+}

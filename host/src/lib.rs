@@ -94,6 +94,8 @@ pub struct Clones {
 pub struct Follow {
     /// How often the timer looks, as systemd says it: `15min`.
     pub every: String,
+    /// When a follow may install, local time, `02:00-05:00` (it may cross midnight); any time when none is given.
+    pub window: Option<String>,
 }
 
 pub use lpoco_manifest::{Access, Gadget, HostTable};
@@ -1148,6 +1150,9 @@ fn full_version(v: &str) -> bool {
 fn validate_lab(lab: &Lab) -> Result<(), String> {
     if let Some(f) = &lab.follow {
         follow::valid_every("[follow]", &f.every)?;
+        if let Some(w) = &f.window {
+            follow::parse_window("[follow]", w)?;
+        }
     }
     if let Some(c) = &lab.clones {
         clones::valid(c)?;

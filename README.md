@@ -307,6 +307,8 @@ without it no watcher is enabled for it, and an instance already enabled for a d
                              `check` and `plan` against lab.toml with the pin moved, and land the pin (a clone, a branch, `land`, signed lab-host-follow);
                              a failing check or a plan that lists a root command puts the previous programs back and lands nothing; without `now` it says what it would do
 
+`[follow]` may also say `window = "02:00-05:00"` (local time, may cross midnight; `LPOCO_CLOCK` names the time for tests): outside it `follow now` only says it waits.
+
 `lab.toml` `[follow]` with `every = "15min"` makes `plan` list, and `prepare now` write and enable, the user timer `lpoco-host-follow.timer` that runs `lpoco-host follow now`. A phone's keeper lease is `~/.local/state/devlab/CODENAME/keeper.lease/holder`, held while renewed in the last 90 minutes. `LPOCO_RELEASES` names the releases list (GitHub's API when none is given).
 
 Root is one prefix, `LPOCO_ROOT`, then the lab declaration's `root`, then `sudo` (the author's typed password: no standing grant, decision of 2026-11-18); the commands are a fixed
