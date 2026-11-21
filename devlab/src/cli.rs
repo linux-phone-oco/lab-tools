@@ -610,7 +610,12 @@ pub const TREE: &[Node] = &[
         &["name"],
         &[],
     ),
-    n(&["keeper", "release"], "Give it back, as the keeper ends", &["name"], &[]),
+    n(
+        &["keeper", "release"],
+        "Give it back, as the keeper ends (found by name in every folder of leases: ignores --device; nobody holding one is done, not an error)",
+        &["name"],
+        &[],
+    ),
     n(&["keeper", "status"], "Who keeps the phone now; or free", &[], &[]),
     n(
         &["job"],

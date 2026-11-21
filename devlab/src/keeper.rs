@@ -87,36 +87,115 @@ pub fn renew_at(dir: &Path, name: &str) -> Result<String> {
     }
 }
 
-/// Gives back every lease under `root` (one folder per codename) that `name` holds; an error naming the leases
-/// held when it holds none. No device.toml is needed: a keeper whose worktree is gone still releases.
+/// What giving back one lease came to.
+enum Gave {
+    Mine,
+    NotMine { who: String, age: Duration },
+    Nobody,
+}
+
+/// Gives back the lease at `dir` when `name` holds it. The lease is renamed to a tombstone of its own
+/// before its holder is read for good: a keeper that takes the lapsed lease in between has its live lease
+/// (or its half-made one) put back, never deleted. `between` runs after the first read and before the
+/// rename (a test's interleaving). Not closed: in the instant the lease is moved aside a third keeper may
+/// take the path; the restore then fails, and the error names the tombstone that still holds the live lease.
+/// A crash between the rename and the removal leaves a tombstone beside the lease path; nothing sweeps it.
+fn give_back(dir: &Path, name: &str, between: &dyn Fn()) -> Result<Gave> {
+    match std::fs::read_to_string(dir.join("holder")) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Gave::Nobody),
+        Err(e) => bail!("cannot read the holder of {}: {e}", dir.display()),
+        Ok(_) => {}
+    }
+    let (who, age) = match holder(dir) {
+        Some((who, _)) if who.is_empty() => return Ok(Gave::Nobody),
+        Some(held) => held,
+        None => return Ok(Gave::Nobody),
+    };
+    if who != name {
+        return Ok(Gave::NotMine { who, age });
+    }
+    between();
+    let nanos = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let tombstone = dir.with_extension(format!("released-{}-{nanos}", std::process::id()));
+    match std::fs::rename(dir, &tombstone) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Gave::Nobody),
+        Err(e) => bail!("cannot move {} aside: {e}", dir.display()),
+    }
+    let seen = holder(&tombstone);
+    if matches!(&seen, Some((who, _)) if who == name) {
+        std::fs::remove_dir_all(&tombstone).map_err(|e| {
+            anyhow::anyhow!(
+                "the lease is given back but its tombstone {} could not be removed: {e}",
+                tombstone.display()
+            )
+        })?;
+        return Ok(Gave::Mine);
+    }
+    // not ours after all (a take slipped in): the live or half-made lease goes back where it was
+    std::fs::rename(&tombstone, dir).map_err(|e| {
+        anyhow::anyhow!(
+            "another keeper's lease was moved aside and could not be put back ({e}): it lies at {}",
+            tombstone.display()
+        )
+    })?;
+    Ok(match seen {
+        Some((who, age)) if !who.is_empty() => Gave::NotMine { who, age },
+        _ => Gave::Nobody,
+    })
+}
+
+/// Gives back every lease under `root` (one folder per codename) that `name` holds. Nobody holding one is
+/// not an error (a second release finds nothing to do); it is an error only when other keepers hold leases
+/// (each named `codename: holder`, a lapsed one marked), or when a lease could not be given back (what was
+/// released and what failed are both said). No device.toml is needed, and `--device` is ignored.
 pub fn release_named_at(root: &Path, name: &str) -> Result<String> {
+    release_with(root, name, LAPSE, &|| {})
+}
+
+fn release_with(root: &Path, name: &str, lapse: Duration, between: &dyn Fn()) -> Result<String> {
     valid(name)?;
-    let mut held = Vec::new();
-    let mut mine = Vec::new();
-    let mut codenames: Vec<_> = std::fs::read_dir(root)
-        .map(|d| {
-            d.flatten()
-                .map(|e| e.file_name().to_string_lossy().into_owned())
-                .collect()
-        })
-        .unwrap_or_default();
+    let mut codenames: Vec<String> = match std::fs::read_dir(root) {
+        Ok(d) => d
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(e) => bail!("cannot read the leases under {}: {e}", root.display()),
+    };
     codenames.sort();
+    let (mut mine, mut failed, mut held) = (Vec::new(), Vec::new(), Vec::new());
     for code in codenames {
-        let dir = root.join(&code).join("keeper.lease");
-        if let Some((who, _)) = holder(&dir) {
-            if who == name {
-                std::fs::remove_dir_all(&dir)?;
-                mine.push(code);
-            } else {
-                held.push(format!("{code}: {who}"));
-            }
+        match give_back(&root.join(&code).join("keeper.lease"), name, between) {
+            Ok(Gave::Mine) => mine.push(code),
+            Ok(Gave::NotMine { who, age }) if age < lapse => held.push(format!("{code}: {who}")),
+            Ok(Gave::NotMine { who, age }) => held.push(format!(
+                "{code}: {who} (lapsed {} min ago)",
+                age.saturating_sub(lapse).as_secs() / 60
+            )),
+            Ok(Gave::Nobody) => {}
+            Err(e) => failed.push(format!("{code}: {e}")),
         }
+    }
+    if !failed.is_empty() {
+        bail!(
+            "released: {}; failed: {}",
+            if mine.is_empty() {
+                "none".into()
+            } else {
+                mine.join(", ")
+            },
+            failed.join("; ")
+        );
     }
     if !mine.is_empty() {
         return Ok(format!("{name} gave back the lease of {}", mine.join(", ")));
     }
     if held.is_empty() {
-        bail!("{name} holds no lease: no lease is held");
+        return Ok(format!("{name}: nobody held a lease"));
     }
     bail!("{name} holds no lease; leases held: {}", held.join("; "))
 }
@@ -152,6 +231,31 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_keeper_that_takes_the_lapsed_lease_while_it_is_released_keeps_it() {
+        let dir = std::env::temp_dir().join(format!("devlab-keeper-race-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let l = dir.join("a-phone/keeper.lease");
+        take_at(&l, "old-keeper", Duration::from_secs(3600)).unwrap();
+        // the release has read old-keeper as the holder; a new keeper takes the lapsed lease before it moves it
+        let taker = || {
+            take_at(&l, "new-keeper", Duration::ZERO).unwrap();
+        };
+        let said = release_with(&dir, "old-keeper", Duration::from_secs(3600), &taker)
+            .unwrap_err()
+            .to_string();
+        assert!(said.contains("a-phone: new-keeper"), "{said}");
+        assert!(status_at(&l, Duration::from_secs(3600)).starts_with("kept by new-keeper"));
+        assert!(
+            !std::fs::read_dir(dir.join("a-phone"))
+                .unwrap()
+                .flatten()
+                .any(|e| e.file_name().to_string_lossy().contains("released-")),
+            "a tombstone was left"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn one_keeper_at_a_time_and_a_lapsed_one_gives_way() {
         let dir = std::env::temp_dir().join(format!("devlab-keeper-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -166,7 +270,10 @@ mod tests {
             "taking it again is renewing"
         );
         assert!(renew_at(&l, "keeper-2").is_err());
-        assert!(release_named_at(&dir, "keeper-2").is_err());
+        assert!(
+            release_named_at(&dir, "keeper-2").is_err(),
+            "others hold a lease"
+        );
         assert!(status_at(&l, hour).starts_with("kept by keeper-1"));
         // a lease not renewed within the lapse is taken by the next keeper
         assert!(take_at(&l, "keeper-2", Duration::ZERO).is_ok());
