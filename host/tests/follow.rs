@@ -290,6 +290,58 @@ fn a_host_at_the_newest_release_is_left_alone() {
     assert_eq!(landed_pin(&l).0, "lpoco = \"0.2.0\"");
 }
 
+/// The programs of a host whose lpoco is older than the pin say so by `--version`.
+fn drift(l: &Lab, installed_version: &str) {
+    exe(
+        &l.dir.join("home/.local/bin/lpoco"),
+        &format!("echo lpoco {installed_version}"),
+    );
+}
+
+#[test]
+fn programs_older_than_the_pinned_newest_release_are_installed_and_the_pin_stays() {
+    let l = lab("drifted", "");
+    publish_release(&l, "0.2.0", 0, NO_ROOT);
+    releases(&l, &["0.2.0"]);
+    install_old(&l);
+    drift(&l, "0.1.9");
+    let o = follow(&l, &["now"]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert!(!text(&o).contains("up to date"), "{}", text(&o));
+    assert!(installed(&l, "lpoco").contains("asset"), "{}", text(&o));
+    assert!(calls(&l).contains("check"), "{}", calls(&l));
+    assert_eq!(landed_pin(&l).0, "lpoco = \"0.2.0\"");
+    assert!(!journal(&l).exists());
+}
+
+#[test]
+fn drifted_programs_are_only_announced_without_now_and_a_failing_check_puts_them_back() {
+    let l = lab("drifted-plain", "");
+    releases(&l, &["0.2.0"]);
+    install_old(&l);
+    drift(&l, "0.1.9");
+    let o = follow(&l, &[]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert!(text(&o).contains("0.1.9"), "{}", text(&o));
+    assert!(installed(&l, "lpoco").contains("0.1.9"));
+
+    let l = lab("drifted-fail", "");
+    releases(&l, &["0.2.0"]);
+    install_old(&l);
+    drift(&l, "0.1.9");
+    publish_release(&l, "0.2.0", 1, NO_ROOT);
+    let o = follow(&l, &["now"]);
+    assert!(!o.status.success(), "{}", text(&o));
+    assert!(text(&o).contains("lpoco 0.1.9 -> 0.2.0"), "{}", text(&o));
+    assert!(
+        text(&o).contains("programs of 0.1.9 are back"),
+        "{}",
+        text(&o)
+    );
+    assert!(!journal(&l).exists());
+    assert_eq!(landed_pin(&l).0, "lpoco = \"0.2.0\"");
+}
+
 #[test]
 fn a_newer_release_with_both_leases_free_is_installed_checked_and_its_pin_landed() {
     let l = lab("newer", "");
@@ -1056,6 +1108,37 @@ fn a_killed_follow_is_stepped_back_at_any_hour_and_an_up_to_date_host_stays_quie
 }
 
 #[test]
+fn a_reinstall_killed_mid_install_is_stepped_back_not_taken_for_a_landed_pin() {
+    let w = "[follow]\nevery = \"15min\"\nwindow = \"02:00-05:00\"\n\n";
+    let l = lab("drift-killed", w);
+    releases(&l, &["0.2.0"]);
+    install_old(&l);
+    // what a killed reinstall left: the journal of the programs of 0.1.9 (the pin is 0.2.0 and stays),
+    // and a bin whose lpoco is already the new one
+    let j = journal(&l);
+    fs::create_dir_all(&j).unwrap();
+    for p in FAMILY.iter().chain(&["devlab", "tone"]) {
+        fs::write(j.join(p), format!("#!/bin/sh\necho {p} 0.1.9\n")).unwrap();
+    }
+    fs::write(j.join("TARGET"), "0.2.0-reinstall\n").unwrap();
+    exe(&l.dir.join("home/.local/bin/lpoco"), "echo lpoco 0.2.0");
+    let o = follow_at(&l, "14:30");
+    let s = text(&o);
+    assert!(o.status.success(), "{s}");
+    assert!(
+        s.contains("killed mid-install") && s.contains("put back"),
+        "{s}"
+    );
+    assert!(!s.contains("pin landed"), "{s}");
+    assert!(
+        installed(&l, "lpoco").contains("0.1.9"),
+        "{}",
+        installed(&l, "lpoco")
+    );
+    assert!(!j.exists());
+}
+
+#[test]
 fn the_edges_of_a_window_and_a_clock_that_is_not_a_time() {
     for (clock, installs) in [
         ("02:00", true),
@@ -1090,4 +1173,36 @@ fn the_edges_of_a_window_and_a_clock_that_is_not_a_time() {
         text(&o)
     );
     assert!(installed(&l, "lpoco").contains("old"));
+}
+
+#[test]
+fn drifted_programs_wait_outside_the_window_and_for_a_keeper_and_change_nothing() {
+    let w = "[follow]\nevery = \"15min\"\nwindow = \"02:00-05:00\"\n\n";
+    let l = lab("drift-waits", w);
+    releases(&l, &["0.2.0"]);
+    publish_release(&l, "0.2.0", 0, NO_ROOT);
+    install_old(&l);
+    drift(&l, "0.1.9");
+    let s = text(&follow_at(&l, "14:30"));
+    assert!(s.contains("waits"), "{s}");
+    assert!(installed(&l, "lpoco").contains("0.1.9") && !journal(&l).exists());
+
+    let k = lab("drift-keeper", "");
+    releases(&k, &["0.2.0"]);
+    publish_release(&k, "0.2.0", 0, NO_ROOT);
+    install_old(&k);
+    drift(&k, "0.1.9");
+    lease(&k, "xiaomi-surya", "surya-keeper", "now");
+    let s = text(&follow(&k, &["now"]));
+    assert!(s.contains("waits") && s.contains("surya-keeper"), "{s}");
+    assert!(installed(&k, "lpoco").contains("0.1.9") && !journal(&k).exists());
+}
+
+#[test]
+fn an_installed_version_that_cannot_be_read_is_said_not_judged_instead_of_up_to_date_alone() {
+    let l = lab("unreadable-version", "");
+    releases(&l, &["0.2.0"]);
+    install_old(&l);
+    let s = text(&follow(&l, &["now"]));
+    assert!(s.contains("up to date") && s.contains("not judged"), "{s}");
 }
