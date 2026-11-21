@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.42.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-attended-v0.42.0...lpoco-attended-v0.42.1) - 2026-11-21
+
+### Fixed
+
+- *(devlab)* keeper release hardened: no-op when nothing held, tombstone first ([#324](https://github.com/linux-phone-oco/lab-tools/pull/324))
+
 ## [0.42.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-attended-v0.41.1...lpoco-attended-v0.42.0) - 2026-11-21
 
 ### Added
