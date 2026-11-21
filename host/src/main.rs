@@ -52,6 +52,8 @@ struct State {
     lab_path: String,
     /// where follow reads the releases list
     releases_url: String,
+    /// the time of day follow judges its window by, HH:MM; None: the system clock
+    clock: Option<String>,
     lab: Lab,
     fs_root: String,
     /// where release assets are fetched from; None when this host fits none (then cargo builds)
@@ -109,6 +111,7 @@ fn load(r: &Resolution) -> Result<State, String> {
     devices.retain(|d| !skip.contains(&d.path));
     Ok(State {
         lab_path: lab_path.clone(),
+        clock: Contract::CLOCK.get_from(r),
         releases_url: Contract::RELEASES.get_from(r).unwrap_or_else(|| {
             "https://api.github.com/repos/linux-phone-oco/lab-tools/releases?per_page=100"
                 .to_string()
@@ -1341,6 +1344,9 @@ fn follow(st: &State, now: bool) -> Result<i32, String> {
         println!("lpoco {pinned} is pinned, {newest} is released: `lpoco host follow now` installs it when no keeper holds a phone, checks it and lands the pin");
         return Ok(0);
     }
+    if outside_window(st)? {
+        return Ok(0);
+    }
     if waits_for_keeper(st, &newest) {
         return Ok(0);
     }
@@ -1895,4 +1901,35 @@ fn clones(st: &State, now: bool) -> Result<i32, String> {
     // a clone left alone is named, not a failed unit; a run that could reach nothing, or a folder that is not
     // there, is: the unit shows failed
     Ok(i32::from(unreadable || (fetch_failed > 0 && fetched == 0)))
+}
+
+/// `[follow] window` declared and the time of day outside it: says so; the next timer run looks again.
+fn outside_window(st: &State) -> Result<bool, String> {
+    let Some(window) = st.lab.follow.as_ref().and_then(|f| f.window.as_deref()) else {
+        return Ok(false);
+    };
+    let span = follow::parse_window("[follow]", window)?;
+    let clock = clock_now(st)?;
+    let minute = follow::parse_clock(&clock)
+        .ok_or_else(|| format!("the time of day {clock:?} is not HH:MM"))?;
+    if follow::in_window(span, minute) {
+        return Ok(false);
+    }
+    println!("waits: it is {clock}, outside the window {window} a release is installed in; the next timer run looks again");
+    Ok(true)
+}
+
+/// The time of day, HH:MM local: LPOCO_CLOCK, else the system's.
+fn clock_now(st: &State) -> Result<String, String> {
+    if let Some(c) = &st.clock {
+        return Ok(c.trim().to_string());
+    }
+    let o = Proc::new("date")
+        .arg("+%H:%M")
+        .output()
+        .map_err(|e| format!("cannot read the time of day (date): {e}"))?;
+    if !o.status.success() {
+        return Err("cannot read the time of day: date failed".into());
+    }
+    Ok(String::from_utf8_lossy(&o.stdout).trim().to_string())
 }

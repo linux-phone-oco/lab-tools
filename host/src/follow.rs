@@ -119,6 +119,37 @@ pub fn valid_every(table: &str, s: &str) -> Result<(), String> {
     }
 }
 
+/// A time of day as minutes after midnight: `HH:MM`, two digits each.
+pub fn parse_clock(s: &str) -> Option<u32> {
+    let (h, m) = s.split_once(':')?;
+    let two = |x: &str| x.len() == 2 && x.chars().all(|c| c.is_ascii_digit());
+    if !two(h) || !two(m) {
+        return None;
+    }
+    let (h, m): (u32, u32) = (h.parse().ok()?, m.parse().ok()?);
+    (h < 24 && m < 60).then_some(h * 60 + m)
+}
+
+/// `[follow] window`: `HH:MM-HH:MM`, local time, from (included) to (excluded); it may cross midnight. Minutes after
+/// midnight, start and end.
+pub fn parse_window(table: &str, s: &str) -> Result<(u32, u32), String> {
+    let bad = || format!("{table} window = {s:?} must be two clock times, as 02:00-05:00");
+    let (a, b) = s.split_once('-').ok_or_else(bad)?;
+    match (parse_clock(a), parse_clock(b)) {
+        (Some(from), Some(to)) if from != to => Ok((from, to)),
+        _ => Err(bad()),
+    }
+}
+
+/// Whether the minute of the day lies in the window.
+pub fn in_window((from, to): (u32, u32), minute: u32) -> bool {
+    if from < to {
+        (from..to).contains(&minute)
+    } else {
+        minute >= from || minute < to
+    }
+}
+
 pub fn timer_text(every: &str) -> String {
     format!("[Unit]\nDescription=lpoco host follow: look for a newer family release\n\n[Timer]\nOnBootSec=5min\nOnUnitActiveSec={every}\n\n[Install]\nWantedBy=timers.target\n")
 }
@@ -223,6 +254,35 @@ mod tests {
         for bad in ["", "min", "15", "15 min", "15min\nExecStart=x", "-1h"] {
             assert!(valid_every("[follow]", bad).is_err(), "{bad:?}");
         }
+    }
+
+    #[test]
+    fn a_window_is_two_clock_times_and_may_cross_midnight() {
+        let w = parse_window("[follow]", "02:00-05:30").unwrap();
+        assert_eq!(w, (120, 330));
+        assert!(in_window(w, 120) && in_window(w, 329) && !in_window(w, 330) && !in_window(w, 119));
+        let night = parse_window("[follow]", "22:00-04:00").unwrap();
+        assert!(in_window(night, 23 * 60) && in_window(night, 0) && in_window(night, 239));
+        assert!(!in_window(night, 240) && !in_window(night, 12 * 60));
+        for bad in [
+            "",
+            "2:00-5:00",
+            "02:00",
+            "02:00-02:00",
+            "24:00-05:00",
+            "02:60-05:00",
+            "02:00-05:00\nx",
+            "02:00 - 05:00",
+        ] {
+            assert!(parse_window("[follow]", bad).is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn a_clock_is_hours_and_minutes() {
+        assert_eq!(parse_clock("07:05"), Some(425));
+        assert_eq!(parse_clock("7:05"), None);
+        assert_eq!(parse_clock("24:00"), None);
     }
 
     const UNMEASURED: &str = "tool x: not measured, its pin is not known yet\n";
