@@ -195,10 +195,13 @@ impl Device {
 
     /// What is learned at run time (the phone's Wi-Fi address): ~/.local/state/devlab/CODENAME/
     pub fn state_dir(&self) -> PathBuf {
-        home()
-            .join(".local/state/devlab")
-            .join(&self.device.codename)
+        state_root().join(&self.device.codename)
     }
+}
+
+/// Where every phone's run-time state is: ~/.local/state/devlab/ (one folder per codename).
+pub fn state_root() -> PathBuf {
+    home().join(".local/state/devlab")
 }
 
 fn home() -> PathBuf {
