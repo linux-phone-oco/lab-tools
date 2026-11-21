@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.41.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-ffs-acm-v0.41.0...lpoco-ffs-acm-v0.41.1) - 2026-11-21
+
+### Fixed
+
+- *(host)* follow judges only FAIL lines of a check ([#319](https://github.com/linux-phone-oco/lab-tools/pull/319))
+
 ## [0.41.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-ffs-acm-v0.40.0...lpoco-ffs-acm-v0.41.0) - 2026-11-20
 
 ### Added
