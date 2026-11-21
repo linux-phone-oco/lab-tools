@@ -150,15 +150,22 @@ pub fn unit_quoted(s: &str) -> String {
     out
 }
 
+/// A line of the check that says it failed: `LABEL: FAIL, why` or `FAIL why`, the two shapes it prints (an ok line
+/// that has FAIL inside a path or a serial is not one).
+fn is_fail_line(l: &str) -> bool {
+    l.starts_with("FAIL ") || l.contains(": FAIL, ")
+}
+
 /// What a host's `check` said: whether it failed, and the lines that say why. Only a `FAIL` line fails the lab
 /// (practice 12: what was not measured is not known yet, never failing). An exit of 1 that has no FAIL line but does
 /// have `not measured` lines is such a check, as older hosts exited; any other exit (an error, a signal) fails.
 pub fn judge_check(exit: Option<i32>, stdout: &str) -> (bool, String) {
-    let fails: Vec<&str> = stdout.lines().filter(|l| l.contains("FAIL")).collect();
-    let unmeasured = stdout.lines().any(|l| l.contains("not measured"));
+    let fails: Vec<&str> = stdout.lines().filter(|l| is_fail_line(l)).collect();
+    let unmeasured = stdout.lines().any(|l| l.contains(": not measured, "));
     let ok = fails.is_empty() && (exit == Some(0) || (exit == Some(1) && unmeasured));
     let why = if fails.is_empty() {
-        stdout.lines().rev().take(3).collect::<Vec<_>>().join(" | ")
+        let lines: Vec<&str> = stdout.lines().collect();
+        lines[lines.len().saturating_sub(3)..].join(" | ")
     } else {
         fails.join(" | ")
     };
@@ -216,5 +223,50 @@ mod tests {
         for bad in ["", "min", "15", "15 min", "15min\nExecStart=x", "-1h"] {
             assert!(valid_every("[follow]", bad).is_err(), "{bad:?}");
         }
+    }
+
+    const UNMEASURED: &str = "tool x: not measured, its pin is not known yet\n";
+
+    #[test]
+    fn exit_zero_with_only_not_measured_lines_passes() {
+        assert!(judge_check(Some(0), UNMEASURED).0);
+    }
+
+    #[test]
+    fn exit_one_passes_only_when_it_says_what_it_did_not_measure() {
+        assert!(judge_check(Some(1), UNMEASURED).0);
+        assert!(!judge_check(Some(1), "").0);
+        assert!(!judge_check(Some(1), "tool x: ok, 1\n").0);
+    }
+
+    #[test]
+    fn an_error_exit_or_a_signal_fails_whatever_was_printed() {
+        assert!(!judge_check(Some(2), UNMEASURED).0);
+        assert!(!judge_check(None, UNMEASURED).0);
+    }
+
+    #[test]
+    fn a_fail_line_fails_even_at_exit_zero_and_is_named_alone_in_order() {
+        let out = format!(
+            "tool a: FAIL, one\n{UNMEASURED}FAIL two\ncommand c: FAIL, missing from PATH\n"
+        );
+        let (ok, why) = judge_check(Some(0), &out);
+        assert!(!ok);
+        assert_eq!(
+            why,
+            "tool a: FAIL, one | FAIL two | command c: FAIL, missing from PATH"
+        );
+    }
+
+    #[test]
+    fn an_ok_line_with_fail_inside_a_path_is_not_a_failure() {
+        let out =
+            "command c: ok, /opt/FAIL/bin/c (wanted by x)\nread: /srv/FAIL.toml from origin/main\n";
+        assert!(judge_check(Some(0), out).0);
+    }
+
+    #[test]
+    fn without_a_fail_line_the_last_three_lines_are_given_in_order() {
+        assert_eq!(judge_check(Some(2), "a\nb\nc\nd\n").1, "b | c | d");
     }
 }
