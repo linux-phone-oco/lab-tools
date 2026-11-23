@@ -1,0 +1,3 @@
+# rhizoid pin-copies skips these: a changelog quotes tags as history, not as pins
+CHANGELOG.md rhizoid-records
+*/CHANGELOG.md rhizoid-records
