@@ -1476,3 +1476,26 @@ fn the_releases_request_carries_the_token_to_github_and_to_nobody_else() {
     let (_, cfg) = run("https://example.org/releases.json");
     assert!(!cfg.contains("ghp_SECRET"), "{cfg}");
 }
+
+#[test]
+fn a_token_that_is_not_a_github_token_is_refused_without_being_repeated() {
+    let l = lab("badtoken", "");
+    releases(&l, &["0.2.0"]);
+    install_old(&l);
+    let o = Command::new(env!("CARGO_BIN_EXE_lpoco-host"))
+        .args(["follow"])
+        .env_clear()
+        .env("HOME", l.dir.join("home"))
+        .env(
+            "LPOCO_LAB",
+            l.dir.join("home/Projects/lab-machine/lab.toml"),
+        )
+        .env("GITHUB_TOKEN", "ab\"cd")
+        .output()
+        .unwrap();
+    let s = text(&o);
+    assert!(
+        !o.status.success() && s.contains("GITHUB_TOKEN") && !s.contains("ab\"cd"),
+        "{s}"
+    );
+}

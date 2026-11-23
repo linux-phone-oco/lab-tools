@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// SPDX-Licnse-Identoken: token_of(Contract::TOKEN.get_from(r))?,ifier: MIT OR Apache-2.0
 //! lpoco-host: the lab host prepared from declarations (run as `lpoco host ...`). `plan` (the default) changes
 //! nothing; `prepare now` changes only what differs; `check` reads. See cli.rs for the invocation surface.
 
@@ -1293,6 +1293,22 @@ fn fetch_with(url: &str, to_file: &Path, token: Option<&str>) -> Result<bool, St
     }
 }
 
+/// The token as GitHub writes it (letters, digits, `_` and `-`), trimmed; blank is none; anything else is refused
+/// (it goes into a curl config line), without repeating it.
+fn token_of(raw: Option<String>) -> Result<Option<String>, String> {
+    let Some(raw) = raw.map(|t| t.trim().to_string()).filter(|t| !t.is_empty()) else {
+        return Ok(None);
+    };
+    if raw
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+    {
+        Ok(Some(raw))
+    } else {
+        Err("GITHUB_TOKEN holds a character a GitHub token does not (only letters, digits, _ and -)".into())
+    }
+}
+
 /// Runs curl; a token goes to it as a config on its stdin (`header = "Authorization: Bearer ..."`), never as an argument.
 fn run_curl(
     curl: &mut Proc,
@@ -1305,7 +1321,7 @@ fn run_curl(
         return curl.output().map_err(cannot);
     };
     let mut child = curl
-        .args(["--config", "-"])
+        .args(["--proto-redir", "=https", "--config", "-"])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -1314,8 +1330,11 @@ fn run_curl(
     let mut stdin = child.stdin.take().ok_or("curl has no stdin")?;
     writeln!(stdin, "header = \"Authorization: Bearer {token}\"")
         .map_err(|e| format!("cannot give curl the token: {e}"))?;
+    let wrote = writeln!(stdin, "header = \"Authorization: Bearer {token}\"");
     drop(stdin);
-    child.wait_with_output().map_err(cannot)
+    let out = child.wait_with_output().map_err(cannot)?;
+    wrote.map_err(|e| format!("cannot give curl the token: {e}"))?;
+    Ok(out)
 }
 
 /// The hash a `.sha256` file names: its first word, as `sha256sum` writes it.
