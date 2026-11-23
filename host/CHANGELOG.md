@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.46.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-host-v0.46.0...lpoco-host-v0.46.1) - 2026-11-23
+
+### Added
+
+- *(host)* follow installs a moved host-only tool without waiting for a keeper's lease ([#355](https://github.com/linux-phone-oco/lab-tools/pull/355))
+
 ## [0.46.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-host-v0.45.0...lpoco-host-v0.46.0) - 2026-11-23
 
 ### Added
