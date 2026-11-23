@@ -6,8 +6,8 @@ mod cli;
 use argenv_resolve::{InputResolveExt, OnProblems};
 use cli::Contract;
 use lpoco_layer::{
-    add_deviceinfo, check, deviceinfo, kernel_package, materialize, nfpm_yaml, packages,
-    post_install, stale, Format,
+    add_boot_trigger, add_deviceinfo, check, deviceinfo, kernel_package, materialize, nfpm_yaml,
+    packages, post_install, stale, Format,
 };
 use lpoco_manifest::Manifest;
 use std::fs;
@@ -76,6 +76,10 @@ fn pack(r: &argenv_resolve::Resolution) -> Result<(), String> {
                 .unwrap_or_default();
             add_deviceinfo(&mut pkgs, layer, &body, cmdline);
         }
+    }
+    if let Some(b) = &m.boot {
+        add_boot_trigger(&mut pkgs, layer, b, format)
+            .map_err(|e| format!("{}: {e}", manifest.display()))?;
     }
     let kernel_build = Contract::KERNEL_BUILD.get_from(r);
     if let Some(b) = &kernel_build {
