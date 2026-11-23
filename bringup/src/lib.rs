@@ -13,6 +13,7 @@
 pub mod bisect;
 pub mod boot;
 pub mod dt_check;
+pub mod ensure;
 pub mod fdt;
 pub mod hooks;
 pub mod image;

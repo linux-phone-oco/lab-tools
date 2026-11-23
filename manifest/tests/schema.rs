@@ -210,3 +210,53 @@ fn an_images_kernel_tag_is_an_int_tag() {
         assert!(ok(bad).is_err(), "{bad} is not an int/ tag");
     }
 }
+
+#[test]
+fn a_recipe_names_another_image_and_files_by_sha256_and_needs_its_own_sha256() {
+    let sha = "ab".repeat(32);
+    let images = |recipe: &str, own: &str| {
+        Manifest::parse(&format!(
+            "{HEAD}[images.a]\npath = \"a.img\"\nsha256 = \"{sha}\"\n\n[images.b]\npath = \"b.img\"\n{own}\n[images.b.recipe]\n{recipe}\n"
+        ))
+    };
+    let own = format!("sha256 = \"{sha}\"");
+    assert!(images(
+        &format!("control = \"a\"\ndtb = \"{sha}\"\ncmdline = \"console=ttyMSM0\""),
+        &own
+    )
+    .is_ok());
+    for (what, recipe, own) in [
+        (
+            "an image that does not declare its sha256",
+            "control = \"a\"".to_string(),
+            String::new(),
+        ),
+        (
+            "a control that is not an image",
+            "control = \"zz\"".to_string(),
+            own.clone(),
+        ),
+        (
+            "itself as control",
+            "control = \"b\"".to_string(),
+            own.clone(),
+        ),
+        (
+            "a part that is not a sha256",
+            "control = \"a\"\ndtb = \"z21.dtb\"".to_string(),
+            own.clone(),
+        ),
+        (
+            "a path where a sha256 goes",
+            "control = \"a\"\nramdisk = \"../r\"".to_string(),
+            own.clone(),
+        ),
+        (
+            "a misspelt key",
+            "control = \"a\"\ndtbs = \"x\"".to_string(),
+            own.clone(),
+        ),
+    ] {
+        assert!(images(&recipe, &own).is_err(), "{what} was accepted");
+    }
+}
