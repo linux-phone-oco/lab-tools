@@ -52,6 +52,8 @@ struct State {
     lab_path: String,
     /// where follow reads the releases list
     releases_url: String,
+    /// the token follow asks GitHub's API with (GITHUB_TOKEN); None: unauthenticated
+    token: Option<String>,
     /// the time of day follow judges its window by, HH:MM; None: the system clock
     clock: Option<String>,
     lab: Lab,
@@ -114,6 +116,7 @@ fn load(r: &Resolution) -> Result<State, String> {
     Ok(State {
         lab_path: lab_path.clone(),
         clock: Contract::CLOCK.get_from(r),
+        token: Contract::TOKEN.get_from(r).filter(|t| !t.trim().is_empty()),
         releases_url: Contract::RELEASES.get_from(r).unwrap_or_else(|| {
             "https://api.github.com/repos/linux-phone-oco/lab-tools/releases?per_page=100"
                 .to_string()
@@ -1250,26 +1253,32 @@ fn print_stale_pieces(d: &Device) {
 /// Fetches `url` with curl into `to_file`: Ok(true) when it came, Ok(false) when the release has no such file
 /// (HTTP 404 or 410, or a `file://` that is not there), Err for any other failure (an outage, a timeout, no curl).
 fn fetch(url: &str, to_file: &Path) -> Result<bool, String> {
-    let o = Proc::new("curl")
-        .args([
-            "--fail",
-            "--silent",
-            "--show-error",
-            "--location",
-            "--proto",
-            "=https,file",
-            "--connect-timeout",
-            "20",
-            "--max-time",
-            "300",
-            "--write-out",
-            "%{http_code}",
-            url,
-            "--output",
-        ])
-        .arg(to_file)
-        .output()
-        .map_err(|e| format!("cannot run curl for {url}: {e}"))?;
+    fetch_with(url, to_file, None)
+}
+
+/// `fetch`, and a `token` sent as a bearer header to GitHub's API only (never to another host, never on the command
+/// line: curl reads it as a config from its stdin).
+fn fetch_with(url: &str, to_file: &Path, token: Option<&str>) -> Result<bool, String> {
+    let token = token.filter(|_| url.starts_with("https://api.github.com/"));
+    let mut curl = Proc::new("curl");
+    curl.args([
+        "--fail",
+        "--silent",
+        "--show-error",
+        "--location",
+        "--proto",
+        "=https,file",
+        "--connect-timeout",
+        "20",
+        "--max-time",
+        "300",
+        "--write-out",
+        "%{http_code}",
+        url,
+        "--output",
+    ])
+    .arg(to_file);
+    let o = run_curl(&mut curl, url, token)?;
     let code = String::from_utf8_lossy(&o.stdout);
     if o.status.success() {
         Ok(true)
@@ -1282,6 +1291,31 @@ fn fetch(url: &str, to_file: &Path) -> Result<bool, String> {
             o.status
         ))
     }
+}
+
+/// Runs curl; a token goes to it as a config on its stdin (`header = "Authorization: Bearer ..."`), never as an argument.
+fn run_curl(
+    curl: &mut Proc,
+    url: &str,
+    token: Option<&str>,
+) -> Result<std::process::Output, String> {
+    use std::io::Write;
+    let cannot = |e: std::io::Error| format!("cannot run curl for {url}: {e}");
+    let Some(token) = token else {
+        return curl.output().map_err(cannot);
+    };
+    let mut child = curl
+        .args(["--config", "-"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(cannot)?;
+    let mut stdin = child.stdin.take().ok_or("curl has no stdin")?;
+    writeln!(stdin, "header = \"Authorization: Bearer {token}\"")
+        .map_err(|e| format!("cannot give curl the token: {e}"))?;
+    drop(stdin);
+    child.wait_with_output().map_err(cannot)
 }
 
 /// The hash a `.sha256` file names: its first word, as `sha256sum` writes it.
@@ -1520,7 +1554,9 @@ fn follow(st: &State, now: bool) -> Result<i32, String> {
     } else {
         st.lab_path.clone()
     };
-    let before = Judged::of(&host_program(st), &st.lab_path)?;
+    // a tool whose pin moved fails the check until follow installs it: that is not the host being broken
+    let moved: Vec<String> = moved_tools(st).into_iter().map(|t| t.name).collect();
+    let before = Judged::before_tools(&host_program(st), &st.lab_path, &moved)?;
     if !before.check_ok {
         println!(
             "waits: the host's own check fails now ({}); it is fixed before a release is followed",
@@ -1568,7 +1604,11 @@ fn follow(st: &State, now: bool) -> Result<i32, String> {
     if let Err(why) = install_family(st, &newest) {
         return stepped_back(why);
     }
-    let after = match Judged::of(&format!("{}/.local/bin/lpoco-host", st.home), &staged) {
+    let after = match Judged::before_tools(
+        &format!("{}/.local/bin/lpoco-host", st.home),
+        &staged,
+        &moved,
+    ) {
         Ok(a) => a,
         Err(why) => return stepped_back(why),
     };
@@ -1904,7 +1944,7 @@ fn newest_release(st: &State) -> Result<Option<String>, String> {
     fs::create_dir_all(&work).map_err(|e| format!("cannot make {work}: {e}"))?;
     let file = Path::new(&work).join("releases.json");
     let _ = fs::remove_file(&file);
-    if !fetch(&st.releases_url, &file)? {
+    if !fetch_with(&st.releases_url, &file, st.token.as_deref())? {
         return Err(format!("{} has no releases list", st.releases_url));
     }
     let text =

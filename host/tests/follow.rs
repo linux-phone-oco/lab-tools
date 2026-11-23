@@ -1373,3 +1373,106 @@ fn a_release_without_its_binaries_is_built_with_cargo() {
         text(&o)
     );
 }
+
+/// A tool of another project pinned at `v0.3.8` while `v0.3.6` is installed: the host's check fails on it, and only
+/// a follow can install the moved pin. Source: the check line is the one `lpoco-host check` prints (host/src/main.rs
+/// `tool {}: FAIL, pinned {} found {}`).
+const MOVED_TOOL: &str = "[tools.rhizoid]\nrepository = \"git-rhizoid/rhizoid\"\ntag = \"v0.3.8\"\nasset = \"rhizoid-x86_64-unknown-linux-gnu\"\n";
+const MOVED_TOOL_FAIL: &str = "tool rhizoid: FAIL, pinned v0.3.8 found v0.3.6\n";
+
+fn a_moved_tool_is_installed_off_its_pin(l: &Lab) {
+    let bin = l.dir.join("home/.local/bin");
+    exe(&bin.join("rhizoid"), "echo rhizoid old");
+    let share = l.dir.join("home/.local/share/lpoco-host");
+    fs::create_dir_all(&share).unwrap();
+    fs::write(share.join("rev-rhizoid"), "v0.3.6\n").unwrap();
+    fs::write(l.dir.join("check.out"), MOVED_TOOL_FAIL).unwrap();
+}
+
+#[test]
+fn a_check_that_fails_only_on_a_tool_follow_installs_does_not_stop_a_family_release() {
+    let l = lab("moved-tool-family", MOVED_TOOL);
+    publish_release(&l, "0.2.1", 1, NO_ROOT);
+    releases(&l, &["0.2.1", "0.2.0"]);
+    install_old_host(&l, 1, NO_ROOT);
+    a_moved_tool_is_installed_off_its_pin(&l);
+    let o = follow(&l, &["now"]);
+    let s = text(&o);
+    assert!(o.status.success() && !s.contains("waits"), "{s}");
+    assert!(installed(&l, "lpoco").contains("0.2.1"), "{s}");
+    assert_eq!(landed_pin(&l).0, "lpoco = \"0.2.1\"", "{s}");
+}
+
+#[test]
+fn a_check_that_fails_on_another_thing_still_stops_it_whatever_tool_is_moved() {
+    let l = lab("moved-tool-and-more", MOVED_TOOL);
+    releases(&l, &["0.2.1", "0.2.0"]);
+    install_old_host(&l, 1, NO_ROOT);
+    a_moved_tool_is_installed_off_its_pin(&l);
+    fs::write(
+        l.dir.join("check.out"),
+        format!("{MOVED_TOOL_FAIL}share: FAIL, nothing\n"),
+    )
+    .unwrap();
+    let s = text(&follow(&l, &["now"]));
+    assert!(s.contains("waits") && s.contains("share: FAIL"), "{s}");
+    assert!(installed(&l, "lpoco").contains("old"), "{s}");
+}
+
+#[test]
+fn the_releases_request_carries_the_token_to_github_and_to_nobody_else() {
+    // the stub curl copies the releases list for any url and writes the config it was given on stdin
+    let l = lab("token", "");
+    releases(&l, &["0.2.0"]);
+    install_old(&l);
+    let curl = l.dir.join("stubs/curl");
+    exe(
+        &curl,
+        &format!(
+            "echo \"$0 $@\" >> {calls}\ncat >> {cfg}\nwhile [ $# -gt 0 ]; do case \"$1\" in --output) out=\"$2\"; shift;; esac; shift; done\nprintf 200\ncp {rel} \"$out\"",
+            calls = l.dir.join("calls").display(),
+            cfg = l.dir.join("curl-config").display(),
+            rel = l.dir.join("releases.json").display()
+        ),
+    );
+    let run = |url: &str| {
+        let _ = fs::remove_file(l.dir.join("curl-config"));
+        let o = Command::new(env!("CARGO_BIN_EXE_lpoco-host"))
+            .args(["follow"])
+            .env_clear()
+            .env("HOME", l.dir.join("home"))
+            .env(
+                "PATH",
+                format!(
+                    "{}:{}",
+                    l.dir.join("stubs").display(),
+                    l.dir.join("home/.local/bin").display()
+                ),
+            )
+            .env(
+                "LPOCO_LAB",
+                l.dir.join("home/Projects/lab-machine/lab.toml"),
+            )
+            .env("LPOCO_RELEASES", url)
+            .env("GITHUB_TOKEN", "ghp_SECRET")
+            .output()
+            .unwrap();
+        (
+            text(&o),
+            fs::read_to_string(l.dir.join("curl-config")).unwrap_or_default(),
+        )
+    };
+    let (s, cfg) =
+        run("https://api.github.com/repos/linux-phone-oco/lab-tools/releases?per_page=100");
+    assert!(
+        cfg.contains("Authorization: Bearer ghp_SECRET"),
+        "{s}\n{cfg}"
+    );
+    assert!(
+        !calls(&l).contains("ghp_SECRET"),
+        "the token is on the command line: {}",
+        calls(&l)
+    );
+    let (_, cfg) = run("https://example.org/releases.json");
+    assert!(!cfg.contains("ghp_SECRET"), "{cfg}");
+}
