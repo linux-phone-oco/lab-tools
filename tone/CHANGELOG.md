@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.44.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-tone-v0.44.0...lpoco-tone-v0.44.1) - 2026-11-23
+
+### Added
+
+- *(host)* follow holds every phone's keeper lease while it installs ([#333](https://github.com/linux-phone-oco/lab-tools/pull/333))
+
 ## [0.44.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-tone-v0.43.0...lpoco-tone-v0.44.0) - 2026-11-23
 
 ### Added
