@@ -8,7 +8,9 @@ use std::fs;
 use std::path::PathBuf;
 
 /// The packages released on their own, outside the family (release-plz.toml).
-const OWN: &[&str] = &["lpoco-attended"];
+const OWN: &[&str] = &["lpoco-attended", "lpoco-manifest"];
+/// Of those, the ones the family members depend on by path: their changelogs still list them.
+const IN_CHANGELOGS: &[&str] = &["lpoco-manifest"];
 
 fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -296,7 +298,7 @@ fn every_member_includes_the_others_in_its_changelog() {
     let names: BTreeSet<String> = members()
         .into_iter()
         .map(|m| m.1)
-        .filter(|n| !OWN.contains(&n.as_str()))
+        .filter(|n| !OWN.contains(&n.as_str()) || IN_CHANGELOGS.contains(&n.as_str()))
         .collect();
     for block in toml.split("[[package]]").skip(1) {
         let field = |key: &str| {
@@ -489,4 +491,143 @@ fn lpoco_attended_names_lpoco_manifest_by_tag_not_by_path() {
         "not a released git tag: {line}"
     );
     assert!(!line.contains("path"), "a path dependency: {line}");
+}
+
+/// lpoco-manifest is a library the family names by path and lpoco-attended by released tag, so it is
+/// tagged only when manifest/ changes (proof: manifest-releases-when-it-changes). Runs release-plz on
+/// a fixture shaped like this workspace - family members that depend on a library by path, the
+/// library's release-plz.toml block the repository's own for lpoco-manifest - and checks both ways:
+/// a change outside the library leaves its version; a change in it moves the whole family.
+#[test]
+fn a_release_moves_lpoco_manifest_only_when_manifest_changed() {
+    use std::process::Command;
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("lpoco-manifest-fixture");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    let run = |prog: &str, args: &[&str]| {
+        let out = Command::new(prog)
+            .args(args)
+            .current_dir(&dir)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_SYSTEM", "/dev/null")
+            .output()
+            .unwrap_or_else(|e| panic!("{prog}: {e} (CI installs release-plz: ci.yml)"));
+        assert!(
+            out.status.success(),
+            "{prog} {args:?}: {}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+    };
+    let real = read("release-plz.toml");
+    let head = real.split("[[package]]").next().unwrap();
+    let lib_block = real
+        .split("[[package]]")
+        .find(|b| b.contains("name = \"lpoco-manifest\""))
+        .expect("release-plz.toml has no lpoco-manifest package");
+    let family = ["fam-a", "fam-b"];
+    let mut toml = head.to_string();
+    for n in family {
+        let others: Vec<String> = family
+            .iter()
+            .filter(|o| **o != n)
+            .map(|o| format!("\"{o}\""))
+            .chain(["\"famlib\"".to_string()])
+            .collect();
+        toml.push_str(&format!(
+            "[[package]]\nname = \"{n}\"\nchangelog_include = [{}]\nversion_group = \"lpoco\"\ngit_tag_name = \"{n}-v{{{{ version }}}}\"\n",
+            others.join(", ")
+        ));
+    }
+    toml.push_str("[[package]]\n");
+    for l in lib_block.lines() {
+        if l.starts_with("name =") {
+            toml.push_str("name = \"famlib\"\n");
+        } else if l.starts_with("git_tag_name") {
+            toml.push_str("git_tag_name = \"famlib-v{{ version }}\"\n");
+        } else {
+            toml.push_str(l);
+            toml.push('\n');
+        }
+    }
+    fs::write(dir.join("release-plz.toml"), toml).unwrap();
+    fs::write(
+        dir.join("Cargo.toml"),
+        "[workspace]\nresolver = \"2\"\nmembers = [\"fam-a\", \"fam-b\", \"famlib\"]\n",
+    )
+    .unwrap();
+    for n in ["fam-a", "fam-b", "famlib"] {
+        fs::create_dir_all(dir.join(n).join("src")).unwrap();
+        let dep = if n == "famlib" {
+            String::new()
+        } else {
+            "\n[dependencies]\nfamlib = { path = \"../famlib\" }\n".to_string()
+        };
+        fs::write(
+            dir.join(n).join("Cargo.toml"),
+            format!("[package]\nname = \"{n}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n{dep}"),
+        )
+        .unwrap();
+        fs::write(dir.join(n).join("src/lib.rs"), "").unwrap();
+        fs::write(
+            dir.join(n).join("CHANGELOG.md"),
+            "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-01-01\n\n### Other\n\n- start\n",
+        )
+        .unwrap();
+    }
+    fs::write(dir.join(".gitignore"), "target/\n").unwrap();
+    run("git", &["init", "-q", "-b", "main"]);
+    run("git", &["add", "."]);
+    run("git", &["commit", "-q", "-m", "feat: start"]);
+    for n in ["fam-a", "fam-b", "famlib"] {
+        run("git", &["tag", &format!("{n}-v0.1.0")]);
+    }
+    let version_of = |n: &str| {
+        let t = fs::read_to_string(dir.join(n).join("Cargo.toml")).unwrap();
+        t.lines()
+            .find_map(|l| l.strip_prefix("version = "))
+            .unwrap()
+            .trim_matches('"')
+            .to_string()
+    };
+    // a change outside the library: the family moves, the library keeps its version (and so its tag)
+    fs::write(dir.join("fam-a/src/lib.rs"), "pub fn x() {}\n").unwrap();
+    run(
+        "git",
+        &["commit", "-q", "-am", "feat: only the family changes"],
+    );
+    run("release-plz", &["update", "--config", "release-plz.toml"]);
+    for n in family {
+        assert_eq!(version_of(n), "0.1.1", "{n}: the family did not move");
+    }
+    assert_eq!(
+        version_of("famlib"),
+        "0.1.0",
+        "a change outside manifest/ moves lpoco-manifest"
+    );
+    run("git", &["checkout", "-q", "."]);
+    run("git", &["clean", "-fdq"]);
+    // the first change must not stay in history: scenario 2's only change since the tags is the library's
+    run("git", &["reset", "-q", "--hard", "HEAD~1"]);
+    // a change in the library: it moves, and its dependents with it, to one version
+    fs::write(dir.join("famlib/src/lib.rs"), "pub fn y() {}\n").unwrap();
+    run("git", &["commit", "-q", "-am", "feat: the library changes"]);
+    run("release-plz", &["update", "--config", "release-plz.toml"]);
+    assert_eq!(
+        version_of("famlib"),
+        "0.1.1",
+        "a change in manifest/ does not move lpoco-manifest"
+    );
+    for n in family {
+        assert_eq!(
+            version_of(n),
+            "0.1.1",
+            "{n}: a manifest release leaves a family member behind"
+        );
+    }
+    let _ = fs::remove_dir_all(&dir);
 }

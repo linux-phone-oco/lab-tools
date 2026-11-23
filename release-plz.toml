@@ -10,7 +10,7 @@ git_release_enable = false
 # them) does not. Proof: release_plz_ignores_its_own_release_commits.
 release_commits = '^(feat|fix|perf|refactor|docs|test|build|ci)(\([^)]*\))?!?:'
 
-# the lpoco family is released together: one version for the dispatcher and every lpoco-* program (except lpoco-attended, below)
+# the lpoco family is released together: one version for the dispatcher and every lpoco-* program (except lpoco-manifest and lpoco-attended, below)
 # (version_group), so `lpoco NAME` can refuse a program of another version. Tags stay per package:
 # the conveyor reads lpoco-health-v* for the phone package; the dispatcher is lab-side only.
 # every member lists the others in changelog_include: a package changed only by the family bump gets
@@ -61,11 +61,13 @@ version_group = "lpoco"
 git_tag_name = "lpoco-host-v{{ version }}"
 git_release_enable = true
 
-# lpoco-manifest declares device.toml once: the types every lpoco program reads, its JSON Schema projected
+# lpoco-manifest declares device.toml once: the types every lpoco program reads, its JSON Schema projected.
+# Not in the family: no version_group, so it is tagged only when manifest/ changes and lpoco-attended's pin of
+# it can have an edge. A manifest change still moves its path dependents, and version_group keeps those in
+# step, so `lpoco NAME` never sees mixed versions (proof: a_release_moves_lpoco_manifest_only_when_manifest_changed).
 [[package]]
 name = "lpoco-manifest"
-changelog_include = ["lpoco", "lpoco-health", "lpoco-bringup", "lpoco-lab", "lpoco-tone", "lpoco-host", "lpoco-ffs-acm", "lpoco-layer"]
-version_group = "lpoco"
+changelog_include = []
 git_tag_name = "lpoco-manifest-v{{ version }}"
 git_release_enable = true
 
