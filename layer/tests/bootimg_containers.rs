@@ -6,8 +6,11 @@
 //!
 //!   LPOCO_BRINGUP=target/debug/lpoco-bringup cargo test -p lpoco-layer --test bootimg_containers -- --ignored
 //!
-//! Fedora runs the real `kernel-install add` and Arch a real `pacman -U`; Debian runs the plugin by hand with kernel-install's
-//! arguments (linux-image runs /etc/kernel/postinst.d, bridged to kernel-install only by systemd-boot).
+//! Fedora runs the real `kernel-install add`, Arch a real `pacman -U` and Debian a real `dpkg -i` of a one-file linux-image
+//! whose postinst runs /etc/kernel/postinst.d, bridged to kernel-install by systemd-boot (bootctl stubbed: no ESP).
+//!
+//! Ignored by CI: run by hand. The entry lands under /boot/MACHINE-ID here (no ESP; a phone layout may differ). On Debian the plugin runs twice per install
+//! (initramfs-tools' post-update hook passes the initrd, zz-systemd-boot does not): the second finds it in the entry.
 //!
 //! Not covered: nfpm's own packages (the files come from the same item list, copied in, not installed by dpkg,
 //! rpm or pacman), and a real kernel package's scriptlets.
@@ -133,18 +136,28 @@ fn fedora_kernel_install_leaves_a_boot_img_with_the_dtb_appended() {
 
 #[test]
 #[ignore = "needs docker, the network and LPOCO_BRINGUP"]
-fn debian_kernel_install_plugin_leaves_a_boot_img_with_the_dtb_appended() {
+fn debian_linux_image_install_leaves_a_boot_img_with_the_dtb_appended() {
     let dir = work(Format::Deb, "debian");
+    // a one-file linux-image whose postinst runs /etc/kernel/postinst.d as Debian's does; systemd-boot's bridge there
+    // calls kernel-install. bootctl is stubbed: a container has no ESP, and without one the bridge does nothing.
     in_container(
         "debian:trixie",
         &dir,
-        "apt-get update -qq >/dev/null && apt-get install -y -qq mkbootimg >/dev/null\n\
+        "apt-get update -qq >/dev/null && apt-get install -y -qq mkbootimg systemd-boot initramfs-tools >/dev/null\n\
+         printf '#!/bin/sh\\nexit 0\\n' > /usr/bin/bootctl && chmod +x /usr/bin/bootctl\n\
          cp -a /w/files/. /\n\
-         mkdir -p /usr/lib/linux-image-6.1.0-walleye/qcom /boot/e\n\
-         cp /w/w.dtb /usr/lib/linux-image-6.1.0-walleye/qcom/msm8998-google-walleye.dtb\n\
-         cp /w/initrd /boot/e/initrd\n\
-         /usr/lib/kernel/install.d/95-google-walleye-bootimg.install add 6.1.0-walleye /boot/e /w/Image.gz\n\
-         cp /boot/e/boot.img /w/boot.img",
+         systemd-id128 new > /etc/machine-id\n\
+         echo layout=bls > /etc/kernel/install.conf\n\
+         V=6.1.0-walleye\n\
+         mkdir -p /p/DEBIAN /p/boot /p/usr/lib/linux-image-$V/qcom\n\
+         cp /w/Image.gz /p/boot/vmlinuz-$V\n\
+         cp /w/w.dtb /p/usr/lib/linux-image-$V/qcom/msm8998-google-walleye.dtb\n\
+         printf 'Package: linux-image-%s\\nVersion: 1\\nArchitecture: all\\nMaintainer: t <t@t>\\nDescription: a kernel\\n' $V > /p/DEBIAN/control\n\
+         printf '#!/bin/sh\\nset -e\\nrun-parts --report --exit-on-error --arg=%s --arg=/boot/vmlinuz-%s /etc/kernel/postinst.d\\n' $V $V > /p/DEBIAN/postinst\n\
+         chmod 755 /p/DEBIAN/postinst\n\
+         dpkg-deb --build /p /k.deb >/dev/null\n\
+         dpkg -i /k.deb\n\
+         cp /boot/*/$V/boot.img /w/boot.img",
     );
     counted(&dir, "boot.img");
 }
