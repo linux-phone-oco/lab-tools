@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.44.8](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-ffs-acm-v0.44.7...lpoco-ffs-acm-v0.44.8) - 2026-11-23
+
+### Added
+
+- *(host)* follow installs a declared tool whose lab.toml pin moved ([#348](https://github.com/linux-phone-oco/lab-tools/pull/348))
+
 ## [0.44.7](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-ffs-acm-v0.44.6...lpoco-ffs-acm-v0.44.7) - 2026-11-23
 
 ### Other
