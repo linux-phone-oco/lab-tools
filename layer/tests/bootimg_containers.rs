@@ -9,6 +9,9 @@
 //! Fedora runs the real `kernel-install add`, Arch a real `pacman -U` and Debian a real `dpkg -i` of a one-file linux-image
 //! whose postinst runs /etc/kernel/postinst.d, bridged to kernel-install by systemd-boot (bootctl stubbed: no ESP).
 //!
+//! Ignored by CI: run by hand. The entry lands under /boot/MACHINE-ID here (no ESP; a phone layout may differ). On Debian the plugin runs twice per install
+//! (initramfs-tools' post-update hook passes the initrd, zz-systemd-boot does not): the second finds it in the entry.
+//!
 //! Not covered: nfpm's own packages (the files come from the same item list, copied in, not installed by dpkg,
 //! rpm or pacman), and a real kernel package's scriptlets.
 
