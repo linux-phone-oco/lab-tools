@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.46.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-host-v0.45.0...lpoco-host-v0.46.0) - 2026-11-23
+
+### Added
+
+- *(host)* prepare writes the user timers a release-pinned tool ships ([#353](https://github.com/linux-phone-oco/lab-tools/pull/353))
+
 ## [0.45.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-host-v0.44.8...lpoco-host-v0.45.0) - 2026-11-23
 
 ### Added
