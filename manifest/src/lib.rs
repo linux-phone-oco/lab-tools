@@ -11,7 +11,7 @@ pub mod layer;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-pub use boot::{Boot, BootGadget, Console, ShellWord};
+pub use boot::{Boot, BootGadget, Console, ShellWord, ToBootloader};
 pub use images::{Image, Images, ProcValue};
 pub use layer::{
     BootMethod, FileKind, FirmwareMethod, Layer, LayerBoot, LayerFile, LayerFirmware,
@@ -89,6 +89,9 @@ impl Manifest {
         }
         if let Some(i) = &m.images {
             i.validate()?;
+        }
+        if let Some(t) = m.boot.as_ref().and_then(|b| b.to_bootloader.as_ref()) {
+            t.validate(m.images.as_ref())?;
         }
         images::validate_procedures(&m.procedures)?;
         m.health.validate()?;

@@ -894,6 +894,17 @@
           ],
           "format": "uint32",
           "minimum": 0
+        },
+        "to_bootloader": {
+          "description": "How the lab takes the phone from its Linux to its bootloader: a helper pushed to the phone and the command that\nruns it (busybox's `reboot bootloader` drops the argument; the helper hands it to reboot(2) RESTART2)",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ToBootloader"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false,
@@ -959,6 +970,30 @@
       "enum": [
         "acm",
         "ffs"
+      ]
+    },
+    "ToBootloader": {
+      "description": "`[boot.to_bootloader]`: the helper (an `[images.NAME]` with a sha256) the lab pushes to the phone at `to`, and `run`,\nthe command it then runs there as root: `to` first, then plain words.",
+      "type": "object",
+      "properties": {
+        "tool": {
+          "description": "the name of the `[images.NAME]` pushed",
+          "type": "string"
+        },
+        "to": {
+          "description": "where it lands on the phone: a file under /tmp/ or /run/ (tmpfs, so nothing touches the card)",
+          "type": "string"
+        },
+        "run": {
+          "description": "the command run on the phone: `to`, then arguments",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "tool",
+        "to",
+        "run"
       ]
     },
     "Layer": {

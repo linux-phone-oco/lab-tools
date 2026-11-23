@@ -598,6 +598,7 @@ dependencies = [
 name = "lpoco-ffs-acm"
 version = "0.46.1"
 dependencies = [
+ "argenv-resolve",
  "libc",
 ]
 
