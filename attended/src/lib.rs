@@ -13,7 +13,7 @@
 //!     let _run = procedure("boot the kernel", "xiaomi-surya");
 //!     step("the phone answers", || phone().sh("true"));
 //!     ask_author("plug the cable in / the logo shows");
-//!     check("the driver is bound", || phone().sh("lsmod").map(|m| m.contains("pmicwdt")));
+//!     check_from("the driver is bound", "research:2026-11-23-lsmod", || phone().sh("lsmod").map(|m| m.contains("pmicwdt")));
 //! }
 //! ```
 //!
@@ -28,6 +28,7 @@ pub mod call;
 mod cli;
 mod device;
 pub(crate) mod prompt;
+mod source;
 pub mod steps;
 mod values;
 pub use values::Val;
@@ -45,9 +46,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 pub mod prelude {
     pub use crate::bench::{bench, Act, ActKind, Bench};
     pub use crate::{
-        ask_author, check, confirm, dev, group, hold_button, listen_for, look_for, part, phone,
-        press_power, proc, procedure, replug_usb, retry, run_group, run_step, step, swipe, touch,
-        unknown_part, unplug_usb, Group, Item, Kind, Outcome, Step, Val,
+        ask_author, check, check_from, confirm, dev, group, hold_button, listen_for, look_for,
+        part, phone, press_power, proc, procedure, replug_usb, retry, run_group, run_step, step,
+        swipe, touch, unknown_part, unplug_usb, Group, Item, Kind, Outcome, Step, Val,
     };
 }
 
@@ -114,6 +115,10 @@ pub struct Step {
     pub id: Option<String>,
     /// who does it where it is physical: a bench's name, `person` for the person at the bench
     pub doer: Option<String>,
+    /// where the value this check expects came from (see [`check_from`]); `None` for a step that is not an entry file's check
+    pub source: Option<String>,
+    /// an entry file's check: the dry run refuses it unless it names a source
+    needs_source: bool,
     run: Box<dyn FnOnce() -> Result<(), String>>,
 }
 
@@ -124,8 +129,16 @@ impl Step {
             kind,
             id: None,
             doer: None,
+            source: None,
+            needs_source: false,
             run: Box::new(move || run().outcome()),
         }
+    }
+
+    /// Name where the value the step expects came from.
+    pub fn sourced(mut self, source: &str) -> Step {
+        self.source = Some(source.to_string());
+        self
     }
 
     /// Key the step to the bring-up step it carries out.
@@ -469,6 +482,14 @@ pub fn run_step(s: Step) {
         std::process::exit(0);
     }
     if c.dry {
+        if s.needs_source {
+            let from = c.device.parent().unwrap_or(std::path::Path::new("."));
+            if let Err(why) = source::judge(from, s.source.as_deref()) {
+                note("FAIL", &path, &why);
+                eprintln!("{}: stopped at {kind} {n} {name:?}: {why}", c.name);
+                leave_failed();
+            }
+        }
         let by = s
             .doer
             .as_deref()
@@ -697,8 +718,26 @@ pub fn step<R: Outcome>(name: &str, run: impl FnOnce() -> R + 'static) {
 
 /// Look at something; the run stops here when it does not hold. Same as a step, kept apart so the file says
 /// which steps only look.
+///
+/// The dry run (so `lpoco attended check`) refuses a check made this way: it names no source. Use [`check_from`].
 pub fn check<R: Outcome>(name: &str, run: impl FnOnce() -> R + 'static) {
-    run_step(Step::new(Kind::Check, name, run));
+    let mut s = Step::new(Kind::Check, name, run);
+    s.needs_source = true;
+    run_step(s);
+}
+
+/// A check that names its source: where the value it expects came from, so a check typed from memory cannot pass
+/// for one read from the phone. `source` is one of
+/// - `research:ID`, a research row of the project's base (not looked up here: the base is not this program's);
+/// - a path ending in `.md`, a doc of the repository;
+/// - a path under a `research` folder, a file of text a phone printed, captured.
+///
+/// A path is read from the folder of the device's `device.toml`. The dry run exits 1 naming the check when the
+/// source is empty, the file is not there, holds nothing, is not text, or is not under a `research` folder.
+pub fn check_from<R: Outcome>(name: &str, source: &str, run: impl FnOnce() -> R + 'static) {
+    let mut s = Step::new(Kind::Check, name, run).sourced(source);
+    s.needs_source = true;
+    run_step(s);
 }
 
 /// A point where the author does something and looks at something and says how it went ("what to do / what
