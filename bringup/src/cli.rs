@@ -24,7 +24,7 @@
 //!                                                a snapshot of what the stock OS does (device tree, gpio, pinctrl, regulators, clocks, interrupts, drivers) taken over adb or ssh
 //!   lpoco-bringup reference diff PART --live DIR --ours DIR [--match WORDS]
 //!                                                every difference between two snapshots for one part, named; exit 1 on a difference, 2 when the part is not known yet
-//!   lpoco-bringup kernel assemble LIST --lists FILE --repo DIR --records DIR [--rhizoid PROGRAM] [--tad PROGRAM]
+//!   lpoco-bringup kernel assemble LIST --lists FILE --repo DIR --records DIR [--reproduces COMMIT] [--rhizoid PROGRAM] [--tad PROGRAM]
 //!                                                the record checks of one list (every topic has an upstream-item row, every carried subject its item's tag; exit 1 on a miss), then rhizoid assemble makes int/DEVICE/LIST/BASE/N
 //!   lpoco-bringup kernel publish TAG --repo DIR [--device device.toml] [--rhizoid PROGRAM]
 //!                                                once an [images.NAME] kernel_tag names TAG: push the tag, end rhizoid's worktree for it (--force)
@@ -380,6 +380,16 @@ contract! {
         arg: Some(Arg { value_name: "PROGRAM", ..Arg::long("rhizoid") }),
         env: Some(Env::new("LPOCO_RHIZOID")),
         summary: "kernel: git-rhizoid's program (rhizoid on PATH when none is given).",
+        ..Input::EMPTY
+    };
+
+    REPRODUCES: String, Command = Input {
+        key: "reproduces",
+        ty: Type::String,
+        subcommands: &[Command::Kernel],
+        arg: Some(Arg { value_name: "COMMIT", ..Arg::long("reproduces") }),
+        env: Some(Env::new("LPOCO_KERNEL_REPRODUCES")),
+        summary: "kernel assemble: a commit whose tree the tag must equal (rhizoid assemble --reproduces); its equal or differs verdict is printed and a difference ends 1.",
         ..Input::EMPTY
     };
 

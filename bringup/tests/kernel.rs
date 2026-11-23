@@ -312,3 +312,164 @@ fn a_conflict_report_is_printed_and_ends_1() {
         text(&o)
     );
 }
+
+/// The lab's kernel with a frozen list: `archive/frozen` carries the commit of item `two` as an image was built on.
+fn frozen(l: &Lab, subject: &str) {
+    git(
+        &l.repo,
+        &["checkout", "-q", "-b", "archive/frozen-e123", "v7.1"],
+    );
+    fs::write(l.repo.join("fz"), "x\n").unwrap();
+    git(&l.repo, &["add", "fz"]);
+    git(&l.repo, &["commit", "-q", "-m", subject]);
+    git(&l.repo, &["checkout", "-q", "main"]);
+    let lists = fs::read_to_string(&l.lists).unwrap()
+        + "[lists.ufs-off-e123]\nbase = \"v7.1\"\n\
+           [[lists.ufs-off-e123.entries]]\nbranch = \"archive/frozen-e123\"\nfor = \"f\"\nstate = \"trying\"\n";
+    fs::write(&l.lists, lists).unwrap();
+}
+
+fn assemble_with(l: &Lab, list: &str, more: &[&str]) -> Output {
+    let (repo, rec) = (l.repo.to_str().unwrap().to_string(), records(l));
+    let mut args = vec![
+        "kernel",
+        "assemble",
+        list,
+        "--lists",
+        &l.lists,
+        "--repo",
+        &repo,
+        "--records",
+        &rec,
+        "--tad",
+        &l.tad,
+        "--rhizoid",
+        &l.rhizoid,
+    ];
+    args.extend_from_slice(more);
+    bringup(&args)
+}
+
+#[test]
+fn a_frozen_list_naming_an_archive_branch_is_assembled_when_its_commits_name_carried_items() {
+    let l = lab("archive", "FROMLIST(one): a series");
+    frozen(&l, "OURS(two): the series as the image was built");
+    let o = assemble_with(&l, "ufs-off-e123", &[]);
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o));
+    let said = fs::read_to_string(&l.called).unwrap();
+    assert!(said.starts_with("assemble ufs-off-e123 --lists "), "{said}");
+}
+
+#[test]
+fn an_archive_branch_whose_commit_names_no_carried_item_is_refused_before_rhizoid_runs() {
+    let l = lab("archive-ghost", "FROMLIST(one): a series");
+    frozen(&l, "OURS(ghost): the series as the image was built");
+    let o = assemble_with(&l, "ufs-off-e123", &[]);
+    assert_eq!(o.status.code(), Some(1), "{}", text(&o));
+    assert!(
+        text(&o).contains("archive/frozen-e123") && text(&o).contains("OURS(ghost)"),
+        "{}",
+        text(&o)
+    );
+    assert!(!l.called.exists(), "rhizoid ran");
+}
+
+#[test]
+fn a_branch_of_no_known_kind_is_still_refused() {
+    let l = lab("kind", "FROMLIST(one): a series");
+    git(&l.repo, &["branch", "wip/surya/x", "topic/one"]);
+    let lists = fs::read_to_string(&l.lists)
+        .unwrap()
+        .replace("topic/two", "wip/surya/x");
+    fs::write(&l.lists, lists).unwrap();
+    let o = assemble(&l);
+    assert_eq!(o.status.code(), Some(1), "{}", text(&o));
+    assert!(text(&o).contains("not a topic/ITEM"), "{}", text(&o));
+}
+
+/// A rhizoid that reports the comparison it was asked for: equal, or the paths that differ.
+fn rhizoid_comparing(l: &Lab, equal: bool) -> String {
+    let (code, paths) = if equal {
+        (0, "[]")
+    } else {
+        (1, "[\"drivers/x.c\"]")
+    };
+    script(
+        &l.dir,
+        "rhizoid-reproduces",
+        &format!(
+            "echo \"$@\" >> {}\n\
+             echo '{{\"tag\":\"int/surya/ufs-off/v7.1/1\",\"reproduces\":{{\"commit\":\"abc123\",\"equal\":{equal},\"paths\":{paths}}}}}'; exit {code}",
+            l.called.display()
+        ),
+    )
+}
+
+#[test]
+fn reproduces_is_passed_to_rhizoid_and_an_equal_verdict_is_printed() {
+    let mut l = lab("equal", "FROMLIST(one): a series");
+    l.rhizoid = rhizoid_comparing(&l, true);
+    let o = assemble_with(&l, "ufs-off", &["--reproduces", "abc123"]);
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o));
+    let said = fs::read_to_string(&l.called).unwrap();
+    assert!(said.contains("--reproduces abc123"), "{said}");
+    assert!(
+        text(&o).contains("reproduces abc123: equal"),
+        "{}",
+        text(&o)
+    );
+}
+
+#[test]
+fn a_differing_reproduction_prints_the_paths_and_ends_1() {
+    let mut l = lab("differs", "FROMLIST(one): a series");
+    l.rhizoid = rhizoid_comparing(&l, false);
+    let o = assemble_with(&l, "ufs-off", &["--reproduces", "abc123"]);
+    assert_eq!(o.status.code(), Some(1), "{}", text(&o));
+    assert!(
+        text(&o).contains("reproduces abc123: differs") && text(&o).contains("drivers/x.c"),
+        "{}",
+        text(&o)
+    );
+}
+
+#[test]
+fn without_reproduces_rhizoid_is_not_asked_to_compare() {
+    let l = lab("plain", "FROMLIST(one): a series");
+    let o = assemble(&l);
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o));
+    assert!(!fs::read_to_string(&l.called)
+        .unwrap()
+        .contains("--reproduces"));
+}
+
+#[test]
+fn an_archive_branch_with_no_commit_over_the_base_is_refused_as_saying_nothing() {
+    let l = lab("archive-empty", "FROMLIST(one): a series");
+    git(&l.repo, &["branch", "archive/frozen-e123", "v7.1"]);
+    let lists = fs::read_to_string(&l.lists).unwrap()
+        + "[lists.ufs-off-e123]\nbase = \"v7.1\"\n\
+           [[lists.ufs-off-e123.entries]]\nbranch = \"archive/frozen-e123\"\nfor = \"f\"\nstate = \"trying\"\n";
+    fs::write(&l.lists, lists).unwrap();
+    let o = assemble_with(&l, "ufs-off-e123", &[]);
+    assert_eq!(o.status.code(), Some(1), "{}", text(&o));
+    assert!(text(&o).contains("no commits over v7.1"), "{}", text(&o));
+    assert!(!l.called.exists(), "rhizoid ran");
+}
+
+#[test]
+fn a_reproduction_asked_for_and_not_reported_is_an_error_not_a_pass() {
+    let l = lab("unanswered", "FROMLIST(one): a series");
+    // the stand-in rhizoid of `lab` prints a tag and no comparison, as an old rhizoid that ignores the flag would
+    let o = assemble_with(&l, "ufs-off", &["--reproduces", "abc123"]);
+    assert_eq!(o.status.code(), Some(2), "{}", text(&o));
+    assert!(text(&o).contains("no comparison"), "{}", text(&o));
+}
+
+#[test]
+fn an_empty_reproduces_is_refused() {
+    let l = lab("emptyrep", "FROMLIST(one): a series");
+    let o = assemble_with(&l, "ufs-off", &["--reproduces", ""]);
+    assert_ne!(o.status.code(), Some(0), "{}", text(&o));
+    assert!(!l.called.exists(), "rhizoid ran");
+}

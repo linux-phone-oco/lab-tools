@@ -588,6 +588,7 @@ dependencies = [
  "flate2",
  "lpoco-manifest 0.44.5",
  "serde",
+ "serde_json",
  "sha1",
  "toml",
  "xz2",

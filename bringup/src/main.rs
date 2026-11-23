@@ -321,8 +321,23 @@ fn kernel(verb: Verb, r: &argenv_resolve::Resolution) -> Result<i32, String> {
         );
         return Ok(1);
     }
-    let (code, said) = k::assemble(&rhizoid, &name, Path::new(&lists), Path::new(&repo))?;
+    let reproduces = Contract::REPRODUCES.get_from(r);
+    if reproduces.as_deref() == Some("") {
+        return Err("--reproduces needs a commit".into());
+    }
+    let (code, said) = k::assemble(
+        &rhizoid,
+        &name,
+        Path::new(&lists),
+        Path::new(&repo),
+        reproduces.as_deref(),
+    )?;
     print!("{said}");
+    if let Some(commit) = &reproduces {
+        let v = k::verdict(&said)?
+            .ok_or_else(|| format!("--reproduces {commit} was asked and rhizoid reported no comparison (an rhizoid that does not know the flag?)"))?;
+        println!("{v}");
+    }
     Ok(code)
 }
 
