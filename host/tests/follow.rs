@@ -17,7 +17,6 @@ const FAMILY: &[&str] = &[
     "lpoco-health",
     "lpoco-host",
     "lpoco-tone",
-    "lpoco-attended",
 ];
 const SUFFIX: &str = "x86_64-unknown-linux-gnu";
 const NO_ROOT: &str = "root commands, through `sudo`:\n    none\n";
@@ -887,19 +886,19 @@ fn a_follow_killed_mid_install_is_stepped_back_by_the_next_run_before_it_does_an
     for p in FAMILY.iter().chain(&["devlab", "tone"]) {
         fs::write(j.join(p), format!("#!/bin/sh\necho {p} 0.2.0 kept\n")).unwrap();
     }
-    fs::write(j.join("lpoco-attended.absent"), "").unwrap();
+    fs::write(j.join("lpoco-tone.absent"), "").unwrap();
     fs::write(j.join("TARGET"), "0.2.1\n").unwrap();
-    fs::remove_file(j.join("lpoco-attended")).unwrap();
+    fs::remove_file(j.join("lpoco-tone")).unwrap();
     let bin = l.dir.join("home/.local/bin");
     exe(&bin.join("lpoco"), "echo lpoco 0.2.1 half");
-    exe(&bin.join("lpoco-attended"), "echo half-written");
+    exe(&bin.join("lpoco-tone"), "echo half-written");
     let o = follow(&l, &["now"]);
     let s = text(&o);
     assert!(o.status.success(), "{s}");
     assert!(s.contains("killed") && s.contains("put back"), "{s}");
     for p in FAMILY
         .iter()
-        .filter(|p| **p != "lpoco-attended")
+        .filter(|p| **p != "lpoco-tone")
         .chain(&["devlab", "tone"])
     {
         assert!(
@@ -914,7 +913,7 @@ fn a_follow_killed_mid_install_is_stepped_back_by_the_next_run_before_it_does_an
         installed(&l, "lpoco")
     );
     assert!(
-        !bin.join("lpoco-attended").exists(),
+        !bin.join("lpoco-tone").exists(),
         "a program that was not there before is not left behind"
     );
     assert!(!j.exists(), "the journal stays after it was used");

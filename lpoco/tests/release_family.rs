@@ -7,6 +7,9 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::PathBuf;
 
+/// The packages released on their own, outside the family (release-plz.toml).
+const OWN: &[&str] = &["lpoco-attended"];
+
 fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -65,7 +68,11 @@ fn release_plz_names_exactly_the_workspace_packages() {
 
 #[test]
 fn the_family_shares_one_version() {
-    let versions: BTreeSet<String> = members().into_iter().map(|m| m.2).collect();
+    let versions: BTreeSet<String> = members()
+        .into_iter()
+        .filter(|m| !OWN.contains(&m.1.as_str()))
+        .map(|m| m.2)
+        .collect();
     assert_eq!(
         versions.len(),
         1,
@@ -286,7 +293,11 @@ fn a_release_where_one_member_changed_writes_every_changelog() {
 #[test]
 fn every_member_includes_the_others_in_its_changelog() {
     let toml = read("release-plz.toml");
-    let names: BTreeSet<String> = members().into_iter().map(|m| m.1).collect();
+    let names: BTreeSet<String> = members()
+        .into_iter()
+        .map(|m| m.1)
+        .filter(|n| !OWN.contains(&n.as_str()))
+        .collect();
     for block in toml.split("[[package]]").skip(1) {
         let field = |key: &str| {
             block
@@ -296,6 +307,13 @@ fn every_member_includes_the_others_in_its_changelog() {
                 .to_string()
         };
         let name = field("name").trim().trim_matches('"').to_string();
+        if OWN.contains(&name.as_str()) {
+            assert!(
+                !block.contains("version_group"),
+                "{name} is in the family: it is tagged without a change"
+            );
+            continue;
+        }
         let included: BTreeSet<String> = field("changelog_include")
             .trim()
             .trim_matches(|c| c == '[' || c == ']')
@@ -309,4 +327,166 @@ fn every_member_includes_the_others_in_its_changelog() {
             "{name}: changelog_include is not every other member"
         );
     }
+}
+
+/// lpoco-attended is a library the labs pin by git tag, so it is tagged only when it changes
+/// (proof: attended-releases-when-it-changes). Runs release-plz on a fixture shaped like this
+/// workspace: family members, one of them a library that a standalone package names by its git
+/// tag (not by path: release-plz bumps the dependents of a released path dependency), the
+/// standalone package's release-plz.toml block the repository's own for lpoco-attended.
+#[test]
+fn a_release_moves_lpoco_attended_only_when_attended_changed() {
+    use std::process::Command;
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("lpoco-attended-fixture");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(dir.join("libsrc/src")).unwrap();
+    let run_in = |at: &std::path::Path, prog: &str, args: &[&str]| {
+        let out = Command::new(prog)
+            .args(args)
+            .current_dir(at)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_SYSTEM", "/dev/null")
+            .output()
+            .unwrap_or_else(|e| panic!("{prog}: {e} (CI installs release-plz: ci.yml)"));
+        assert!(
+            out.status.success(),
+            "{prog} {args:?}: {}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+    };
+    let run = |prog: &str, args: &[&str]| run_in(&dir, prog, args);
+    // the library the standalone package names by tag, in a repository of its own
+    let src = dir.join("libsrc");
+    fs::write(
+        src.join("Cargo.toml"),
+        "[package]\nname = \"famlib\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    fs::write(src.join("src/lib.rs"), "").unwrap();
+    run_in(&src, "git", &["init", "-q", "-b", "main"]);
+    run_in(&src, "git", &["add", "."]);
+    run_in(&src, "git", &["commit", "-q", "-m", "feat: start"]);
+    run_in(&src, "git", &["tag", "famlib-v0.1.0"]);
+    let real = read("release-plz.toml");
+    let head = real.split("[[package]]").next().unwrap();
+    let attended = real
+        .split("[[package]]")
+        .find(|b| b.contains("name = \"lpoco-attended\""))
+        .expect("release-plz.toml has no lpoco-attended package");
+    let family = ["fam-a", "fam-b", "famlib"];
+    let mut toml = head.to_string();
+    for n in family {
+        let others: Vec<String> = family
+            .iter()
+            .filter(|o| **o != n)
+            .map(|o| format!("\"{o}\""))
+            .collect();
+        toml.push_str(&format!(
+            "[[package]]\nname = \"{n}\"\nchangelog_include = [{}]\nversion_group = \"fam\"\ngit_tag_name = \"{n}-v{{{{ version }}}}\"\n",
+            others.join(", ")
+        ));
+    }
+    toml.push_str("[[package]]\n");
+    for l in attended.lines() {
+        if l.starts_with("name =") {
+            toml.push_str("name = \"solo\"\n");
+        } else if l.starts_with("git_tag_name") {
+            toml.push_str("git_tag_name = \"solo-v{{ version }}\"\n");
+        } else {
+            toml.push_str(l);
+            toml.push('\n');
+        }
+    }
+    fs::write(dir.join("release-plz.toml"), toml).unwrap();
+    let members = "[\"fam-a\", \"fam-b\", \"famlib\", \"solo\"]";
+    fs::write(
+        dir.join("Cargo.toml"),
+        format!("[workspace]\nresolver = \"2\"\nmembers = {members}\n"),
+    )
+    .unwrap();
+    let url = format!("file://{}", src.display());
+    for n in ["fam-a", "fam-b", "famlib", "solo"] {
+        fs::create_dir_all(dir.join(n).join("src")).unwrap();
+        let dep = if n == "solo" {
+            format!("\n[dependencies]\nfamlib = {{ git = \"{url}\", tag = \"famlib-v0.1.0\" }}\n")
+        } else {
+            String::new()
+        };
+        fs::write(
+            dir.join(n).join("Cargo.toml"),
+            format!("[package]\nname = \"{n}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n{dep}"),
+        )
+        .unwrap();
+        fs::write(dir.join(n).join("src/lib.rs"), "").unwrap();
+        fs::write(
+            dir.join(n).join("CHANGELOG.md"),
+            "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-01-01\n\n### Other\n\n- start\n",
+        )
+        .unwrap();
+    }
+    // the library's own repository stays out of the fixture workspace's history
+    fs::write(dir.join(".gitignore"), "libsrc/\ntarget/\n").unwrap();
+    run("git", &["init", "-q", "-b", "main"]);
+    run("git", &["add", "."]);
+    run("git", &["commit", "-q", "-m", "feat: start"]);
+    for n in ["fam-a", "fam-b", "famlib", "solo"] {
+        run("git", &["tag", &format!("{n}-v0.1.0")]);
+    }
+    let version_of = |n: &str| {
+        let t = fs::read_to_string(dir.join(n).join("Cargo.toml")).unwrap();
+        t.lines()
+            .find_map(|l| l.strip_prefix("version = "))
+            .unwrap()
+            .trim_matches('"')
+            .to_string()
+    };
+    // a change outside attended/, in the library it names as well: the family moves, attended stays
+    fs::write(dir.join("fam-a/src/lib.rs"), "pub fn x() {}\n").unwrap();
+    fs::write(dir.join("famlib/src/lib.rs"), "pub fn z() {}\n").unwrap();
+    run(
+        "git",
+        &["commit", "-q", "-am", "feat: only the family changes"],
+    );
+    run("release-plz", &["update", "--config", "release-plz.toml"]);
+    for n in family {
+        assert_eq!(version_of(n), "0.1.1", "{n}: the family did not move");
+    }
+    assert_eq!(
+        version_of("solo"),
+        "0.1.0",
+        "a change outside attended/ moves lpoco-attended"
+    );
+    run("git", &["checkout", "-q", "."]);
+    run("git", &["clean", "-fdq", "-e", "libsrc"]);
+    // a change inside attended/: it moves
+    fs::write(dir.join("solo/src/lib.rs"), "pub fn y() {}\n").unwrap();
+    run("git", &["commit", "-q", "-am", "feat: attended changes"]);
+    run("release-plz", &["update", "--config", "release-plz.toml"]);
+    assert_eq!(
+        version_of("solo"),
+        "0.1.1",
+        "a change inside attended/ does not move lpoco-attended"
+    );
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// attended names lpoco-manifest by a released git tag, never by path: a path dependency moves it
+/// at every family release (the proof above runs the same shape on a fixture).
+#[test]
+fn lpoco_attended_names_lpoco_manifest_by_tag_not_by_path() {
+    let toml = read("attended/Cargo.toml");
+    let line = toml
+        .lines()
+        .find(|l| l.starts_with("lpoco-manifest"))
+        .expect("attended/Cargo.toml does not name lpoco-manifest");
+    assert!(
+        line.contains("git =") && line.contains("tag = \"lpoco-manifest-v"),
+        "not a released git tag: {line}"
+    );
+    assert!(!line.contains("path"), "a path dependency: {line}");
 }
