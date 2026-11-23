@@ -1338,8 +1338,10 @@ fn finish(work: &str, result: Result<(), String>) -> Result<(), String> {
 /// previous programs back and lands nothing. A declared `[follow] window` holds the install until its
 /// hours (a run that began inside it finishes after it closes). Without `now` it only says what it would do.
 /// What is installed is judged too: an installed `lpoco` older than the pin (a prepare that did not run after the
-/// pin moved) is reinstalled at the pin, checked the same way, and no pin is landed. Only `lpoco` is read; an
-/// older other family program under a current `lpoco` is not noticed.
+/// pin moved) is reinstalled at the pin, checked the same way, and no pin is landed. Only `lpoco` is read of the
+/// family; an older other family program under a current `lpoco` is not noticed.
+/// When the family is current, a declared tool of another project (`[tools.rhizoid]`) whose installed copy is not at
+/// its pin is installed the same way (`follow_tools`).
 fn follow(st: &State, now: bool) -> Result<i32, String> {
     let began = epoch_now()?;
     let Some(ToolPin::Version(pinned)) = st.lab.tools.get("lpoco") else {
@@ -1356,6 +1358,10 @@ fn follow(st: &State, now: bool) -> Result<i32, String> {
         .as_deref()
         .is_some_and(|v| follow::is_newer(&newest, v));
     if released.is_none() && !drifted {
+        let moved = moved_tools(st);
+        if !moved.is_empty() {
+            return follow_tools(st, now, began, moved);
+        }
         let unread = installed
             .as_deref()
             .is_none_or(|v| follow::version_key(v).is_none());
@@ -1379,10 +1385,10 @@ fn follow(st: &State, now: bool) -> Result<i32, String> {
     if outside_window(st)? {
         return Ok(0);
     }
-    if waits_for_keeper(st, &newest) {
+    if waits_for_keeper(st, &format!("release {newest}")) {
         return Ok(0);
     }
-    if tried_too_lately(st, &newest)? {
+    if tried_too_lately(st, &newest, &format!("lpoco {newest}"))? {
         return Ok(0);
     }
     // everything that can be known before a program is touched
@@ -1486,6 +1492,152 @@ fn follow(st: &State, now: bool) -> Result<i32, String> {
     Ok(0)
 }
 
+/// The declared tools of other projects whose installed copy is not the one lab.toml pins: installed already (a tool
+/// that was never installed is prepare's to bring in) and not a program of the family (follow's other path).
+fn moved_tools(st: &State) -> Vec<ToolPlan> {
+    tool_plans(st)
+        .into_iter()
+        .filter(|t| {
+            !t.ok()
+                && !t.steps.is_empty()
+                && t.installed_by.is_none()
+                && !FAMILY.contains(&t.name.as_str())
+                && (t.found.is_some() || t.on_path)
+        })
+        .collect()
+}
+
+/// What each moved tool's binary and stamp held, to step back to (None: not there).
+type SavedTools = Vec<(String, Option<Vec<u8>>)>;
+
+fn save_tools(st: &State, tools: &[ToolPlan]) -> Result<SavedTools, String> {
+    tools
+        .iter()
+        .flat_map(|t| {
+            [
+                format!("{}/.local/bin/{}", st.home, t.name),
+                stamp_path(&st.home, &t.name),
+            ]
+        })
+        .map(|p| match fs::read(&p) {
+            Ok(b) => Ok((p, Some(b))),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok((p, None)),
+            Err(e) => Err(format!("cannot keep {p} to step back to: {e}")),
+        })
+        .collect()
+}
+
+/// Puts each tool and its stamp back; every one is tried, and what could not be put back is named.
+fn restore_tools(previous: &SavedTools) -> Result<(), String> {
+    let failed: Vec<String> = previous
+        .iter()
+        .filter_map(|(to, bytes)| match bytes {
+            Some(b) => {
+                let mode = if to.contains("/.local/share/") {
+                    0o644
+                } else {
+                    0o755
+                };
+                replace_file(to, b, mode)
+                    .err()
+                    .map(|e| format!("{to}: {e}"))
+            }
+            None => match fs::remove_file(to) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => Some(format!("{to}: {e}")),
+                _ => None,
+            },
+        })
+        .collect();
+    if failed.is_empty() {
+        Ok(())
+    } else {
+        Err(failed.join("; "))
+    }
+}
+
+/// The moved tools in words: `rhizoid v0.3.6 -> v0.3.8`.
+fn moved_words(tools: &[ToolPlan]) -> String {
+    tools
+        .iter()
+        .map(|t| {
+            format!(
+                "{} {} -> {}",
+                t.name,
+                t.found.as_deref().unwrap_or("?"),
+                t.pinned
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// `follow` for tools of other projects: each declared tool whose pin moved is installed from its release at the pin,
+/// in a window with no keeper, every phone's lease held while it installs, judged by the host's own `check` and
+/// stepped back (binary and stamp) when the install or the check fails. No pin is landed: the pin is what moved.
+/// Kept in memory only: a run killed after the install and before its check leaves the new tool, unchecked.
+fn follow_tools(st: &State, now: bool, began: u64, moved: Vec<ToolPlan>) -> Result<i32, String> {
+    let words = moved_words(&moved);
+    if !now {
+        println!("{words}: `lpoco host follow now` installs it when no keeper holds a phone and checks it");
+        return Ok(0);
+    }
+    if outside_window(st)? {
+        return Ok(0);
+    }
+    let key = format!("tools:{words}").replace(' ', "_");
+    if waits_for_keeper(st, &words) {
+        return Ok(0);
+    }
+    if tried_too_lately(st, &key, &words)? {
+        return Ok(0);
+    }
+    let names: Vec<String> = moved.iter().map(|t| t.name.clone()).collect();
+    let before = Judged::before_tools(&host_program(st), &st.lab_path, &names)?;
+    if !before.check_ok {
+        println!(
+            "waits: the host's own check fails now ({}); it is fixed before a tool is followed",
+            before.check_tail
+        );
+        return Ok(1);
+    }
+    let _leases = match follow::take_leases(&st.home, &st.found, &lease_age) {
+        Ok(l) => l,
+        Err(follow::NotTaken::Kept { phone, who }) => {
+            println!("waits: {who} keeps {phone}; {words} is installed in a window with no keeper");
+            return Ok(0);
+        }
+        Err(follow::NotTaken::Unusable { phone, why }) => {
+            return Err(format!(
+                "the lease of {phone} could not be taken ({why}): nothing is changed"
+            ));
+        }
+    };
+    let previous = save_tools(st, &moved)?;
+    println!("following: {words}");
+    let stepped_back = |why: String| {
+        restore_tools(&previous)
+            .map_err(|e| format!("{why}; and the tools could not be put back ({e})"))?;
+        remember_failed_try(&st.home, &key, began);
+        Err(format!("{why}; {words} is back as it was"))
+    };
+    if let Err(why) = install_tools(st, moved) {
+        return stepped_back(why);
+    }
+    match Judged::of(&host_program(st), &st.lab_path) {
+        Ok(a) if a.check_ok => {}
+        Ok(a) => {
+            return stepped_back(format!(
+                "the host's check fails with the new tool: {}",
+                a.check_tail
+            ))
+        }
+        Err(why) => return stepped_back(why),
+    }
+    let _ = fs::remove_file(tried_file(&st.home));
+    println!("followed: {words} is installed and checked");
+    Ok(0)
+}
+
 /// What a host program says about the lab: whether its `check` passes, the tail of what it printed, and the root
 /// commands its `plan` lists (None when the plan failed or has no such section).
 struct Judged {
@@ -1496,6 +1648,16 @@ struct Judged {
 
 impl Judged {
     fn of(host: &str, lab: &str) -> Result<Judged, String> {
+        Self::judged(host, lab, &[])
+    }
+
+    /// The baseline before a tool is followed: the moved tools are off their pins by definition, so their own FAIL
+    /// lines are not held against the host.
+    fn before_tools(host: &str, lab: &str, tools: &[String]) -> Result<Judged, String> {
+        Self::judged(host, lab, tools)
+    }
+
+    fn judged(host: &str, lab: &str, ignore: &[String]) -> Result<Judged, String> {
         let run = |verb: &str| {
             Proc::new(host)
                 .args([verb, "--lab", lab])
@@ -1504,8 +1666,11 @@ impl Judged {
         };
         let check = run("check")?;
         let plan = run("plan")?;
-        let (check_ok, check_tail) =
-            follow::judge_check(check.status.code(), &String::from_utf8_lossy(&check.stdout));
+        let (check_ok, check_tail) = follow::judge_check_without(
+            check.status.code(),
+            &String::from_utf8_lossy(&check.stdout),
+            ignore,
+        );
         Ok(Judged {
             check_ok,
             check_tail,
@@ -1545,7 +1710,7 @@ fn epoch_now() -> Result<u64, String> {
 /// Says so and returns true when `release` failed a try that began less than `[follow] every` ago: a timer run is
 /// never held (it comes `every` after the last began), a manual run or a restart is. Without `[follow]` there is
 /// no `every`, so no limit.
-fn tried_too_lately(st: &State, release: &str) -> Result<bool, String> {
+fn tried_too_lately(st: &State, release: &str, what: &str) -> Result<bool, String> {
     let Some(every) = st.lab.follow.as_ref().map(|f| f.every.as_str()) else {
         return Ok(false);
     };
@@ -1558,7 +1723,10 @@ fn tried_too_lately(st: &State, release: &str) -> Result<bool, String> {
     let Some(wait) = follow::retry_wait(tried, release, every_s, epoch_now()?) else {
         return Ok(false);
     };
-    println!("waits: lpoco {release} failed its last try less than {every} ago; it is tried again in {} min", wait.div_ceil(60));
+    println!(
+        "waits: {what} failed its last try less than {every} ago; it is tried again in {} min",
+        wait.div_ceil(60)
+    );
     Ok(true)
 }
 
@@ -1571,12 +1739,10 @@ fn remember_failed_try(home: &str, release: &str, began: u64) {
 }
 
 /// Says so and returns true when a phone's keeper holds the lab now.
-fn waits_for_keeper(st: &State, newest: &str) -> bool {
+fn waits_for_keeper(st: &State, what: &str) -> bool {
     let held = follow::held_leases(&st.home, &st.found, &lease_age);
     for (phone, who) in &held {
-        println!(
-            "waits: {who} keeps {phone}; release {newest} is installed in a window with no keeper"
-        );
+        println!("waits: {who} keeps {phone}; {what} is installed in a window with no keeper");
     }
     !held.is_empty()
 }
