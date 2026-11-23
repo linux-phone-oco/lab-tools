@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.47.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-ffs-acm-v0.46.5...lpoco-ffs-acm-v0.47.0) - 2026-11-23
+
+### Added
+
+- *(bringup)* write the AVB hash footer in Rust, no avbtool in swap, bisect or the recipe sandbox ([#377](https://github.com/linux-phone-oco/lab-tools/pull/377))
+
 ## [0.46.5](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-ffs-acm-v0.46.4...lpoco-ffs-acm-v0.46.5) - 2026-11-23
 
 ### Added
