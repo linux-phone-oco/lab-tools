@@ -119,6 +119,43 @@ pub fn valid_every(table: &str, s: &str) -> Result<(), String> {
     }
 }
 
+/// `every` in seconds (`15min`, `1h`, `90s`, `1d`); None for a unit systemd reads that this does not.
+pub fn every_seconds(s: &str) -> Option<u64> {
+    let digits = s.chars().take_while(char::is_ascii_digit).count();
+    let n: u64 = s[..digits].parse().ok()?;
+    let unit = match &s[digits..] {
+        "s" | "sec" | "second" | "seconds" => 1,
+        "m" | "min" | "minute" | "minutes" => 60,
+        "h" | "hr" | "hour" | "hours" => 3600,
+        "d" | "day" | "days" => 86_400,
+        "w" | "week" | "weeks" => 604_800,
+        _ => return None,
+    };
+    n.checked_mul(unit)
+}
+
+/// What a failed try leaves: `RELEASE START-SECOND`, the release a follow stepped back from and when its run began.
+pub fn parse_tried(text: &str) -> Option<(String, u64)> {
+    let (release, at) = text.trim().split_once(' ')?;
+    Some((release.to_string(), at.parse().ok()?))
+}
+
+/// Seconds a release that failed still waits before it is tried again: None when it is another release than the one
+/// that failed, or `every` has passed since that run began (the timer's own beat, so a timer run is never held).
+pub fn retry_wait(
+    tried: Option<(String, u64)>,
+    release: &str,
+    every: u64,
+    now: u64,
+) -> Option<u64> {
+    let (failed, began) = tried?;
+    if failed != release {
+        return None;
+    }
+    let due = began.saturating_add(every);
+    due.checked_sub(now).filter(|left| *left > 0)
+}
+
 /// A time of day as minutes after midnight: `HH:MM`, two digits each.
 pub fn parse_clock(s: &str) -> Option<u32> {
     let (h, m) = s.split_once(':')?;
@@ -360,6 +397,25 @@ mod tests {
         for bad in ["", "min", "15", "15 min", "15min\nExecStart=x", "-1h"] {
             assert!(valid_every("[follow]", bad).is_err(), "{bad:?}");
         }
+    }
+
+    #[test]
+    fn an_interval_in_seconds_and_what_a_failed_try_still_waits() {
+        assert_eq!(every_seconds("15min"), Some(900));
+        assert_eq!(every_seconds("1h"), Some(3600));
+        assert_eq!(every_seconds("2days"), Some(172_800));
+        assert_eq!(every_seconds("5fortnights"), None);
+        let tried = || parse_tried("0.2.1 1000\n");
+        assert_eq!(retry_wait(tried(), "0.2.1", 900, 1500), Some(400));
+        assert_eq!(
+            retry_wait(tried(), "0.2.1", 900, 1900),
+            None,
+            "the timer's own beat is not held"
+        );
+        assert_eq!(retry_wait(tried(), "0.2.2", 900, 1100), None);
+        assert_eq!(retry_wait(None, "0.2.1", 900, 1100), None);
+        assert_eq!(parse_tried("0.2.1"), None);
+        assert_eq!(parse_tried("0.2.1 soon"), None);
     }
 
     #[test]
