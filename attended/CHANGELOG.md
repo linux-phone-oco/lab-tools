@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.45.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-attended-v0.45.0...lpoco-attended-v0.45.1) - 2026-11-23
+
+### Added
+
+- *(attended)* lift sees step groups, flagging a copied group as lift-group ([#366](https://github.com/linux-phone-oco/lab-tools/pull/366))
+
 ## [0.45.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-attended-v0.44.6...lpoco-attended-v0.45.0) - 2026-11-23
 
 ### Added
