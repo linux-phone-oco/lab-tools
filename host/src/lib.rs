@@ -51,6 +51,14 @@ pub enum ToolPin {
         repository: String,
         tag: String,
         asset: String,
+        /// User timers the tag ships under `packaging/systemd/NAME.service` and `NAME.timer`: written as user units and enabled.
+        #[serde(default)]
+        timers: Vec<String>,
+        /// Where, under the lab user's home, the timers' environment file is written (mode 600) from `env`.
+        env_file: Option<String>,
+        /// `KEY = "value"` lines of that file; a leading `~/` in a value is the home.
+        #[serde(default)]
+        env: BTreeMap<String, String>,
     },
 }
 
@@ -997,6 +1005,7 @@ pub fn tools_for(
                 repository,
                 tag,
                 asset,
+                ..
             } => {
                 let url = format!(
                     "{}/{repository}/releases/download/{tag}/{asset}",
@@ -1245,6 +1254,9 @@ fn validate_lab(lab: &Lab) -> Result<(), String> {
                 repository,
                 tag,
                 asset,
+                timers,
+                env_file,
+                env,
             } => {
                 for (w, s) in [("repository", repository), ("tag", tag), ("asset", asset)] {
                     if s.chars().any(|c| c.is_whitespace() || c.is_control())
@@ -1270,6 +1282,7 @@ fn validate_lab(lab: &Lab) -> Result<(), String> {
                         ));
                     }
                 }
+                valid_timers(name, timers, env_file.as_deref(), env)?;
                 if FAMILY.contains(&name.as_str()) || OLD_NAMES.iter().any(|(o, _)| o == name) {
                     return Err(format!(
                         "[tools.{name}] is a program of the lpoco family: pin it with `lpoco`"
@@ -1594,4 +1607,55 @@ fn release_steps(
         also,
         fallback: build,
     }]
+}
+
+/// A tool's declared user timers: unit names that are one word, an env file that stays under the home, env keys
+/// that are variable names and values on one line; an `env` without a file, or a file without timers, has nothing to be for.
+fn valid_timers(
+    tool: &str,
+    timers: &[String],
+    env_file: Option<&str>,
+    env: &BTreeMap<String, String>,
+) -> Result<(), String> {
+    let at = |what: &str, why: String| format!("[tools.{tool}] {what}: {why}");
+    for t in timers {
+        safe_word("timer", t).map_err(|e| at("timers", e))?;
+    }
+    if timers.is_empty() && (env_file.is_some() || !env.is_empty()) {
+        return Err(at(
+            "env_file",
+            "an env file is for the timers; declare `timers` too".into(),
+        ));
+    }
+    if !env.is_empty() && env_file.is_none() {
+        return Err(at(
+            "env",
+            "needs `env_file`, the file it is written to".into(),
+        ));
+    }
+    if let Some(f) = env_file {
+        if f.is_empty()
+            || f.starts_with('/')
+            || f.split('/').any(|c| c.is_empty() || c == "..")
+            || f.chars()
+                .any(|c| c.is_whitespace() || c.is_control() || c == '%')
+        {
+            return Err(at(
+                "env_file",
+                format!("{f:?} must be a path under the home, without '..'"),
+            ));
+        }
+    }
+    for (k, v) in env {
+        let key_ok = !k.is_empty()
+            && !k.starts_with(|c: char| c.is_ascii_digit())
+            && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+        if !key_ok {
+            return Err(at("env", format!("{k:?} is not a variable name")));
+        }
+        if v.contains(['\n', '\r']) {
+            return Err(at("env", format!("{k} must be on one line")));
+        }
+    }
+    Ok(())
 }

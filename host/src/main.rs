@@ -588,6 +588,28 @@ fn plan(st: &State) {
             println!("    {}", c.join(" "));
         }
     }
+    match tool_timer_units(st) {
+        Ok(all) => {
+            for t in &all {
+                println!("\ntool timers (user units from the pinned tag, no root; prepare writes them; one that differs is hand-changed or from an older tag):");
+                for (f, _) in &t.files {
+                    let state = if f.state() == "changes" {
+                        "hand-changed"
+                    } else {
+                        f.state()
+                    };
+                    println!("    {} ({state})", f.dst);
+                    for l in f.diff() {
+                        println!("        {l}");
+                    }
+                }
+                for c in &t.cmds {
+                    println!("    {}", c.join(" "));
+                }
+            }
+        }
+        Err(e) => println!("\ntool timers: not measured, {e}"),
+    }
     println!("\ntools:");
     for t in tools {
         let found = t.found_text();
@@ -633,6 +655,8 @@ fn prepare(st: &State) -> Result<i32, String> {
     for r in &st.reads {
         println!("read: {r}");
     }
+    // fetched before anything changes: a tag without its unit stops the run with nothing written
+    let tool_timers = tool_timer_units(st)?;
     let files = files_for(
         &st.devices,
         st.lab.gadget_group.as_deref(),
@@ -679,6 +703,16 @@ fn prepare(st: &State) -> Result<i32, String> {
                 .map_err(|e| format!("cannot write {}: {e}", f.dst))?;
         }
         ucmds.extend(cmds);
+    }
+    for t in &tool_timers {
+        for (f, mode) in t.files.iter().filter(|(f, _)| f.changed()) {
+            if let Some(d) = Path::new(&f.dst).parent() {
+                fs::create_dir_all(d).map_err(|e| format!("cannot make {}: {e}", d.display()))?;
+            }
+            replace_file(&f.dst, f.content.as_bytes(), *mode)
+                .map_err(|e| format!("cannot write {}: {e}", f.dst))?;
+        }
+        ucmds.extend(t.cmds.clone());
     }
     for c in &ucmds {
         println!("user: {}", c.join(" "));
@@ -2203,4 +2237,101 @@ fn clock_now(st: &State) -> Result<String, String> {
         return Err("cannot read the time of day: date failed".into());
     }
     Ok(String::from_utf8_lossy(&o.stdout).trim().to_string())
+}
+
+/// One declared tool timer's files: each with the mode it is written in, and the user commands (no root) that make them known.
+struct ToolTimers {
+    files: Vec<(FileChange, u32)>,
+    cmds: Vec<Vec<String>>,
+}
+
+/// The user units and env files the `[tools.NAME] timers` declare: each unit is the pinned tag's own text
+/// (`packaging/systemd/NAME.service|.timer`, fetched), the env file is written from `env` and private (mode 600).
+/// Err names the unit the tag does not hold or a fetch that failed: nothing is written then.
+fn tool_timer_units(st: &State) -> Result<Vec<ToolTimers>, String> {
+    let mut out = Vec::new();
+    for pin in st.lab.tools.values() {
+        let ToolPin::Release {
+            repository,
+            tag,
+            timers,
+            env_file,
+            env,
+            ..
+        } = pin
+        else {
+            continue;
+        };
+        if timers.is_empty() {
+            continue;
+        }
+        let dir = format!("{}/.config/systemd/user", st.home);
+        let base = format!(
+            "{}/{repository}/raw/{tag}/packaging/systemd",
+            st.github.trim_end_matches('/')
+        );
+        let mut files = Vec::new();
+        let mut cmds = Vec::new();
+        let scratch = PathBuf::from(format!("{}/.cache/lpoco-host", st.home));
+        fs::create_dir_all(&scratch)
+            .map_err(|e| format!("cannot make {}: {e}", scratch.display()))?;
+        for timer in timers {
+            for kind in ["service", "timer"] {
+                let url = format!("{base}/{timer}.{kind}");
+                let to = scratch.join(format!("unit-{timer}.{kind}"));
+                if !fetch(&url, &to)? {
+                    return Err(format!(
+                        "{repository} {tag} holds no packaging/systemd/{timer}.{kind} ({url}): nothing written"
+                    ));
+                }
+                let content = fs::read_to_string(&to)
+                    .map_err(|e| format!("cannot read the fetched {url}: {e}"))?;
+                let _ = fs::remove_file(&to);
+                let dst = format!("{dir}/{timer}.{kind}");
+                files.push((
+                    FileChange {
+                        seen: fs::read_to_string(&dst).ok().into(),
+                        content,
+                        serials: vec![],
+                        dst,
+                    },
+                    0o644,
+                ));
+            }
+        }
+        if let Some(f) = env_file {
+            let dst = format!("{}/{f}", st.home);
+            let content: String = env
+                .iter()
+                .map(|(k, v)| format!("{k}={}\n", expand_home(v, &st.home)))
+                .collect();
+            files.push((
+                FileChange {
+                    seen: fs::read_to_string(&dst).ok().into(),
+                    content,
+                    serials: vec![],
+                    dst,
+                },
+                0o600,
+            ));
+        }
+        let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        if files.iter().any(|(f, _)| f.changed()) {
+            cmds.push(s(&["systemctl", "--user", "daemon-reload"]));
+        }
+        for timer in timers {
+            let wanted = format!("{dir}/timers.target.wants/{timer}.timer");
+            if files.iter().any(|(f, _)| f.changed()) || !Path::new(&wanted).exists() {
+                cmds.push(s(&[
+                    "systemctl",
+                    "--user",
+                    "enable",
+                    "--now",
+                    &format!("{timer}.timer"),
+                ]));
+            }
+        }
+        out.push(ToolTimers { files, cmds });
+    }
+    Ok(out)
 }
