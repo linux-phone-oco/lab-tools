@@ -275,6 +275,8 @@ struct FromMemory {
     usb_id: String,
     serial: String,
     tries: u32,
+    /// `[boot.to_bootloader]`: the helper that takes a phone running Linux to its bootloader, when one is declared
+    to_bootloader: Option<ToBootloader>,
 }
 
 /// The fastboot boot of a test kernel, when the device declares `[kernels] boot = "fastboot"`: its `[images.NAME]`
@@ -312,11 +314,38 @@ fn memory_boot_of(name: &str) -> Option<FromMemory> {
             .as_ref()
             .map_or(Vec::new(), |k| k.pre_boot.clone()),
         folder: folder.to_path_buf(),
-        image: folder.join(dir).join(image).display().to_string(),
+        image: folder.join(&dir).join(image).display().to_string(),
         sha256,
         usb_id,
         serial,
         tries: wait / 2 + 1,
+        to_bootloader: to_bootloader_of(m, folder, &dir),
+    })
+}
+
+/// The helper that takes a phone running Linux to its bootloader, as the device declares it: where it is on this
+/// computer and its checksum, where it goes on the phone, and the command that runs it there.
+struct ToBootloader {
+    local: String,
+    sha256: String,
+    to: String,
+    run: String,
+}
+
+/// `[boot.to_bootloader]` of the manifest, its tool found under `[images] dir` in the device's folder. The manifest
+/// judged the tool present with a checksum, so one declared is one complete.
+fn to_bootloader_of(
+    m: &lpoco_manifest::Manifest,
+    folder: &std::path::Path,
+    dir: &str,
+) -> Option<ToBootloader> {
+    let t = m.boot.as_ref()?.to_bootloader.as_ref()?;
+    let image = m.images.as_ref()?.named.get(&t.tool)?;
+    Some(ToBootloader {
+        local: folder.join(dir).join(&image.path).display().to_string(),
+        sha256: image.sha256.clone()?,
+        to: t.to.clone(),
+        run: t.run.clone(),
     })
 }
 
@@ -330,15 +359,21 @@ fn in_fastboot() -> Result<bool, String> {
 }
 
 /// The phone is in fastboot before an image is booted from memory: one already there is left alone; one running
-/// Android or a test image is sent there with `reboot bootloader` through the declared transport (devlab phone
-/// root), then waited for (`tries` states, two seconds apart, at least one). It never reaches fastboot: the step
-/// ends, booting nothing, with what the transport said of the reboot.
-fn into_fastboot(tries: u32) -> Result<(), String> {
+/// Android or a test image is sent there by the declared `[boot.to_bootloader]` helper (its sha256 checked, pushed
+/// with devlab phone put, run as root through the declared transport; never busybox `reboot bootloader`, which drops
+/// its argument), then waited for (`tries` states, two seconds apart, at least one). With no helper declared, or one
+/// that never brings fastboot, the step ends, booting nothing.
+fn into_fastboot(tries: u32, helper: Option<&ToBootloader>) -> Result<(), String> {
     if in_fastboot()? {
         return Ok(());
     }
+    let helper = helper.ok_or(
+        "the phone is not in fastboot and the device declares no [boot.to_bootloader] (a helper that hands 'bootloader' to reboot(2) RESTART2; busybox `reboot bootloader` drops it) - needs hands (volume down + power)",
+    )?;
+    check_checksum(&helper.local, &helper.sha256)?;
+    crate::devlab(&["phone", "put", &helper.local, &helper.to])?;
     // the connection ends with the reboot, so its failing is not yet the answer; it is said if fastboot never comes
-    let sent = crate::phone().root("reboot bootloader\n");
+    let sent = crate::phone().root(&format!("chmod 755 {} && {}\n", helper.to, helper.run));
     for turn in 0..tries.max(1) {
         std::thread::sleep(std::time::Duration::from_secs(if turn == 0 {
             0
@@ -353,7 +388,7 @@ fn into_fastboot(tries: u32) -> Result<(), String> {
         Ok(_) => String::new(),
         Err(e) => format!(" ({e})"),
     };
-    Err(format!("the phone did not reach fastboot after `reboot bootloader` over its declared transport{transport} - needs hands (volume down + power)"))
+    Err(format!("the phone did not reach fastboot after `{}` over its declared transport{transport} - needs hands (volume down + power)", helper.run))
 }
 
 /// What the step's name says of its gates in a dry run: none, nothing; else the command lines in order.
@@ -395,7 +430,7 @@ fn boot_from_memory(m: &FromMemory) -> Result<String, String> {
     if let Some(want) = &m.sha256 {
         check_checksum(&m.image, want)?;
     }
-    into_fastboot(m.tries)?;
+    into_fastboot(m.tries, m.to_bootloader.as_ref())?;
     let out = crate::devlab(&["fastboot", "boot", "now", &m.image])?;
     usb_on_bus(&m.usb_id, Some(&m.serial), m.tries, 2).map_err(|e| format!("{out}{e}"))?;
     Ok(out)
