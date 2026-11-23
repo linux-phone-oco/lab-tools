@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.43.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.42.2...lpoco-bringup-v0.43.0) - 2026-11-23
+
+### Added
+
+- *(bringup)* kernel assemble and publish: record checks, then rhizoid assemble ([#330](https://github.com/linux-phone-oco/lab-tools/pull/330))
+
+### Other
+
+- a map at the top of the README and a README per crate ([#328](https://github.com/linux-phone-oco/lab-tools/pull/328))
+
 ## [0.42.2](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.42.1...lpoco-bringup-v0.42.2) - 2026-11-21
 
 ### Fixed
