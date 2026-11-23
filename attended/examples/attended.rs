@@ -19,10 +19,12 @@ fn main() {
     step("put the kernel on it", || {
         phone().root("echo flashing boot.img")
     });
-    check("the kernel is the one we flashed", || {
-        phone().sh("uname -r").map(|k| k.contains("pmicwdt"))
-    });
-    check("pmicwdt is bound", || {
+    check_from(
+        "the kernel is the one we flashed",
+        "research:2026-11-23-uname",
+        || phone().sh("uname -r").map(|k| k.contains("pmicwdt")),
+    );
+    check_from("pmicwdt is bound", "research:2026-11-23-lsmod", || {
         phone().sh("lsmod").map(|m| m.contains("pmicwdt"))
     });
 }

@@ -37,7 +37,7 @@ fn main() {{
 
     step("the phone answers", || retry(3, 1, || phone().sh("true")));
     ask_author("what the author does / what the author sees");
-    check("the kernel is the one we expect", || {{
+    check_from("the kernel is the one we expect", "research:ROW-ID", || {{
         phone().sh("uname -r").map(|k| !k.is_empty())
     }});
 }}

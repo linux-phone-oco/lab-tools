@@ -14,6 +14,10 @@ fn main() {
     let _run = procedure("ready", "xiaomi-surya");
 
     run_group(steps::phone_ready("pmicwdt"));
-    check("the driver is bound", || phone().sh("true"));
+    check_from(
+        "the driver is bound",
+        "research:2026-11-23-driver-bound",
+        || phone().sh("true"),
+    );
     run_group(steps::leave_known_good());
 }

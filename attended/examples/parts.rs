@@ -18,7 +18,9 @@ fn main() {
             ask_author("press the button / the light comes on");
             step("after the prompt", || phone().sh("true"));
         }
-        Some("checks") => check("only the checks", || phone().sh("true")),
+        Some("checks") => check_from("only the checks", "research:2026-11-23-checks", || {
+            phone().sh("true")
+        }),
         Some(other) => unknown_part(other, &["checks"]),
     }
 }

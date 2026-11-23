@@ -79,15 +79,28 @@ fn new_writes_a_procedure_for_the_repos_device_that_the_real_rust_script_dry_run
         "no steps crate here: {src}"
     );
 
-    // the file as written, run by the real rust-script, in a dry run
+    // the file as written names no source yet (its check holds the placeholder ROW-ID): the dry run refuses it
     let log = d.join("calls.log");
-    let r = Command::new("rust-script")
-        .arg(&file)
-        .args(["--dry-run", "--log"])
-        .arg(&log)
-        .current_dir(&d)
-        .output()
-        .expect("rust-script is on the lab machine");
+    let dry = |file: &std::path::Path| {
+        Command::new("rust-script")
+            .arg(file)
+            .args(["--dry-run", "--log"])
+            .arg(&log)
+            .current_dir(&d)
+            .output()
+            .expect("rust-script is on the lab machine")
+    };
+    let r = dry(&file);
+    assert_eq!(r.status.code(), Some(1), "{}", text(&r));
+    assert!(
+        text(&r).contains("names no research row id"),
+        "{}",
+        text(&r)
+    );
+
+    // with the row it was built from named, the real rust-script dry runs it
+    fs::write(&file, src.replace("ROW-ID", "2026-11-23-uname")).unwrap();
+    let r = dry(&file);
     assert!(r.status.success(), "{}", text(&r));
     assert!(fs::read_to_string(&log).unwrap().contains("calls"));
 }
