@@ -1499,3 +1499,35 @@ fn a_token_that_is_not_a_github_token_is_refused_without_being_repeated() {
         "{s}"
     );
 }
+
+fn ok_stamp(l: &Lab) -> String {
+    fs::read_to_string(l.dir.join("home/.cache/lpoco-host/follow/ok")).unwrap_or_default()
+}
+
+#[test]
+fn a_follow_that_finishes_keeps_when_and_one_that_waits_does_not() {
+    let l = lab("stamp", "");
+    releases(&l, &["0.2.1", "0.2.0"]);
+    lease(&l, "xiaomi-surya", "keeper", "now");
+    follow(&l, &["now"]);
+    assert_eq!(ok_stamp(&l), "", "a wait is not a success");
+    let l = lab("stamp-current", "");
+    releases(&l, &["0.2.0"]);
+    install_old(&l);
+    follow(&l, &["now"]);
+    assert!(
+        ok_stamp(&l).trim().parse::<u64>().is_ok(),
+        "{}",
+        ok_stamp(&l)
+    );
+    let l = lab("stamp-landed", "");
+    releases(&l, &["0.2.1", "0.2.0"]);
+    install_old_host(&l, 0, NO_ROOT);
+    let o = follow(&l, &["now"]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert!(
+        ok_stamp(&l).trim().parse::<u64>().is_ok(),
+        "{}",
+        ok_stamp(&l)
+    );
+}

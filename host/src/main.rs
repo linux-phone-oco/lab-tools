@@ -1055,6 +1055,7 @@ fn check(st: &State) -> Result<i32, String> {
         }
     }
     bad += share_checks(st).0;
+    bad += print_follow_age(st) as i32;
     for m in &st.missed {
         bad += 1;
         println!("FAIL {m}");
@@ -1547,6 +1548,7 @@ fn follow(st: &State, now: bool) -> Result<i32, String> {
                 ""
             }
         );
+        keep_success(&st.home);
         return Ok(0);
     }
     if !now {
@@ -1663,6 +1665,7 @@ fn follow(st: &State, now: bool) -> Result<i32, String> {
     }
     clear_journal(&st.home);
     let _ = fs::remove_file(tried_file(&st.home));
+    keep_success(&st.home);
     restart_watchers(st);
     if released.is_some() {
         println!("followed: lpoco {newest} is installed, checked, and its pin landed");
@@ -1801,6 +1804,7 @@ fn follow_tools(st: &State, now: bool, began: u64, moved: Vec<ToolPlan>) -> Resu
         Err(why) => return stepped_back(why),
     }
     let _ = fs::remove_file(tried_file(&st.home));
+    keep_success(&st.home);
     println!("followed: {words} is installed and checked");
     Ok(0)
 }
@@ -1860,6 +1864,36 @@ fn host_program(st: &State) -> String {
             .map(|p| p.to_string_lossy().into_owned())
             .unwrap_or(installed)
     }
+}
+
+/// Where the second of follow's last success is kept (a run that installed and checked, or found nothing to do).
+fn ok_file(home: &str) -> String {
+    format!("{home}/.cache/lpoco-host/follow/ok")
+}
+
+fn keep_success(home: &str) {
+    let file = ok_file(home);
+    let _ = fs::create_dir_all(Path::new(&file).parent().unwrap_or(Path::new(".")));
+    let at = epoch_now().unwrap_or(0);
+    if let Err(e) = fs::write(&file, format!("{at}\n")) {
+        eprintln!("cannot keep follow's success ({file}): {e}; `check` will not know it ran");
+    }
+}
+
+/// `check`'s line on follow's last success, only for a lab that declares `[follow]`: (fails, whether a line was said).
+fn print_follow_age(st: &State) -> bool {
+    let Some(f) = &st.lab.follow else {
+        return false;
+    };
+    let at = fs::read_to_string(ok_file(&st.home))
+        .ok()
+        .and_then(|t| t.trim().parse::<u64>().ok());
+    let Some((fails, line)) = follow::judge_last_success(&f.every, at, epoch_now().unwrap_or(0))
+    else {
+        return false;
+    };
+    println!("{line}");
+    fails
 }
 
 /// Where a failed try is kept: `RELEASE START-SECOND`.

@@ -1518,3 +1518,39 @@ fn a_misspelled_table_in_a_device_manifest_is_refused_by_host_too() {
     .unwrap_err();
     assert!(e.contains("overlays"), "{e}");
 }
+
+fn follow_stamp(l: &Lab, age_seconds: u64) {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let dir = l.dir.join("home/.cache/lpoco-host/follow");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("ok"), format!("{}\n", now - age_seconds)).unwrap();
+}
+
+#[test]
+fn check_fails_when_follows_last_success_is_older_than_three_rounds_of_its_timer() {
+    let l = lab("follow-stale", "[follow]\nevery = \"15min\"\n");
+    follow_stamp(&l, 3 * 900 + 60);
+    let o = host_as(&l, "mll", &["check"]);
+    let s = out(&o);
+    assert!(s.contains("follow: FAIL, its last success was"), "{s}");
+    assert!(!o.status.success(), "{s}");
+    follow_stamp(&l, 2 * 900);
+    let s = out(&host_as(&l, "mll", &["check"]));
+    assert!(s.contains("follow: ok, its last success was"), "{s}");
+}
+
+#[test]
+fn check_says_follow_is_not_measured_before_its_first_success_and_says_nothing_without_a_follow() {
+    let l = lab("follow-unmeasured", "[follow]\nevery = \"15min\"\n");
+    let s = out(&host_as(&l, "mll", &["check"]));
+    assert!(
+        s.contains("follow: not measured, no follow has finished here yet"),
+        "{s}"
+    );
+    let l = lab("follow-none", "");
+    let s = out(&host_as(&l, "mll", &["check"]));
+    assert!(!s.contains("follow:"), "{s}");
+}
