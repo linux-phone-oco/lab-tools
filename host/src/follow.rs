@@ -203,6 +203,81 @@ pub fn judge_check(exit: Option<i32>, stdout: &str) -> (bool, String) {
     (ok, why)
 }
 
+/// The name the follow keeps each phone under while it replaces the programs.
+pub const LEASE_HOLDER: &str = "lpoco-host-follow";
+
+/// Every phone's keeper lease, held by the follow: a keeper that wants a phone meanwhile is told the phone is kept
+/// (devlab keeper take), so it never runs programs of two versions. Given back when this is dropped.
+pub struct Leases {
+    dirs: Vec<std::path::PathBuf>,
+}
+
+impl Drop for Leases {
+    fn drop(&mut self) {
+        for d in &self.dirs {
+            // only a lease that is still the follow's: a keeper never takes one that is live, but be exact
+            let ours =
+                std::fs::read_to_string(d.join("holder")).is_ok_and(|h| h.trim() == LEASE_HOLDER);
+            if ours {
+                let _ = std::fs::remove_dir_all(d);
+            }
+        }
+    }
+}
+
+/// Takes the lease of each phone, as devlab does (a directory made atomically, the holder's name in it); a lease
+/// that has lapsed, or was half made, is taken over. A lease that is live is not: the phone and who keeps it
+/// are returned, and what was taken is given back.
+pub fn take_leases(
+    home: &str,
+    devices: &[Device],
+    age_of: &dyn Fn(&str) -> Option<(String, Duration)>,
+) -> Result<Leases, (String, String)> {
+    let mut taken = Leases { dirs: Vec::new() };
+    let mut codenames: Vec<&str> = devices.iter().map(|d| d.codename.as_str()).collect();
+    codenames.sort();
+    codenames.dedup();
+    for code in codenames {
+        let holder_file = lease_holder_file(home, code);
+        let dir = std::path::Path::new(&holder_file)
+            .parent()
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_default();
+        let unusable = |why: &str| {
+            (
+                code.to_string(),
+                format!("the lease could not be taken ({why})"),
+            )
+        };
+        if let Some(parent) = dir.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| unusable(&e.to_string()))?;
+        }
+        let mut have = false;
+        for _ in 0..2 {
+            if std::fs::create_dir(&dir).is_ok() {
+                have = true;
+                break;
+            }
+            match age_of(&holder_file) {
+                Some((who, age)) if !who.is_empty() && who != LEASE_HOLDER && age < LEASE_LAPSE => {
+                    return Err((code.to_string(), who));
+                }
+                // lapsed, a half-made lease, or one a killed follow left: taken away, then taken
+                _ => {
+                    let _ = std::fs::remove_dir_all(&dir);
+                }
+            }
+        }
+        if !have {
+            return Err(unusable("it kept being made by another"));
+        }
+        taken.dirs.push(dir.clone());
+        std::fs::write(dir.join("holder"), format!("{LEASE_HOLDER}\n"))
+            .map_err(|e| unusable(&e.to_string()))?;
+    }
+    Ok(taken)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

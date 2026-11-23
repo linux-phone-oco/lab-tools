@@ -1397,10 +1397,15 @@ fn follow(st: &State, now: bool) -> Result<i32, String> {
         );
         return Ok(1);
     }
-    // the baseline took time: a keeper may have come
-    if waits_for_keeper(st, &newest) {
-        return Ok(0);
-    }
+    // the baseline took time: a keeper may have come. From here every phone is kept by the follow until it ends
+    // (a keeper that asks meanwhile is told the phone is kept), so no keeper meets programs of two versions.
+    let _leases = match follow::take_leases(&st.home, &st.found, &lease_age) {
+        Ok(l) => l,
+        Err((phone, who)) => {
+            println!("waits: {who} keeps {phone}; release {newest} is installed in a window with no keeper");
+            return Ok(0);
+        }
+    };
     let previous = save_programs(&st.home)?;
     // a drift install lands no pin, so its journal never names the pinned release (that means "the pin landed")
     let journal_target = if released.is_some() {
@@ -1454,12 +1459,6 @@ fn follow(st: &State, now: bool) -> Result<i32, String> {
                 .collect::<Vec<_>>()
                 .join("; ")
         ));
-    }
-    // a keeper that came during the install holds programs of two versions: step back, wait for the next window
-    if waits_for_keeper(st, &newest) {
-        restore_programs(&previous).map_err(|e| format!("a keeper came, and the programs could not be put back ({e}): the journal is kept for the next run"))?;
-        clear_journal(&st.home);
-        return Ok(0);
     }
     if released.is_some() {
         if let Err(why) = land_pin(st, pinned, &newest) {
