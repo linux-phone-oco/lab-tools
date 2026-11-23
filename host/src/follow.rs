@@ -628,3 +628,37 @@ mod lease_tests {
         assert!(matches!(got, NotTaken::Unusable { .. }), "{got:?}");
     }
 }
+
+/// `judge_check` for a host whose named tools are off their pins on purpose (a follow is about to move them): their
+/// `tool NAME: FAIL, ...` lines are not failures, and the exit 1 they cause is not either when nothing else failed.
+pub fn judge_check_without(exit: Option<i32>, stdout: &str, tools: &[String]) -> (bool, String) {
+    let ignored = |l: &str| {
+        tools
+            .iter()
+            .any(|t| l.starts_with(&format!("tool {t}: FAIL, ")))
+    };
+    let dropped = stdout.lines().any(ignored);
+    let kept: Vec<&str> = stdout.lines().filter(|l| !ignored(l)).collect();
+    let exit = if dropped && exit == Some(1) {
+        Some(0)
+    } else {
+        exit
+    };
+    judge_check(exit, &kept.join("\n"))
+}
+
+#[cfg(test)]
+mod without_tests {
+    use super::*;
+
+    #[test]
+    fn a_tool_off_its_pin_on_purpose_is_not_a_failure_but_another_one_is() {
+        let out = "tool rhizoid: FAIL, pinned v2 found v1\n";
+        let t = ["rhizoid".to_string()];
+        assert!(judge_check_without(Some(1), out, &t).0);
+        assert!(!judge_check(Some(1), out).0);
+        let two = format!("{out}tool lpoco: FAIL, pinned 2 found 1\n");
+        assert!(!judge_check_without(Some(1), &two, &t).0);
+        assert!(!judge_check_without(Some(2), out, &t).0);
+    }
+}
