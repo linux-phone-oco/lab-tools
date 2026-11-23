@@ -542,6 +542,11 @@ case \"$1 $2\" in \"kernel try\") echo 'trying once'; exit {code};; \"fastboot b
                 .exists()
                 .then_some(("LPOCO_ATTENDED_SYSFS_USB", dir.join("sysusb"))),
         )
+        .envs(
+            dir.join("bringup")
+                .exists()
+                .then_some(("LPOCO_ATTENDED_BRINGUP", dir.join("bringup"))),
+        )
         .env("LPOCO_ATTENDED_DEVLAB", &devlab)
         .current_dir(dir)
         .stdin(Stdio::null())
@@ -1978,4 +1983,106 @@ fn a_helper_that_cannot_be_pushed_is_never_run_and_the_step_says_what_the_push_s
         "{args}"
     );
     assert!(!Path::new(&to).exists(), "{t}");
+}
+
+/// The fastboot device whose z21 has a recipe and no file on disk (image-ensure-in-attended): `lpoco-bringup`
+/// is a stand-in that answers as the real one does (its outputs: bringup/tests/ensure.rs, `image ensure NAME
+/// [--dry-run]`: a dry run prints `NAME: ORIGIN (STORE PATH)`, a run prints the store path alone).
+fn fastboot_with_recipe(name: &str) -> PathBuf {
+    let dir = fastboot_with_image(name, "abc", ABC);
+    fs::remove_file(dir.join("build/images/images-z21/boot-z21.img")).unwrap();
+    let m = fs::read_to_string(dir.join("device.toml")).unwrap();
+    fs::write(
+        dir.join("device.toml"),
+        format!(
+            "{m}[images.z20]\npath = \"images-z20/boot-z20.img\"\nsha256 = \"{}\"\n\
+             [images.z21.recipe]\ncontrol = \"z20\"\ncmdline = \"x\"\n",
+            "1".repeat(64)
+        ),
+    )
+    .unwrap();
+    fs::create_dir_all(dir.join("store")).unwrap();
+    fs::write(dir.join("store/boot-z21.img"), "abc").unwrap();
+    let bringup = dir.join("bringup");
+    fs::write(
+        &bringup,
+        format!(
+            "#!/bin/sh\necho \"$*\" >> {d}/bringup-args\ncase \"$*\" in\n\
+             *--dry-run*) echo 'z21: from the cache ({d}/store/boot-z21.img)';;\n\
+             *) echo 'z21: from the cache' >&2; echo {d}/store/boot-z21.img;;\nesac\n",
+            d = dir.display()
+        ),
+    )
+    .unwrap();
+    Command::new("chmod")
+        .arg("+x")
+        .arg(&bringup)
+        .status()
+        .unwrap();
+    usb_tree(&dir, Some(("1d6b", "0104")));
+    dir
+}
+
+#[test]
+fn an_image_with_a_recipe_and_no_file_is_ensured_before_the_boot_and_a_dry_run_says_where_from() {
+    // the dry run names where ensure would get it, and nothing is booted
+    let dir = fastboot_with_recipe("ensure-dry");
+    let o = devlab_calls(&dir, "boot-once-dry", "z21", 0);
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(0), "{t}");
+    assert!(
+        t.contains("image z21 not on disk, by ensure: from the cache"),
+        "{t}"
+    );
+    assert!(!dir.join("args").exists(), "{t}");
+    let asked = fs::read_to_string(dir.join("bringup-args")).unwrap();
+    assert!(
+        asked.contains("image ensure z21 --dry-run --device"),
+        "{asked}"
+    );
+    // the run takes the store path ensure gave to fastboot, its sha256 checked as for any image
+    let dir = fastboot_with_recipe("ensure-run");
+    let o = devlab_calls(&dir, "boot-once", "z21", 0);
+    assert_eq!(o.status.code(), Some(0), "{}", said(&o));
+    let args = fs::read_to_string(dir.join("args")).unwrap();
+    let want = format!(
+        "--device {d}/device.toml fastboot boot now {d}/store/boot-z21.img",
+        d = dir.display()
+    );
+    assert!(args.lines().any(|l| l == want), "{args}");
+    // an image on disk is booted as it was: ensure is not asked
+    let dir = fastboot_with_recipe("ensure-not-needed");
+    let on_disk = dir.join("build/images/images-z21/boot-z21.img");
+    fs::create_dir_all(on_disk.parent().unwrap()).unwrap();
+    fs::write(&on_disk, "abc").unwrap();
+    let o = devlab_calls(&dir, "boot-once", "z21", 0);
+    assert_eq!(o.status.code(), Some(0), "{}", said(&o));
+    assert!(!dir.join("bringup-args").exists());
+}
+
+#[test]
+fn a_dry_run_ends_when_ensure_cannot_say_and_a_run_ends_when_ensure_gives_no_path() {
+    // ensure exits 1: the dry run is exit 2 naming the image and what ensure said, nothing is booted
+    let dir = fastboot_with_recipe("ensure-refused");
+    fs::write(dir.join("bringup"), "#!/bin/sh\necho 'z21: sha256 is not in the store, the cache or the seed, and the image has no recipe' >&2\nexit 1\n").unwrap();
+    let o = devlab_calls(&dir, "boot-once-dry", "z21", 0);
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(2), "{t}");
+    assert!(
+        t.contains("image z21 is not on disk and ensure cannot get it"),
+        "{t}"
+    );
+    // ensure exits 0 but prints no absolute path: nothing reaches fastboot
+    let dir = fastboot_with_recipe("ensure-nopath");
+    fs::write(
+        dir.join("bringup"),
+        "#!/bin/sh\necho 'a warning, not a path'\n",
+    )
+    .unwrap();
+    let o = devlab_calls(&dir, "boot-once", "z21", 0);
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(1), "{t}");
+    assert!(t.contains("gave no path to an image"), "{t}");
+    let args = fs::read_to_string(dir.join("args")).unwrap_or_default();
+    assert!(!args.contains("fastboot boot"), "{args}");
 }

@@ -244,9 +244,9 @@ pub fn boot_once(name: &str) -> Step {
     let name = name.to_string();
     declared_test_kernel(&name);
     let memory = memory_boot_of(&name);
-    let gates = memory
-        .as_ref()
-        .map_or(String::new(), |m| gates_said(&m.gates));
+    let gates = memory.as_ref().map_or(String::new(), |m| {
+        format!("{}{}", gates_said(&m.gates), ensure_said(m))
+    });
     Step::new(Kind::Do, &format!("boot {name} once{gates}"), move || {
         if !is_kernel_name(&name) {
             return Err(format!(
@@ -271,6 +271,8 @@ struct FromMemory {
     gates: Vec<String>,
     folder: std::path::PathBuf,
     image: String,
+    /// the image has a recipe and is not on disk: ensure makes it available (the name of its `[images.NAME]`)
+    ensure: Option<String>,
     sha256: Option<String>,
     usb_id: String,
     serial: String,
@@ -314,6 +316,7 @@ fn memory_boot_of(name: &str) -> Option<FromMemory> {
             .as_ref()
             .map_or(Vec::new(), |k| k.pre_boot.clone()),
         folder: folder.to_path_buf(),
+        ensure: ensure_wanted(name, &folder.join(&dir).join(&image)),
         image: folder.join(&dir).join(image).display().to_string(),
         sha256,
         usb_id,
@@ -391,6 +394,43 @@ fn into_fastboot(tries: u32, helper: Option<&ToBootloader>) -> Result<(), String
     Err(format!("the phone did not reach fastboot after `{}` over its declared transport{transport} - needs hands (volume down + power)", helper.run))
 }
 
+/// The image `name` needs ensure when its `[images.NAME]` declares a recipe and its file is not on disk.
+fn ensure_wanted(name: &str, file: &std::path::Path) -> Option<String> {
+    let has_recipe = crate::config()
+        .manifest
+        .images
+        .as_ref()
+        .and_then(|i| i.named.get(name))
+        .is_some_and(|i| i.recipe.is_some());
+    (has_recipe && !file.exists()).then(|| name.to_string())
+}
+
+/// What the step's name says of the image in a dry run: not on disk, and where ensure would get it (asked of
+/// `lpoco-bringup image ensure NAME --dry-run`, which changes nothing). Where ensure cannot get it the dry run ends
+/// (exit 2) naming why, as for a key the device does not declare. A real run asks nothing here.
+fn ensure_said(m: &FromMemory) -> String {
+    let Some(name) = &m.ensure else {
+        return String::new();
+    };
+    if !crate::config().dry {
+        return String::new();
+    }
+    match crate::ensure_image(name, true) {
+        Ok(plan) => {
+            let from = plan.strip_prefix(&format!("{name}: ")).unwrap_or(&plan);
+            format!(" (image {name} not on disk, by ensure: {from})")
+        }
+        Err(e) => {
+            eprintln!(
+                "{}: image {name} is not on disk and ensure cannot get it: {}",
+                crate::config().name,
+                e.replace('\n', " | ")
+            );
+            crate::leave_with(2)
+        }
+    }
+}
+
 /// What the step's name says of its gates in a dry run: none, nothing; else the command lines in order.
 fn gates_said(gates: &[String]) -> String {
     if gates.is_empty() {
@@ -427,11 +467,16 @@ fn run_gates(gates: &[String], folder: &std::path::Path) -> Result<(), String> {
 /// Boot the image from the phone's memory (devlab fastboot boot now: nothing is written), then wait for its gadget.
 fn boot_from_memory(m: &FromMemory) -> Result<String, String> {
     run_gates(&m.gates, &m.folder)?;
+    // an image a recipe makes comes from ensure (the store, the cache or a build), its path the one booted
+    let image = match &m.ensure {
+        Some(name) => crate::ensure_image(name, false)?,
+        None => m.image.clone(),
+    };
     if let Some(want) = &m.sha256 {
-        check_checksum(&m.image, want)?;
+        check_checksum(&image, want)?;
     }
     into_fastboot(m.tries, m.to_bootloader.as_ref())?;
-    let out = crate::devlab(&["fastboot", "boot", "now", &m.image])?;
+    let out = crate::devlab(&["fastboot", "boot", "now", &image])?;
     usb_on_bus(&m.usb_id, Some(&m.serial), m.tries, 2).map_err(|e| format!("{out}{e}"))?;
     Ok(out)
 }

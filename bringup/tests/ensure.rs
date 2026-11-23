@@ -286,3 +286,105 @@ fn avbtool_is_1_4() -> bool {
         .output()
         .is_ok_and(|o| text(&o.stdout).trim().ends_with(" 1.4.0"))
 }
+
+/// image-ensure-in-attended: `image ensure NAME --dry-run` says where the image would come from - the store, the
+/// cache, the seed or its recipe's build - and changes nothing (a procedure's dry run asks it before a boot).
+#[test]
+fn a_dry_run_says_where_the_image_would_come_from_and_puts_nothing_in_the_store() {
+    if !have("nix-store", "--version") {
+        eprintln!("not measured: no nix");
+        return;
+    }
+    let dir = tmp("plan");
+    let (seed, cache) = (dir.join("seed"), dir.join("cache"));
+    fs::create_dir_all(&seed).unwrap();
+    // a file of its own bytes: this run's, so no earlier run's store path is taken for it
+    let body = format!(
+        "plan {} {:?}",
+        std::process::id(),
+        std::time::SystemTime::now()
+    );
+    fs::write(seed.join("plain.img"), &body).unwrap();
+    let sha = sha256(&seed.join("plain.img"));
+    let built = "7".repeat(64);
+    let t = format!(
+        "{}\n[images.plain]\npath = \"plain.img\"\nsha256 = \"{sha}\"\n\n\
+         [images.built]\npath = \"built.img\"\nsha256 = \"{built}\"\n\n\
+         [images.built.recipe]\ncontrol = \"plain\"\ncmdline = \"x\"\n",
+        fs::read_to_string(fixture("device.toml")).unwrap()
+    );
+    let device = dir.join("device.toml");
+    fs::write(&device, t).unwrap();
+    let path = fixed_path(&sha, "plain.img");
+    forget(&path);
+    let plan = |name: &str, extra: &[&str]| {
+        let mut a = vec!["image", "ensure", name, "--dry-run", "--device", s(&device)];
+        a.extend_from_slice(extra);
+        bringup(&a)
+    };
+
+    // the seed holds it: said, and not taken into the store
+    let o = plan("plain", &["--seed", s(&seed)]);
+    assert!(o.status.success(), "{}", text(&o.stderr));
+    assert!(
+        text(&o.stdout).contains("from the seed"),
+        "{}",
+        text(&o.stdout)
+    );
+    assert!(!valid(&path), "a dry run put the image in the store");
+
+    // really ensured once: in the store and the cache; then gone from the store
+    let o = ensure(&device, &cache, &seed, "plain");
+    assert!(o.status.success(), "{}", text(&o.stderr));
+    forget(&path);
+
+    // the cache alone holds it: said, and not copied back
+    let o = plan("plain", &["--cache", s(&cache)]);
+    assert!(o.status.success(), "{}", text(&o.stderr));
+    assert!(
+        text(&o.stdout).contains("from the cache"),
+        "{}",
+        text(&o.stdout)
+    );
+    assert!(!valid(&path), "a dry run copied from the cache");
+
+    // in the store: said
+    let o = ensure(&device, &cache, &seed, "plain");
+    assert!(o.status.success(), "{}", text(&o.stderr));
+    assert!(text(&plan("plain", &[]).stdout).contains("in the store"));
+
+    // nowhere, with a recipe: it would be built; without one: refused
+    let o = plan("built", &[]);
+    assert!(o.status.success(), "{}", text(&o.stderr));
+    assert!(
+        text(&o.stdout).contains("built from its recipe"),
+        "{}",
+        text(&o.stdout)
+    );
+    forget(&path);
+    let o = plan("plain", &[]);
+    assert!(
+        !o.status.success(),
+        "an image nothing holds and no recipe makes passed"
+    );
+    assert!(text(&o.stderr).contains("no recipe"), "{}", text(&o.stderr));
+}
+
+/// A flag called dry-run never writes: the verbs that write refuse it.
+#[test]
+fn dry_run_is_refused_by_every_verb_but_ensure() {
+    let o = bringup(&[
+        "image",
+        "swap",
+        "x.img",
+        "--out",
+        "/nonexistent/o.img",
+        "--dry-run",
+    ]);
+    assert_eq!(o.status.code(), Some(2), "{}", text(&o.stderr));
+    assert!(
+        text(&o.stderr).contains("--dry-run is for image ensure"),
+        "{}",
+        text(&o.stderr)
+    );
+}

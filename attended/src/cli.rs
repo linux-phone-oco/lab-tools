@@ -66,6 +66,14 @@ contract! {
         ..Input::EMPTY
     };
 
+    BRINGUP: String = Input {
+        key: "bringup",
+        ty: Type::String,
+        env: Some(Env::new("LPOCO_ATTENDED_BRINGUP")),
+        summary: "The lpoco-bringup program that ensures an image a recipe makes (lpoco-bringup when none is given); a test points it at a stand-in.",
+        ..Input::EMPTY
+    };
+
     CALL_LIMIT: String = Input {
         key: "call_limit",
         ty: Type::String,
