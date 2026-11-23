@@ -228,6 +228,31 @@ pub fn unit_quoted(s: &str) -> String {
     out
 }
 
+/// How many rounds of its timer a follow may miss before `check` calls it stale.
+pub const STALE_ROUNDS: u64 = 3;
+
+/// What `check` says of follow's last success (the epoch second it kept, if any) against `[follow] every`:
+/// (fails, the line). A follow that has not finished once here is not known yet, never failing (practice 12).
+pub fn judge_last_success(every: &str, ok: Option<u64>, now: u64) -> Option<(bool, String)> {
+    let limit = every_seconds(every)?.checked_mul(STALE_ROUNDS)?;
+    let Some(at) = ok else {
+        return Some((
+            false,
+            "follow: not measured, no follow has finished here yet".into(),
+        ));
+    };
+    let age = now.saturating_sub(at);
+    let ago = format!("{} min ago", age / 60);
+    Some(if age > limit {
+        (
+            true,
+            format!("follow: FAIL, its last success was {ago}, more than {STALE_ROUNDS} rounds of every = {every}"),
+        )
+    } else {
+        (false, format!("follow: ok, its last success was {ago}"))
+    })
+}
+
 /// A line of the check that says it failed: `LABEL: FAIL, why` or `FAIL why`, the two shapes it prints (an ok line
 /// that has FAIL inside a path or a serial is not one).
 fn is_fail_line(l: &str) -> bool {
@@ -631,11 +656,13 @@ mod lease_tests {
 
 /// `judge_check` for a host whose named tools are off their pins on purpose (a follow is about to move them): their
 /// `tool NAME: FAIL, ...` lines are not failures, and the exit 1 they cause is not either when nothing else failed.
+/// Nor is the `follow: FAIL, ` line (follow's own staleness): only a follow that runs can clear it.
 pub fn judge_check_without(exit: Option<i32>, stdout: &str, tools: &[String]) -> (bool, String) {
     let ignored = |l: &str| {
-        tools
-            .iter()
-            .any(|t| l.starts_with(&format!("tool {t}: FAIL, ")))
+        l.starts_with("follow: FAIL, ")
+            || tools
+                .iter()
+                .any(|t| l.starts_with(&format!("tool {t}: FAIL, ")))
     };
     let dropped = stdout.lines().any(ignored);
     let kept: Vec<&str> = stdout.lines().filter(|l| !ignored(l)).collect();
@@ -660,5 +687,23 @@ mod without_tests {
         let two = format!("{out}tool lpoco: FAIL, pinned 2 found 1\n");
         assert!(!judge_check_without(Some(1), &two, &t).0);
         assert!(!judge_check_without(Some(2), out, &t).0);
+    }
+}
+
+#[cfg(test)]
+mod last_success {
+    use super::*;
+
+    #[test]
+    fn a_success_within_three_rounds_is_ok_and_older_fails_and_none_is_not_known_yet() {
+        assert_eq!(
+            judge_last_success("15min", Some(1000), 1000 + 2700),
+            Some((false, "follow: ok, its last success was 45 min ago".into()))
+        );
+        let (fails, line) = judge_last_success("15min", Some(1000), 1000 + 2701).unwrap();
+        assert!(fails && line.starts_with("follow: FAIL, its last success was 45 min ago"));
+        let (fails, line) = judge_last_success("15min", None, 5).unwrap();
+        assert!(!fails && line.contains("not measured"));
+        assert_eq!(judge_last_success("soon", Some(1), 2), None);
     }
 }

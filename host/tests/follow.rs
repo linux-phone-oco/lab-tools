@@ -1499,3 +1499,60 @@ fn a_token_that_is_not_a_github_token_is_refused_without_being_repeated() {
         "{s}"
     );
 }
+
+fn ok_stamp(l: &Lab) -> String {
+    fs::read_to_string(l.dir.join("home/.cache/lpoco-host/follow/ok")).unwrap_or_default()
+}
+
+#[test]
+fn a_follow_that_finishes_keeps_when_and_one_that_waits_does_not() {
+    let l = lab("stamp", "");
+    releases(&l, &["0.2.1", "0.2.0"]);
+    lease(&l, "xiaomi-surya", "keeper", "now");
+    follow(&l, &["now"]);
+    assert_eq!(ok_stamp(&l), "", "a wait is not a success");
+    let l = lab("stamp-current", "");
+    releases(&l, &["0.2.0"]);
+    install_old(&l);
+    follow(&l, &["now"]);
+    assert!(
+        ok_stamp(&l).trim().parse::<u64>().is_ok(),
+        "{}",
+        ok_stamp(&l)
+    );
+    let l = lab("stamp-landed", "");
+    releases(&l, &["0.2.1", "0.2.0"]);
+    install_old_host(&l, 0, NO_ROOT);
+    let o = follow(&l, &["now"]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert!(
+        ok_stamp(&l).trim().parse::<u64>().is_ok(),
+        "{}",
+        ok_stamp(&l)
+    );
+}
+
+#[test]
+fn a_stale_follow_line_in_the_check_does_not_stop_the_follow_that_would_clear_it() {
+    let l = lab("stale-line", "[follow]\nevery = \"15min\"\n");
+    publish_release(&l, "0.2.1", 0, NO_ROOT);
+    releases(&l, &["0.2.1", "0.2.0"]);
+    fs::write(
+        l.dir.join("check.out"),
+        "follow: FAIL, its last success was 999 min ago, more than 3 rounds of every = 15min\n",
+    )
+    .unwrap();
+    install_old_host(&l, 1, NO_ROOT);
+    let o = follow(&l, &["now"]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert_eq!(landed_pin(&l).0, "lpoco = \"0.2.1\"", "{}", text(&o));
+}
+
+#[test]
+fn a_dry_run_keeps_no_success() {
+    let l = lab("stamp-dry", "");
+    releases(&l, &["0.2.0"]);
+    install_old(&l);
+    follow(&l, &[]);
+    assert_eq!(ok_stamp(&l), "");
+}
