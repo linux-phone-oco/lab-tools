@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.48.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-lab-v0.47.1...lpoco-lab-v0.48.0) - 2026-11-23
+
+### Added
+
+- *(host)* a release tool may ship a tar.gz and a checksums file (nfpm) ([#382](https://github.com/linux-phone-oco/lab-tools/pull/382))
+
 ## [0.47.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-lab-v0.47.0...lpoco-lab-v0.47.1) - 2026-11-23
 
 ### Added
