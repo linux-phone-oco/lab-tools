@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.47.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-manifest-v0.46.0...lpoco-manifest-v0.47.0) - 2026-11-23
+
+### Added
+
+- *(bringup)* image ensure builds a kernel from an int/ tag in the sandbox ([#373](https://github.com/linux-phone-oco/lab-tools/pull/373))
+
 ## [0.46.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-manifest-v0.45.0...lpoco-manifest-v0.46.0) - 2026-11-23
 
 ### Added
