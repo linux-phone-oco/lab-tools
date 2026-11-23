@@ -1358,7 +1358,7 @@ fn without_a_follow_table_there_is_no_every_and_so_no_rate_limit() {
 }
 
 #[test]
-fn a_release_without_its_binaries_is_built_with_cargo_and_still_checked_and_pinned() {
+fn a_release_without_its_binaries_is_built_with_cargo() {
     let l = lab("noasset", "");
     releases(&l, &["0.2.1", "0.2.0"]);
     install_old(&l);
