@@ -7,6 +7,7 @@ mod cli;
 use argenv_resolve::{InputResolveExt, OnProblems};
 use cli::{Command, Contract, Verb};
 use lpoco_bringup::boot::Boot;
+use lpoco_bringup::ensure::{self, Sources};
 use lpoco_bringup::image::{self, Verdict};
 use lpoco_bringup::initramfs;
 use lpoco_bringup::swap::{self, Parts};
@@ -22,7 +23,7 @@ fn main() {
             "{}",
             cli::usage(
                 "lpoco-bringup",
-                "Boot images and bring-up steps. Commands: image info|unpack|pack|check|swap|bisect; dt-check binding|dtbs."
+                "Boot images and bring-up steps. Commands: image info|unpack|pack|check|swap|bisect|ensure; dt-check binding|dtbs."
             )
         );
         return;
@@ -52,7 +53,7 @@ fn read(path: &str) -> Result<Vec<u8>, String> {
 fn run(r: &argenv_resolve::Resolution) -> Result<i32, String> {
     let Some(verb) = Contract::VERB.get_from(r) else {
         return Err(
-            "usage: lpoco bringup image info|unpack|pack|check|swap|bisect ... (lpoco-bringup --version)"
+            "usage: lpoco bringup image info|unpack|pack|check|swap|bisect|ensure ... (lpoco-bringup --version)"
                 .into(),
         );
     };
@@ -83,7 +84,7 @@ fn run(r: &argenv_resolve::Resolution) -> Result<i32, String> {
                 "build, init and files are for the initramfs: lpoco-bringup initramfs build --spec FILE --out FILE | initramfs init [--device FILE] | initramfs files --out DIR"
                     .into()
             }
-            _ => "image verbs go with image: lpoco-bringup image info|unpack|pack|check|swap|bisect ..."
+            _ => "image verbs go with image: lpoco-bringup image info|unpack|pack|check|swap|bisect|ensure ..."
                 .into(),
         });
     }
@@ -160,6 +161,10 @@ fn run(r: &argenv_resolve::Resolution) -> Result<i32, String> {
                 println!("{line}");
             }
             Ok(0)
+        }
+        Verb::Ensure => {
+            let name = need(Contract::IMAGE.get_from(r), "the image's name (NAME)")?;
+            image_ensure(&name, &device, r)
         }
         Verb::Bisect => {
             let series = need(Contract::IMAGE.get_from(r), "the series file (SERIES)")?;
@@ -423,4 +428,24 @@ fn reference(verb: Verb, r: &argenv_resolve::Resolution) -> Result<i32, String> 
             Ok(0)
         }
     }
+}
+
+/// `image ensure NAME`: the image's store path, after a line for each step that got it there.
+fn image_ensure(name: &str, device: &str, r: &argenv_resolve::Resolution) -> Result<i32, String> {
+    let text = fs::read_to_string(device).map_err(|e| format!("cannot read {device}: {e}"))?;
+    let manifest = lpoco_manifest::Manifest::parse(&text).map_err(|e| format!("{device}: {e}"))?;
+    let (cache, seed, source) = (
+        Contract::CACHE.get_from(r),
+        Contract::SEED.get_from(r),
+        Contract::SOURCE.get_from(r),
+    );
+    let sources = Sources {
+        cache: cache.as_deref().map(Path::new),
+        seed: seed.as_deref().map(Path::new),
+        source: source.as_deref().map(Path::new),
+        version: VERSION,
+    };
+    let path = ensure::ensure(&manifest, name, &sources, &mut |line| eprintln!("{line}"))?;
+    println!("{}", path.display());
+    Ok(0)
 }

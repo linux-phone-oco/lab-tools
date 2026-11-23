@@ -276,6 +276,30 @@ device's `device.toml` (postmarketOS deviceinfo's words: `kernel_offset`, `ramdi
 is proven against mkbootimg by test (`bringup/tests/pack_v0.rs`; where android-tools is absent the test says
 "not measured: no mkbootimg"). Swap, initramfs and the rest are their own items.
 
+### lpoco bringup image ensure: an image by its sha256, from a store or a recipe
+
+    lpoco bringup image ensure NAME [--device device.toml] [--cache DIR] [--seed DIR] [--source DIR]
+
+Prints the Nix store path of `[images.NAME]` (its `sha256` and the file name of its `path` give it a fixed-output path:
+`nix-store --print-fixed-path`). In the store: done. Else `nix copy --from` the file:// cache `--cache` (or
+`LPOCO_IMAGE_CACHE`). Else a file under `--seed` (`LPOCO_IMAGE_SEED`) whose sha256 it is is taken into the store - how a
+hand-built image enters once. Else it is built from `[images.NAME.recipe]` in Nix's sandbox as a fixed-output derivation
+whose `outputHash` is the declared sha256, so Nix refuses a build that is not that image, and the result is copied to the
+cache. A recipe is another image of the manifest with parts swapped in, each part named by its file's sha256:
+
+    [images.z21]
+    path = "images-z21/boot-z21.img"
+    sha256 = "bdc0a891..."
+    [images.z21.recipe]
+    control = "z20"            # [images.z20] declares its sha256
+    dtb = "f9f2ca5d..."        # also kernel, ramdisk (sha256 of the file), cmdline (text)
+
+The derivation (`bringup/src/ensure.nix`) builds `lpoco-bringup` from `--source` (`LPOCO_SOURCE`; this version's release tag
+from GitHub when none) with nixpkgs pinned in `nixpkgs.nix` (the pin `shell.nix` uses too) and runs `image swap`. The AVB footer
+is still avbtool's, pinned to the AOSP revision the host's avbtool 1.4.0 is (nixpkgs' android-tools writes 1.3.0, whose
+footer differs by a byte); `image-avb-footer-in-rust` removes it. Proof: `bringup/tests/ensure.rs` (where nix or avbtool is
+absent it says "not measured"); measured on the lab 2026-11-23 for walleye's z21 from z20 and its dtb.
+
 ### lpoco bringup kernel: a phone's test kernel from its named list
 
     lpoco bringup kernel assemble LIST --lists kernel/topics.toml --repo CLONE --records DOCS [--reproduces COMMIT]

@@ -23,6 +23,29 @@ pub struct Image {
     pub sha256: Option<String>,
     /// the int/ tag of the kernel the image was built from (made by `lpoco-bringup kernel assemble`)
     pub kernel_tag: Option<String>,
+    /// how the image is made when no store or cache holds it (`lpoco-bringup image ensure`)
+    pub recipe: Option<Recipe>,
+}
+
+/// `[images.NAME.recipe]`: the image is another image of this manifest (`control`) with parts swapped in, each part
+/// named by the sha256 of its file, never by a path on one host (decision 2026-11-23-image-recipes-on-nix-fixed-output-paths).
+#[derive(Debug, Clone, Deserialize, PartialEq, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Recipe {
+    /// the name of the `[images.NAME]` this one is made from; it declares a sha256
+    pub control: String,
+    /// lowercase hex sha256 of the kernel file
+    pub kernel: Option<String>,
+    /// lowercase hex sha256 of the device tree file appended to the kernel
+    pub dtb: Option<String>,
+    /// lowercase hex sha256 of the ramdisk file
+    pub ramdisk: Option<String>,
+    /// the kernel command line to put in the header
+    pub cmdline: Option<String>,
+}
+
+fn is_sha256(s: &str) -> bool {
+    s.len() == 64 && s.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f'))
 }
 
 /// One value of `[procedures.NAME]`: a number or a word, nothing nested.
@@ -55,10 +78,61 @@ impl Images {
                 }
             }
             if let Some(s) = &i.sha256 {
-                let ok = s.len() == 64 && s.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f'));
-                if !ok {
+                if !is_sha256(s) {
                     return Err(format!("{at} sha256 {s:?} is not 64 lowercase hex digits"));
                 }
+            }
+            if let Some(r) = &i.recipe {
+                if i.sha256.is_none() {
+                    return Err(format!(
+                        "{at}: a recipe needs the sha256 the image must have"
+                    ));
+                }
+                match self.named.get(&r.control) {
+                    Some(c) if c.sha256.is_some() && r.control != *name => {}
+                    _ => {
+                        return Err(format!(
+                            "{at}.recipe control {:?} is not another [images.NAME] with a sha256",
+                            r.control
+                        ))
+                    }
+                }
+                for (part, v) in [
+                    ("kernel", &r.kernel),
+                    ("dtb", &r.dtb),
+                    ("ramdisk", &r.ramdisk),
+                ] {
+                    if let Some(v) = v.as_ref().filter(|v| !is_sha256(v)) {
+                        return Err(format!(
+                            "{at}.recipe {part} {v:?} is not the 64 lowercase hex digits of a file's sha256"
+                        ));
+                    }
+                }
+                if let Some(c) = r
+                    .cmdline
+                    .as_ref()
+                    .filter(|c| c.contains(['\0', '\n']) || c.len() > 1535)
+                {
+                    return Err(format!(
+                        "{at}.recipe cmdline {c:?} holds a NUL or a newline, or is over the 1535 bytes the header holds"
+                    ));
+                }
+            }
+        }
+        for name in self.named.keys() {
+            // the controls from this image on, each an image of this manifest: none may be met twice
+            let mut chain = vec![name.as_str()];
+            let mut at = name.as_str();
+            while let Some(r) = self.named.get(at).and_then(|i| i.recipe.as_ref()) {
+                at = r.control.as_str();
+                if chain.contains(&at) {
+                    chain.push(at);
+                    return Err(format!(
+                        "images.{name}.recipe: controls form a cycle ({})",
+                        chain.join(" -> ")
+                    ));
+                }
+                chain.push(at);
             }
         }
         Ok(())

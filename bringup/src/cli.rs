@@ -11,6 +11,8 @@
 //!   lpoco-bringup image swap CONTROL --out IMG [--ramdisk R] [--kernel K] [--dtb DTB] [--cmdline TEXT]
 //!                                                the control with those parts replaced, its AVB hash footer rebuilt (avbtool),
 //!                                                and what differs said
+//!   lpoco-bringup image ensure NAME [--device device.toml] [--cache DIR] [--seed DIR] [--source DIR]
+//!                                                the image [images.NAME] by its sha256: its Nix store path, from the store, else the file:// cache, else the seed, else built from its [images.NAME.recipe] in Nix's sandbox (the build is held to the declared sha256 by Nix)
 //!   lpoco-bringup image bisect SERIES --out DIR
 //!                                                the images a series file declares (control = "...", [[image]] name, kernel, dtb, ramdisk,
 //!                                                cmdline, lz4, footer), each the control with exactly those parts swapped, counted
@@ -70,6 +72,7 @@ pub enum Verb {
     Check,
     Swap,
     Bisect,
+    Ensure,
     Build,
     Init,
     Files,
@@ -83,8 +86,8 @@ pub enum Verb {
 
 impl Verb {
     pub const TOKENS: &'static [&'static str] = &[
-        "info", "unpack", "pack", "check", "swap", "bisect", "build", "init", "files", "capture",
-        "diff", "binding", "dtbs", "assemble", "publish",
+        "info", "unpack", "pack", "check", "swap", "bisect", "ensure", "build", "init", "files",
+        "capture", "diff", "binding", "dtbs", "assemble", "publish",
     ];
 }
 
@@ -97,6 +100,7 @@ impl FromRaw for Verb {
             "check" => Verb::Check,
             "swap" => Verb::Swap,
             "bisect" => Verb::Bisect,
+            "ensure" => Verb::Ensure,
             "build" => Verb::Build,
             "init" => Verb::Init,
             "files" => Verb::Files,
@@ -127,7 +131,7 @@ contract! {
         allowed: Verb::TOKENS,
         subcommands: &[Command::Image, Command::Initramfs, Command::Reference, Command::DtCheck, Command::Kernel],
         arg: Some(Arg::positional(0)),
-        summary: "What to do: image info, unpack, pack, check, swap or bisect; initramfs build, init or files; reference capture or diff; dt-check binding or dtbs; kernel assemble or publish.",
+        summary: "What to do: image info, unpack, pack, check, swap, bisect or ensure; initramfs build, init or files; reference capture or diff; dt-check binding or dtbs; kernel assemble or publish.",
         ..Input::EMPTY
     };
 
@@ -136,7 +140,7 @@ contract! {
         ty: Type::String,
         subcommands: &[Command::Image],
         arg: Some(Arg { value_name: "IMG", ..Arg::positional(1) }),
-        summary: "The boot image to read (info, unpack, check, swap: the control; bisect: the series file).",
+        summary: "The boot image to read (info, unpack, check, swap: the control; bisect: the series file; ensure: the name of an [images.NAME]).",
         ..Input::EMPTY
     };
 
@@ -400,6 +404,36 @@ contract! {
         arg: Some(Arg { value_name: "PROGRAM", ..Arg::long("tad") }),
         env: Some(Env::new("LPOCO_TAD")),
         summary: "kernel assemble: the tad program (tad on PATH when none is given).",
+        ..Input::EMPTY
+    };
+
+    CACHE: String, Command = Input {
+        key: "cache",
+        ty: Type::String,
+        subcommands: &[Command::Image],
+        arg: Some(Arg { value_name: "DIR", ..Arg::long("cache") }),
+        env: Some(Env::new("LPOCO_IMAGE_CACHE")),
+        summary: "ensure: the folder that is the lab's file:// binary cache of images (what is built or seeded is copied to it; what the store lacks is taken from it).",
+        ..Input::EMPTY
+    };
+
+    SEED: String, Command = Input {
+        key: "seed",
+        ty: Type::String,
+        subcommands: &[Command::Image],
+        arg: Some(Arg { value_name: "DIR", ..Arg::long("seed") }),
+        env: Some(Env::new("LPOCO_IMAGE_SEED")),
+        summary: "ensure: a folder of files; one whose sha256 is a wanted one (an image, or a part of a recipe) is taken into the store - how a hand-built image enters once.",
+        ..Input::EMPTY
+    };
+
+    SOURCE: String, Command = Input {
+        key: "source",
+        ty: Type::String,
+        subcommands: &[Command::Image],
+        arg: Some(Arg { value_name: "DIR", ..Arg::long("source") }),
+        env: Some(Env::new("LPOCO_SOURCE")),
+        summary: "ensure: the lab-tools source the sandbox builds lpoco-bringup from (this version's release tag from GitHub when none is given).",
         ..Input::EMPTY
     };
 

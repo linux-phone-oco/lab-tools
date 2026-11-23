@@ -1343,11 +1343,64 @@
             "string",
             "null"
           ]
+        },
+        "recipe": {
+          "description": "how the image is made when no store or cache holds it (`lpoco-bringup image ensure`)",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Recipe"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false,
       "required": [
         "path"
+      ]
+    },
+    "Recipe": {
+      "description": "`[images.NAME.recipe]`: the image is another image of this manifest (`control`) with parts swapped in, each part\nnamed by the sha256 of its file, never by a path on one host (decision 2026-11-23-image-recipes-on-nix-fixed-output-paths).",
+      "type": "object",
+      "properties": {
+        "control": {
+          "description": "the name of the `[images.NAME]` this one is made from; it declares a sha256",
+          "type": "string"
+        },
+        "kernel": {
+          "description": "lowercase hex sha256 of the kernel file",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dtb": {
+          "description": "lowercase hex sha256 of the device tree file appended to the kernel",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ramdisk": {
+          "description": "lowercase hex sha256 of the ramdisk file",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cmdline": {
+          "description": "the kernel command line to put in the header",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "control"
       ]
     },
     "ProcValue": {
