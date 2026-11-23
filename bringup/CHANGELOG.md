@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.48.4](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.48.3...lpoco-bringup-v0.48.4) - 2026-11-23
+
+### Fixed
+
+- *(host)* follow retries anonymous when the gh token gets a 401 ([#390](https://github.com/linux-phone-oco/lab-tools/pull/390))
+
 ## [0.48.3](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.48.2...lpoco-bringup-v0.48.3) - 2026-11-23
 
 ### Added
