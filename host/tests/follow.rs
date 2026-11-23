@@ -1556,3 +1556,53 @@ fn a_dry_run_keeps_no_success() {
     follow(&l, &[]);
     assert_eq!(ok_stamp(&l), "");
 }
+
+#[test]
+fn with_no_token_given_follow_asks_gh_for_the_one_it_is_logged_in_with() {
+    // the stub gh prints a token for `gh auth token`; the stub curl records the config it is given on stdin
+    let l = lab("ghauth", "");
+    releases(&l, &["0.2.0"]);
+    install_old(&l);
+    exe(
+        &l.dir.join("stubs/gh"),
+        "[ \"$1 $2\" = \"auth token\" ] && echo ghp_FROMGH",
+    );
+    exe(
+        &l.dir.join("stubs/curl"),
+        &format!(
+            "echo \"$0 $@\" >> {calls}\ncat >> {cfg}\nwhile [ $# -gt 0 ]; do case \"$1\" in --output) out=\"$2\"; shift;; esac; shift; done\nprintf 200\ncp {rel} \"$out\"",
+            calls = l.dir.join("calls").display(),
+            cfg = l.dir.join("curl-config").display(),
+            rel = l.dir.join("releases.json").display()
+        ),
+    );
+    let o = Command::new(env!("CARGO_BIN_EXE_lpoco-host"))
+        .args(["follow"])
+        .env_clear()
+        .env("HOME", l.dir.join("home"))
+        .env(
+            "PATH",
+            format!(
+                "{}:{}",
+                l.dir.join("stubs").display(),
+                l.dir.join("home/.local/bin").display()
+            ),
+        )
+        .env(
+            "LPOCO_LAB",
+            l.dir.join("home/Projects/lab-machine/lab.toml"),
+        )
+        .env(
+            "LPOCO_RELEASES",
+            "https://api.github.com/repos/linux-phone-oco/lab-tools/releases?per_page=100",
+        )
+        .output()
+        .unwrap();
+    let cfg = fs::read_to_string(l.dir.join("curl-config")).unwrap_or_default();
+    assert!(
+        cfg.contains("Authorization: Bearer ghp_FROMGH"),
+        "{}\n{cfg}",
+        text(&o)
+    );
+    assert!(!calls(&l).contains("ghp_FROMGH"), "{}", calls(&l));
+}
