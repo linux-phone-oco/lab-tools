@@ -344,7 +344,7 @@ without it no watcher is enabled for it, and an instance already enabled for a d
     lpoco host follow [now]  a family release newer than lab.toml's pin: with no keeper lease held on any phone, install it (release assets, hash checked), run its own
                              `check` and `plan` against lab.toml with the pin moved, and land the pin (a clone, a branch, `land`, signed lab-host-follow);
                              a failing check or a plan that lists a root command puts the previous programs back and lands nothing; without `now` it says what it would do
-                             with the family current, an installed `[tools.NAME]` (rhizoid) whose installed copy is not at its pin is installed the same way under the leases
+                             with the family current, an installed `[tools.NAME]` (rhizoid) whose installed copy is not at its pin is installed at once, with no lease taken or waited for (it never drives a phone),
                              and checked (no pin landed: the pin is what moved); a failing check puts it and its stamp back; a tool never installed is prepare's
 
 `[follow]` may also say `window = "02:00-05:00"` (local time, may cross midnight; `LPOCO_CLOCK` names the time for tests): outside it `follow now` only says it waits.

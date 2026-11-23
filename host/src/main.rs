@@ -1543,6 +1543,7 @@ fn moved_tools(st: &State) -> Vec<ToolPlan> {
                 && !t.steps.is_empty()
                 && t.installed_by.is_none()
                 && !FAMILY.contains(&t.name.as_str())
+                && !OLD_NAMES.iter().any(|(old, _)| *old == t.name)
                 && (t.found.is_some() || t.on_path)
         })
         .collect()
@@ -1620,7 +1621,7 @@ fn moved_words(tools: &[ToolPlan]) -> String {
 fn follow_tools(st: &State, now: bool, began: u64, moved: Vec<ToolPlan>) -> Result<i32, String> {
     let words = moved_words(&moved);
     if !now {
-        println!("{words}: `lpoco host follow now` installs it when no keeper holds a phone and checks it");
+        println!("{words}: `lpoco host follow now` installs it at once (inside the follow window) and checks it");
         return Ok(0);
     }
     if outside_window(st)? {
