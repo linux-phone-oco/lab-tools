@@ -110,13 +110,60 @@ pub fn plan_root_commands(plan_out: &str) -> Option<Vec<String>> {
 pub fn valid_every(table: &str, s: &str) -> Result<(), String> {
     let digits = s.chars().take_while(|c| c.is_ascii_digit()).count();
     let unit = &s[digits..];
-    if digits > 0 && !unit.is_empty() && unit.chars().all(|c| c.is_ascii_lowercase()) {
+    if digits > 0
+        && !unit.is_empty()
+        && unit.chars().all(|c| c.is_ascii_lowercase())
+        && every_seconds(s).is_some()
+    {
         Ok(())
     } else {
         Err(format!(
-            "{table} every = {s:?} must be a number and a unit, as 15min or 1h"
+            "{table} every = {s:?} must be a number and a unit (s, min, h, d, w), as 15min or 1h"
         ))
     }
+}
+
+/// `every` in seconds (`15min`, `1h`, `90s`, `1d`); None for a unit systemd reads that this does not.
+pub fn every_seconds(s: &str) -> Option<u64> {
+    let digits = s.chars().take_while(char::is_ascii_digit).count();
+    let n: u64 = s[..digits].parse().ok()?;
+    let unit = match &s[digits..] {
+        "s" | "sec" | "second" | "seconds" => 1,
+        "m" | "min" | "minute" | "minutes" => 60,
+        "h" | "hr" | "hour" | "hours" => 3600,
+        "d" | "day" | "days" => 86_400,
+        "w" | "week" | "weeks" => 604_800,
+        _ => return None,
+    };
+    n.checked_mul(unit)
+}
+
+/// What a failed try leaves: `RELEASE START-SECOND`, the release a follow stepped back from and when its run began.
+pub fn parse_tried(text: &str) -> Option<(String, u64)> {
+    let (release, at) = text.trim().split_once(' ')?;
+    Some((release.to_string(), at.parse().ok()?))
+}
+
+/// What a timer run may come early by: systemd's default `AccuracySec`.
+const RETRY_SLACK: u64 = 60;
+
+/// Seconds a release that failed still waits before it is tried again: None when it is another release than the one
+/// that failed, or `every` (less a minute: systemd places a timer run within its accuracy, and the stamp is taken after the unit started) has passed since that run began, or the stamp is from a clock ahead of this one.
+pub fn retry_wait(
+    tried: Option<(String, u64)>,
+    release: &str,
+    every: u64,
+    now: u64,
+) -> Option<u64> {
+    let (failed, began) = tried?;
+    if failed != release {
+        return None;
+    }
+    if began > now {
+        return None;
+    }
+    let due = began.saturating_add(every.saturating_sub(RETRY_SLACK));
+    due.checked_sub(now).filter(|left| *left > 0)
 }
 
 /// A time of day as minutes after midnight: `HH:MM`, two digits each.
@@ -360,6 +407,39 @@ mod tests {
         for bad in ["", "min", "15", "15 min", "15min\nExecStart=x", "-1h"] {
             assert!(valid_every("[follow]", bad).is_err(), "{bad:?}");
         }
+    }
+
+    #[test]
+    fn an_interval_in_seconds_and_what_a_failed_try_still_waits() {
+        assert_eq!(every_seconds("15min"), Some(900));
+        assert_eq!(every_seconds("1h"), Some(3600));
+        assert_eq!(every_seconds("2days"), Some(172_800));
+        assert_eq!(every_seconds("5fortnights"), None);
+        let tried = || parse_tried("0.2.1 1000\n");
+        assert_eq!(retry_wait(tried(), "0.2.1", 900, 1500), Some(340));
+        assert_eq!(
+            retry_wait(tried(), "0.2.1", 900, 1900),
+            None,
+            "the timer's own beat is not held"
+        );
+        assert_eq!(retry_wait(tried(), "0.2.2", 900, 1100), None);
+        assert_eq!(retry_wait(None, "0.2.1", 900, 1100), None);
+        assert_eq!(
+            retry_wait(tried(), "0.2.1", 900, 1899),
+            None,
+            "a timer run a second early is not held"
+        );
+        assert_eq!(
+            retry_wait(parse_tried("0.2.1 90000"), "0.2.1", 900, 1000),
+            None,
+            "a stamp from a clock ahead holds nothing"
+        );
+        assert!(
+            valid_every("[follow]", "5ms").is_err(),
+            "a unit every_seconds cannot read must not pass quietly"
+        );
+        assert_eq!(parse_tried("0.2.1"), None);
+        assert_eq!(parse_tried("0.2.1 soon"), None);
     }
 
     #[test]

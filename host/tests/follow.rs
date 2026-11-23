@@ -1270,3 +1270,90 @@ fn a_lease_a_killed_follow_left_does_not_hold_the_next_follow_back() {
     assert!(installed(&l, "lpoco").contains("0.2.1"), "{}", text(&o));
     assert_eq!(leases_left(&l), Vec::<String>::new(), "{}", text(&o));
 }
+
+const EVERY: &str = "[follow]\nevery = \"15min\"\n\n";
+
+/// What a failed try of a release leaves: the release and the second its run began.
+fn tried(l: &Lab) -> PathBuf {
+    l.dir.join("home/.cache/lpoco-host/follow/tried")
+}
+
+fn secs_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+}
+
+#[test]
+fn a_release_that_failed_is_not_tried_again_before_every_has_passed() {
+    let l = lab("rate-wait", EVERY);
+    publish_release(&l, "0.2.1", 1, NO_ROOT);
+    releases(&l, &["0.2.1", "0.2.0"]);
+    install_old(&l);
+    let first = follow(&l, &["now"]);
+    assert!(!first.status.success(), "{}", text(&first));
+    let touched = |l: &Lab| {
+        calls(l)
+            .lines()
+            .filter(|c| !c.contains("releases.json"))
+            .count()
+    };
+    let after_first = touched(&l);
+    let second = follow(&l, &["now"]);
+    let s = text(&second);
+    assert!(second.status.success(), "{s}");
+    assert!(
+        s.contains("waits") && s.contains("0.2.1") && s.contains("15min"),
+        "{s}"
+    );
+    assert_eq!(touched(&l), after_first, "the second run touched the host");
+    assert!(
+        installed(&l, "lpoco").contains("old"),
+        "{}",
+        installed(&l, "lpoco")
+    );
+}
+
+#[test]
+fn a_release_that_failed_is_tried_again_once_every_has_passed() {
+    let l = lab("rate-again", EVERY);
+    publish_release(&l, "0.2.1", 1, NO_ROOT);
+    releases(&l, &["0.2.1", "0.2.0"]);
+    install_old(&l);
+    let first = follow(&l, &["now"]);
+    assert!(!first.status.success(), "{}", text(&first));
+    fs::write(tried(&l), format!("0.2.1 {}\n", secs_now() - 16 * 60)).unwrap();
+    let second = follow(&l, &["now"]);
+    let s = text(&second);
+    assert!(
+        !second.status.success() && s.contains("check failed"),
+        "tried again: {s}"
+    );
+}
+
+#[test]
+fn a_newer_release_than_the_one_that_failed_is_tried_at_once_and_a_follow_that_lands_forgets() {
+    let l = lab("rate-newer", EVERY);
+    publish_release(&l, "0.2.2", 0, NO_ROOT);
+    releases(&l, &["0.2.2", "0.2.0"]);
+    install_old(&l);
+    fs::create_dir_all(tried(&l).parent().unwrap()).unwrap();
+    fs::write(tried(&l), format!("0.2.1 {}\n", secs_now())).unwrap();
+    let o = follow(&l, &["now"]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert!(installed(&l, "lpoco").contains("0.2.2"), "{}", text(&o));
+    assert!(!tried(&l).exists(), "a landed follow keeps no failed try");
+}
+
+#[test]
+fn without_a_follow_table_there_is_no_every_and_so_no_rate_limit() {
+    let l = lab("rate-none", "");
+    publish_release(&l, "0.2.1", 1, NO_ROOT);
+    releases(&l, &["0.2.1", "0.2.0"]);
+    install_old(&l);
+    for _ in 0..2 {
+        let o = follow(&l, &["now"]);
+        assert!(text(&o).contains("check failed"), "{}", text(&o));
+    }
+}

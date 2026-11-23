@@ -1341,6 +1341,7 @@ fn finish(work: &str, result: Result<(), String>) -> Result<(), String> {
 /// pin moved) is reinstalled at the pin, checked the same way, and no pin is landed. Only `lpoco` is read; an
 /// older other family program under a current `lpoco` is not noticed.
 fn follow(st: &State, now: bool) -> Result<i32, String> {
+    let began = epoch_now()?;
     let Some(ToolPin::Version(pinned)) = st.lab.tools.get("lpoco") else {
         return Err("lab.toml pins no lpoco release: nothing to follow from".into());
     };
@@ -1379,6 +1380,9 @@ fn follow(st: &State, now: bool) -> Result<i32, String> {
         return Ok(0);
     }
     if waits_for_keeper(st, &newest) {
+        return Ok(0);
+    }
+    if tried_too_lately(st, &newest)? {
         return Ok(0);
     }
     // everything that can be known before a program is touched
@@ -1429,6 +1433,7 @@ fn follow(st: &State, now: bool) -> Result<i32, String> {
     let stepped_back = |why: String| {
         restore_programs(&previous).map_err(|e| format!("{why}; and the programs could not be put back ({e}): the journal is kept for the next run"))?;
         clear_journal(&st.home);
+        remember_failed_try(&st.home, &newest, began);
         Err(format!(
             "{why}; the programs of {was} are back and the pin stays"
         ))
@@ -1471,6 +1476,7 @@ fn follow(st: &State, now: bool) -> Result<i32, String> {
         }
     }
     clear_journal(&st.home);
+    let _ = fs::remove_file(tried_file(&st.home));
     restart_watchers(st);
     if released.is_some() {
         println!("followed: lpoco {newest} is installed, checked, and its pin landed");
@@ -1521,6 +1527,46 @@ fn host_program(st: &State) -> String {
         std::env::current_exe()
             .map(|p| p.to_string_lossy().into_owned())
             .unwrap_or(installed)
+    }
+}
+
+/// Where a failed try is kept: `RELEASE START-SECOND`.
+fn tried_file(home: &str) -> String {
+    format!("{home}/.cache/lpoco-host/follow/tried")
+}
+
+fn epoch_now() -> Result<u64, String> {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .map_err(|e| format!("cannot read the time: {e}"))
+}
+
+/// Says so and returns true when `release` failed a try that began less than `[follow] every` ago: a timer run is
+/// never held (it comes `every` after the last began), a manual run or a restart is. Without `[follow]` there is
+/// no `every`, so no limit.
+fn tried_too_lately(st: &State, release: &str) -> Result<bool, String> {
+    let Some(every) = st.lab.follow.as_ref().map(|f| f.every.as_str()) else {
+        return Ok(false);
+    };
+    let Some(every_s) = follow::every_seconds(every) else {
+        return Ok(false);
+    };
+    let tried = fs::read_to_string(tried_file(&st.home))
+        .ok()
+        .and_then(|t| follow::parse_tried(&t));
+    let Some(wait) = follow::retry_wait(tried, release, every_s, epoch_now()?) else {
+        return Ok(false);
+    };
+    println!("waits: lpoco {release} failed its last try less than {every} ago; it is tried again in {} min", wait.div_ceil(60));
+    Ok(true)
+}
+
+fn remember_failed_try(home: &str, release: &str, began: u64) {
+    let file = tried_file(home);
+    let _ = fs::create_dir_all(Path::new(&file).parent().unwrap_or(Path::new(".")));
+    if let Err(e) = fs::write(&file, format!("{release} {began}\n")) {
+        eprintln!("cannot keep the failed try of {release} ({file}): {e}; it is not rate limited");
     }
 }
 
