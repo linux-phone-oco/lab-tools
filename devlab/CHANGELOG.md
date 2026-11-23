@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.48.3](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-lab-v0.48.2...lpoco-lab-v0.48.3) - 2026-11-23
+
+### Added
+
+- *(host)* follow asks GitHub with gh's token when GITHUB_TOKEN is not given ([#388](https://github.com/linux-phone-oco/lab-tools/pull/388))
+
 ## [0.48.2](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-lab-v0.48.1...lpoco-lab-v0.48.2) - 2026-11-23
 
 ### Added
