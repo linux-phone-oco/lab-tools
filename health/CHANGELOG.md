@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.44.2](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-health-v0.44.1...lpoco-health-v0.44.2) - 2026-11-23
+
+### Added
+
+- *(layer)* boot.img trigger per base for android-bootimg layers ([#335](https://github.com/linux-phone-oco/lab-tools/pull/335))
+
 ## [0.44.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-health-v0.44.0...lpoco-health-v0.44.1) - 2026-11-23
 
 ### Added
