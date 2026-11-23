@@ -1,7 +1,7 @@
 [package]
 name = "lpoco-attended"
 # the family is released together: one version with lpoco and every lpoco-* program (release-plz.toml, version_group)
-version = "0.44.2"
+version = "0.44.3"
 edition = "2021"
 description = "lpoco attended: a lane's attended procedure as a plain list of named steps that each stop the run, with --dry-run and a log"
 license = "MIT OR Apache-2.0"

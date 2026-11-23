@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.44.3](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-lab-v0.44.2...lpoco-lab-v0.44.3) - 2026-11-23
+
+### Fixed
+
+- *(layer)* boot.img plugin finds Debian's initrd; prove Debian through a real dpkg -i ([#339](https://github.com/linux-phone-oco/lab-tools/pull/339))
+
 ## [0.44.2](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-lab-v0.44.1...lpoco-lab-v0.44.2) - 2026-11-23
 
 ### Added
