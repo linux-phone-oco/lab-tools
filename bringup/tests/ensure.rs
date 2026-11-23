@@ -160,9 +160,9 @@ fn ensure(device: &Path, cache: &Path, seed: &Path, name: &str) -> Output {
 #[test]
 fn an_image_is_served_by_its_sha256_from_the_store_or_the_cache_else_built_from_its_recipe_and_checked(
 ) {
-    // the sandbox pins avbtool 1.4.0 (ensure.nix): the expected image is made with the same one
-    if !have("nix-store", "--version") || !avbtool_is_1_4() {
-        eprintln!("not measured: no nix, or no avbtool 1.4 (the sandbox's)");
+    // the sandbox runs no avbtool: the footer is lpoco-bringup's own; avbtool only makes the control here
+    if !have("nix-store", "--version") || !have("avbtool", "--help") {
+        eprintln!("not measured: no nix, or no avbtool (it makes the control)");
         return;
     }
     let dir = tmp("z");
@@ -278,13 +278,6 @@ fn valid(path: &str) -> bool {
         .unwrap()
         .status
         .success()
-}
-
-fn avbtool_is_1_4() -> bool {
-    Command::new("avbtool")
-        .arg("version")
-        .output()
-        .is_ok_and(|o| text(&o.stdout).trim().ends_with(" 1.4.0"))
 }
 
 /// image-ensure-in-attended: `image ensure NAME --dry-run` says where the image would come from - the store, the

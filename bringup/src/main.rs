@@ -160,7 +160,7 @@ fn run(r: &argenv_resolve::Resolution) -> Result<i32, String> {
                 cmdline: Contract::CMDLINE.get_from(r),
                 no_footer: false,
             };
-            let (img, said) = swap::swap(&control, &parts, "avbtool")?;
+            let (img, said) = swap::swap(&control, &parts)?;
             fs::write(&out, &img).map_err(|e| format!("cannot write {out}: {e}"))?;
             for line in said {
                 println!("{line}");
