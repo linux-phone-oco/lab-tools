@@ -21,6 +21,8 @@ pub struct Image {
     pub path: String,
     /// lowercase hex, 64 digits
     pub sha256: Option<String>,
+    /// the int/ tag of the kernel the image was built from (made by `lpoco-bringup kernel assemble`)
+    pub kernel_tag: Option<String>,
 }
 
 /// One value of `[procedures.NAME]`: a number or a word, nothing nested.
@@ -45,6 +47,13 @@ impl Images {
                 ));
             }
             relative(&format!("{at} path {:?}", i.path), &i.path)?;
+            if let Some(t) = &i.kernel_tag {
+                if t.strip_prefix("int/").is_none_or(str::is_empty)
+                    || t.contains(char::is_whitespace)
+                {
+                    return Err(format!("{at} kernel_tag {t:?} is not an int/ tag"));
+                }
+            }
             if let Some(s) = &i.sha256 {
                 let ok = s.len() == 64 && s.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f'));
                 if !ok {

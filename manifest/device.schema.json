@@ -1301,6 +1301,13 @@
             "string",
             "null"
           ]
+        },
+        "kernel_tag": {
+          "description": "the int/ tag of the kernel the image was built from (made by `lpoco-bringup kernel assemble`)",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "additionalProperties": false,

@@ -276,6 +276,19 @@ device's `device.toml` (postmarketOS deviceinfo's words: `kernel_offset`, `ramdi
 is proven against mkbootimg by test (`bringup/tests/pack_v0.rs`; where android-tools is absent the test says
 "not measured: no mkbootimg"). Swap, initramfs and the rest are their own items.
 
+### lpoco bringup kernel: a phone's test kernel from its named list
+
+    lpoco bringup kernel assemble LIST --lists kernel/topics.toml --repo CLONE --records DOCS
+    lpoco bringup kernel publish TAG --repo CLONE [--device device.toml]
+
+`assemble` runs the record checks lab-tools owns, then git-rhizoid's `rhizoid assemble` (which does the merging, rerere
+and tagging: decision 2026-11-23-structure-git-flows-run-on-rhizoid) and prints its JSON report. A topic or backport
+branch with no upstream-item row (`tad q carried`, run in `--records`), a commit with no `TAG(item):` subject, or one whose
+tag disagrees with its item's state is named and the run ends 1 before rhizoid starts. `publish` pushes `TAG` to `origin` and
+ends rhizoid's worktree for it (`--done TAG --force`) only when an `[images.NAME] kernel_tag` of the manifest names it; else it
+ends 1 and pushes nothing. `--rhizoid` / `LPOCO_RHIZOID` and `--tad` / `LPOCO_TAD` name the programs. rhizoid is a host tool of
+the lab (`lab.toml`); it is not installed by hand, and `lpoco host` cannot yet install a cargo-built tool at a pin.
+
 ## Install on a lab host
 
 From the release tags, with cargo; the family has one version, so the tags of one release agree:
