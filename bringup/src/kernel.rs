@@ -122,6 +122,29 @@ fn commits(repo: &Path, base: &str, branch: &str) -> Result<Vec<(String, String)
         .collect())
 }
 
+/// A frozen list's branch: `archive/NAME`, the series as an image was built on it. Its name carries no item (the
+/// pinned commit is part of it), so its commits' subjects name the items.
+fn is_frozen(branch: &str) -> bool {
+    branch
+        .strip_prefix("archive/")
+        .is_some_and(|name| !name.is_empty())
+}
+
+/// Why a branch's name alone cannot go to rhizoid: a kind a list does not take, or an item with no row.
+fn refused_by_name(branch: &str, carried: &BTreeMap<String, String>) -> Option<String> {
+    if is_frozen(branch) {
+        return None;
+    }
+    let Some(item) = item_of(branch) else {
+        return Some(format!(
+            "{branch}: not a topic/ITEM, backport/ITEM/BASE or archive/NAME branch"
+        ));
+    };
+    (!carried.contains_key(item)).then(|| {
+        format!("{branch}: no upstream-item row for {item} (tad q carried), so no topic or backport of it")
+    })
+}
+
 /// Every refusal of the record checks over one list: a branch of no upstream-item row, a commit with no
 /// tag or the wrong one. Empty when the list may go to rhizoid.
 pub fn check(
@@ -133,19 +156,17 @@ pub fn check(
     let (base, branches) = entries(lists_text, list)?;
     let mut refused = Vec::new();
     for branch in &branches {
-        let Some(item) = item_of(branch) else {
-            refused.push(format!(
-                "{branch}: not a topic/ITEM or backport/ITEM/BASE branch"
-            ));
-            continue;
-        };
-        if !carried.contains_key(item) {
-            refused.push(format!(
-                "{branch}: no upstream-item row for {item} (tad q carried), so no topic or backport of it"
-            ));
+        if let Some(r) = refused_by_name(branch, carried) {
+            refused.push(r);
             continue;
         }
-        for (h, s) in commits(repo, &base, branch)? {
+        let found = commits(repo, &base, branch)?;
+        if found.is_empty() && is_frozen(branch) {
+            refused.push(format!(
+                "{branch}: no commits over {base}, so nothing says what it carries"
+            ));
+        }
+        for (h, s) in found {
             if let Some(r) = judge(&h, &s, carried) {
                 refused.push(format!("{branch}: {r}"));
             }
@@ -164,24 +185,29 @@ pub fn carried_from(tad: &str, records: &Path) -> Result<BTreeMap<String, String
 }
 
 /// `rhizoid assemble LIST`: its report as it printed it, and its exit code (1 is a conflict or a difference, whose
-/// report names the entries; any other failure is an error).
+/// report names the entries; any other failure is an error). `reproduces` is a commit whose tree the tag must equal.
 pub fn assemble(
     rhizoid: &str,
     list: &str,
     lists: &Path,
     repo: &Path,
+    reproduces: Option<&str>,
 ) -> Result<(i32, String), String> {
+    let mut args = vec![
+        "assemble".to_string(),
+        list.to_string(),
+        "--lists".to_string(),
+        lists.to_string_lossy().into_owned(),
+        "--repo".to_string(),
+        repo.to_string_lossy().into_owned(),
+        "--json".to_string(),
+    ];
+    if let Some(commit) = reproduces {
+        args.extend(["--reproduces".to_string(), commit.to_string()]);
+    }
     let o = Command::new(rhizoid)
         .current_dir(repo)
-        .args([
-            "assemble",
-            list,
-            "--lists",
-            &lists.to_string_lossy(),
-            "--repo",
-            &repo.to_string_lossy(),
-            "--json",
-        ])
+        .args(&args)
         .output()
         .map_err(|e| format!("cannot run {rhizoid}: {e}"))?;
     let said = String::from_utf8_lossy(&o.stdout).into_owned();
@@ -192,6 +218,35 @@ pub fn assemble(
             String::from_utf8_lossy(&o.stderr).trim()
         )),
     }
+}
+
+/// What rhizoid's JSON report says of `--reproduces` (its `Reproduces`): the commit, whether the trees are equal,
+/// and the paths that differ.
+#[derive(serde::Deserialize)]
+struct Comparison {
+    commit: String,
+    equal: bool,
+    #[serde(default)]
+    paths: Vec<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct Report {
+    reproduces: Option<Comparison>,
+}
+
+/// The verdict of `--reproduces` in rhizoid's JSON report: `reproduces COMMIT: equal`, or `differs in` and each
+/// path that differs. None when the report holds no comparison; an error when it is not rhizoid's report.
+pub fn verdict(report: &str) -> Result<Option<String>, String> {
+    let r: Report = serde_json::from_str(report)
+        .map_err(|e| format!("rhizoid's report is not JSON it can be read from: {e}"))?;
+    Ok(r.reproduces.map(|c| {
+        if c.equal {
+            return format!("reproduces {}: equal", c.commit);
+        }
+        let paths: String = c.paths.iter().map(|p| format!("\n  {p}")).collect();
+        format!("reproduces {}: differs in{paths}", c.commit)
+    }))
 }
 
 /// The int/ tags the images of a device.toml name.
