@@ -114,7 +114,7 @@ contract! {
         key: "token",
         ty: Type::String,
         env: Some(Env::new("GITHUB_TOKEN")),
-        summary: "A GitHub token follow asks api.github.com for the releases list with (sent to that host only, through curl's stdin): without one follow uses the token `gh auth token` gives, and without any the API answers 403 or 504 to a shared address.",
+        summary: "A GitHub token follow asks api.github.com for the releases list with (sent to that host only, through curl's stdin): without one follow uses the token `gh auth token` gives for github.com, and without any the API answers 403 or 504 to a shared address.",
         ..Input::EMPTY
     };
 

@@ -1310,13 +1310,22 @@ fn token_of(raw: Option<String>) -> Result<Option<String>, String> {
     }
 }
 
+/// Whether `url` is GitHub's API: the only host a token is ever sent to.
+fn is_github_api(url: &str) -> bool {
+    url.starts_with("https://api.github.com/")
+}
+
 /// The token `gh` is logged in with, for a GitHub API url when no GITHUB_TOKEN is given: the service and the user then ask
 /// the API as the same account without a token file. None when `gh` is not there, not logged in, or prints what is not a token.
 fn gh_token(url: &str) -> Option<String> {
-    if !url.starts_with("https://api.github.com/") {
+    if !is_github_api(url) {
         return None;
     }
-    let o = Proc::new("gh").args(["auth", "token"]).output().ok()?;
+    let o = Proc::new("gh")
+        .args(["auth", "token", "--hostname", "github.com", "--no-refresh"])
+        .env("GH_PROMPT_DISABLED", "1")
+        .output()
+        .ok()?;
     if !o.status.success() {
         return None;
     }
