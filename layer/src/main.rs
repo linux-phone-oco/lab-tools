@@ -7,7 +7,7 @@ use argenv_resolve::{InputResolveExt, OnProblems};
 use cli::Contract;
 use lpoco_layer::{
     add_boot_trigger, add_deviceinfo, check, deviceinfo, kernel_package, materialize, nfpm_yaml,
-    packages, post_install, stale, Format,
+    packages, post_install, refuse_overlaps, stale, Format,
 };
 use lpoco_manifest::Manifest;
 use std::fs;
@@ -86,6 +86,7 @@ fn pack(r: &argenv_resolve::Resolution) -> Result<(), String> {
         let b = std::path::absolute(b).map_err(|e| format!("{b}: {e}"))?;
         pkgs.push(kernel_package(layer, &b).map_err(|e| format!("{}: {e}", manifest.display()))?);
     }
+    refuse_overlaps(&pkgs).map_err(|e| format!("{}: {e}", manifest.display()))?;
     if pkgs.is_empty() {
         return Err("the layer holds no file to pack".into());
     }

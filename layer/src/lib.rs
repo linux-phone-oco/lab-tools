@@ -254,6 +254,14 @@ pub fn packages(layer: &Layer, format: Format) -> Vec<Package> {
 
 /// Makes every item a file: tree files are checked to exist, text is written under `stage`.
 pub fn materialize(pkg: &Package, manifest_dir: &Path, stage: &Path) -> Result<Vec<Entry>, String> {
+    // a path is one file: the layer and the generated files must not both write it (nfpm would take one, silently)
+    let mut seen = std::collections::HashSet::new();
+    if let Some(it) = pkg.items.iter().find(|it| !seen.insert(it.dst.as_str())) {
+        return Err(format!(
+            "{}: {} is written twice (a declared file and a generated one, or two declared)",
+            pkg.name, it.dst
+        ));
+    }
     let mut out = Vec::new();
     for it in &pkg.items {
         let src = match &it.source {
@@ -857,6 +865,24 @@ pub fn add_boot_trigger(
             items,
             post_install: None,
         }),
+    }
+    Ok(())
+}
+
+/// Refuses a path that two packages of the layer both write: the package manager would fail on the second at install time.
+pub fn refuse_overlaps(pkgs: &[Package]) -> Result<(), String> {
+    let mut owner: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();
+    for p in pkgs {
+        for it in &p.items {
+            if let Some(first) = owner.insert(it.dst.as_str(), p.name.as_str()) {
+                if first != p.name {
+                    return Err(format!(
+                        "{} is written by both {first} and {}",
+                        it.dst, p.name
+                    ));
+                }
+            }
+        }
     }
     Ok(())
 }
