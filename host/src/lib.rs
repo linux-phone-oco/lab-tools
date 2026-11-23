@@ -51,6 +51,11 @@ pub enum ToolPin {
         repository: String,
         tag: String,
         asset: String,
+        /// For a release that ships a tar.gz and one file of `HASH  NAME` lines, not a bare binary with a `.sha256`:
+        /// the checksums file's name in the release; the asset is then the archive and `member` the file installed.
+        checksums: Option<String>,
+        /// The file of the archive installed as the tool (with `checksums`).
+        member: Option<String>,
         /// User timers the tag ships under `packaging/systemd/NAME.service` and `NAME.timer`: written as user units and enabled.
         #[serde(default)]
         timers: Vec<String>,
@@ -817,6 +822,14 @@ pub enum Step {
         to: String,
         rev: String,
     },
+    /// fetch a release's tar.gz and its checksums file, install `member` of the archive at `to` only when the hash
+    /// the checksums file gives for the archive's name matches; never built
+    ReleaseArchive {
+        url: String,
+        sums_url: String,
+        member: String,
+        to: String,
+    },
 }
 
 impl Step {
@@ -844,6 +857,14 @@ impl Step {
                 fallback.join(" ")
             ),
             Step::Stamp { to, rev } => format!("echo {rev} > {to}"),
+            Step::ReleaseArchive {
+                url,
+                sums_url,
+                member,
+                to,
+            } => format!(
+                "fetch {url} (hash from the line for it in {sums_url}), install {member} of it to {to}, never built"
+            ),
         }
     }
 }
@@ -1005,12 +1026,31 @@ pub fn tools_for(
                 repository,
                 tag,
                 asset,
+                checksums,
+                member,
                 ..
             } => {
-                let url = format!(
-                    "{}/{repository}/releases/download/{tag}/{asset}",
+                let base = format!(
+                    "{}/{repository}/releases/download/{tag}",
                     github.trim_end_matches('/')
                 );
+                let url = format!("{base}/{asset}");
+                let to = format!("{home}/.local/bin/{name}");
+                let fetch_step = match (checksums, member) {
+                    (Some(sums), Some(member)) => Step::ReleaseArchive {
+                        sums_url: format!("{base}/{sums}"),
+                        url,
+                        member: member.clone(),
+                        to,
+                    },
+                    _ => Step::Release {
+                        sha_url: format!("{url}.sha256"),
+                        url,
+                        to,
+                        also: vec![],
+                        fallback: vec![],
+                    },
+                };
                 plans.push(ToolPlan {
                     name: name.clone(),
                     pinned: tag.clone(),
@@ -1019,13 +1059,7 @@ pub fn tools_for(
                     on_path: on_path(name),
                     found: if on_path(name) { stamp(name) } else { None },
                     steps: vec![
-                        Step::Release {
-                            sha_url: format!("{url}.sha256"),
-                            url,
-                            to: format!("{home}/.local/bin/{name}"),
-                            also: vec![],
-                            fallback: vec![],
-                        },
+                        fetch_step,
                         Step::Stamp {
                             to: stamp_path(home, name),
                             rev: tag.clone(),
@@ -1254,10 +1288,39 @@ fn validate_lab(lab: &Lab) -> Result<(), String> {
                 repository,
                 tag,
                 asset,
+                checksums,
+                member,
                 timers,
                 env_file,
                 env,
             } => {
+                match (checksums, member) {
+                    (None, None) => {}
+                    (Some(c), Some(m)) => {
+                        for (w, s) in [("checksums", c), ("member", m)] {
+                            if s.is_empty()
+                                || s.starts_with('-')
+                                || s.contains(['/', '?', '#', '%', '\\'])
+                                || s.contains("..")
+                                || s.chars().any(|c| c.is_whitespace() || c.is_control())
+                            {
+                                return Err(format!(
+                                    "[tools.{name}] {w} {s:?} must be one plain file name"
+                                ));
+                            }
+                        }
+                    }
+                    (Some(_), None) => {
+                        return Err(format!(
+                        "[tools.{name}] checksums needs member: the file of the archive to install"
+                    ))
+                    }
+                    (None, Some(_)) => {
+                        return Err(format!(
+                            "[tools.{name}] member needs checksums: the release's file of hashes"
+                        ))
+                    }
+                }
                 for (w, s) in [("repository", repository), ("tag", tag), ("asset", asset)] {
                     if s.chars().any(|c| c.is_whitespace() || c.is_control())
                         || s.starts_with('-')

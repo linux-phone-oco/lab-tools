@@ -769,6 +769,12 @@ fn install_tools(st: &State, tools: Vec<ToolPlan>) -> Result<(), String> {
                     also,
                     fallback,
                 } => install_release(st, url, sha_url, to, also, fallback)?,
+                Step::ReleaseArchive {
+                    url,
+                    sums_url,
+                    member,
+                    to,
+                } => install_release_archive(st, url, sums_url, member, to)?,
                 Step::Stamp { to, rev } => {
                     if let Some(d) = Path::new(to).parent() {
                         fs::create_dir_all(d)
@@ -1366,6 +1372,80 @@ fn install_release(
                 .ok_or_else(|| format!("{} failed ({s})", fallback.join(" ")))
         })
     };
+    finish(&work, result)
+}
+
+/// The hash a release's checksums file (`HASH  NAME` lines) gives for exactly `name`: a neighbour that only starts
+/// with the name (`NAME.sbom.json`) is not it.
+fn hash_for(checksums: &str, name: &str) -> Option<String> {
+    // the first line naming the archive decides: a broken hash there is not skipped for a later line
+    let line = checksums.lines().find(|l| {
+        l.split_once(char::is_whitespace)
+            .is_some_and(|(_, f)| f.trim_start().trim_start_matches('*') == name)
+    })?;
+    named_hash(line.split_once(char::is_whitespace)?.0)
+}
+
+/// Installs `member` of a release's tar.gz at `to` after the archive's hash, from the release's checksums file,
+/// matches; nothing is installed when the archive, the file, its line, the hash or the member is missing or wrong.
+fn install_release_archive(
+    st: &State,
+    url: &str,
+    sums_url: &str,
+    member: &str,
+    to: &str,
+) -> Result<(), String> {
+    let work = format!("{}/.cache/lpoco-host/asset-{}", st.home, std::process::id());
+    let _ = fs::remove_dir_all(&work);
+    fs::create_dir_all(&work).map_err(|e| format!("cannot make {work}: {e}"))?;
+    let (file, sums) = (
+        Path::new(&work).join("archive.tar.gz"),
+        Path::new(&work).join("checksums"),
+    );
+    let name = url.rsplit('/').next().unwrap_or(url);
+    let result = (|| {
+        if !fetch(url, &file)? {
+            return Err(format!("no release asset at {url}: not installed"));
+        }
+        if !fetch(sums_url, &sums)? {
+            return Err(format!(
+                "{sums_url} is not in the release: {name} not installed"
+            ));
+        }
+        let text = fs::read_to_string(&sums).map_err(|e| format!("cannot read {sums_url}: {e}"))?;
+        let named = hash_for(&text, name)
+            .ok_or_else(|| format!("{sums_url} has no sha256 line for {name}: not installed"))?;
+        let bytes = fs::read(&file).map_err(|e| format!("cannot read {url}: {e}"))?;
+        let have = hex_sha256(&bytes);
+        if have != named {
+            return Err(format!(
+                "{to}: sha256 of {url} is {have}, the release says {named}: not installed"
+            ));
+        }
+        let out = Proc::new("tar")
+            .args(["-xzf"])
+            .arg(&file)
+            .arg("-C")
+            .arg(&work)
+            .arg("--")
+            .arg(member)
+            .output()
+            .map_err(|e| format!("cannot run tar: {e}"))?;
+        let got = Path::new(&work).join(member);
+        if !out.status.success()
+            || !fs::symlink_metadata(&got).is_ok_and(|m| m.file_type().is_file())
+        {
+            return Err(format!(
+                "{name} holds no file {member}: not installed ({})",
+                String::from_utf8_lossy(&out.stderr).trim()
+            ));
+        }
+        let bytes = fs::read(&got).map_err(|e| format!("cannot read {member}: {e}"))?;
+        if let Some(d) = Path::new(to).parent() {
+            fs::create_dir_all(d).map_err(|e| format!("cannot make {}: {e}", d.display()))?;
+        }
+        replace_file(to, &bytes, 0o755).map_err(|e| format!("cannot write {to}: {e}"))
+    })();
     finish(&work, result)
 }
 

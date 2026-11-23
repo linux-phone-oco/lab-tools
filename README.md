@@ -400,6 +400,7 @@ list the plan prints. `lab.toml` tools: `lpoco = "0.2.0"` installs the family fr
 `~/.local`; `[tools.NAME]` with `git`, `path`, `rev`, `version` installs a script of another repository at a commit (`version` is a label only; the pin is `rev`)
 into `~/.local/bin`, and stamps the rev in `~/.local/share/lpoco-host/rev-NAME`: a script is judged by that stamp (never by `--version`; on PATH without a stamp it is "rev not known"). A device whose `[tools] lpoco` the lab's pin does not meet is named and nothing is prepared for it.
 `[tools.NAME]` with `repository` (`owner/name`), `tag`, `asset` installs another project's release binary the same way: fetched from `LPOCO_GITHUB` (GitHub when none is given) with its `.sha256`, installed only when the hash matches, never built, the tag stamped (the hash comes from the same release: it catches a damaged download, not a replaced release).
+A release that ships a `.tar.gz` and one checksums file instead of a bare binary (goreleaser's: nfpm) adds `checksums = "checksums.txt"` and `member = "nfpm"`: `asset` is then the archive, its hash is the line for exactly that name in the checksums file, and `member` is the one file of the archive installed (a missing line, hash or member installs nothing; the tag is stamped only after it is installed).
 
 `lpoco = "X.Y.Z"` must be a full version (it names the release tags); a tool with no source yet is `oco-work = "unknown"`
 and is listed as "not known yet". Codenames, serials, module and tool names that reach a root command or a file name are
