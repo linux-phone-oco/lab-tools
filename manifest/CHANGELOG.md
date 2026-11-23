@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.45.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-manifest-v0.44.5...lpoco-manifest-v0.45.0) - 2026-11-23
+
+### Added
+
+- *(manifest)* [boot.to_bootloader] and restart2, a RESTART2 helper for the way to the bootloader ([#358](https://github.com/linux-phone-oco/lab-tools/pull/358))
+
 ## [0.44.5](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-manifest-v0.44.4...lpoco-manifest-v0.44.5) - 2026-11-23
 
 ### Added
