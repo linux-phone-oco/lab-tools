@@ -3,12 +3,19 @@ name = "lpoco-ffs-acm"
 # the family is released together: one version (release-plz.toml, version_group)
 version = "0.46.1"
 edition = "2021"
-description = "lpoco-ffs-acm: a serial console for a phone through FunctionFS (one class-2 interface, a pty shell bridged to the bulk endpoints)"
+description = "lpoco-ffs-acm: helpers a phone's init and lab run on the phone - a serial console through FunctionFS (one class-2 interface, a pty shell bridged to the bulk endpoints), and restart2, which restarts it into its bootloader"
 license = "MIT OR Apache-2.0"
 
 [[bin]]
 name = "ffs-acm"
 path = "src/main.rs"
 
+# busybox's `reboot bootloader` drops its argument; this hands it to reboot(2) RESTART2 (device.toml [boot.to_bootloader])
+[[bin]]
+name = "restart2"
+path = "src/restart2/main.rs"
+
 [dependencies]
 libc = "0.2"
+# restart2's command line is declared once (argenv), not parsed by hand
+argenv-resolve = "0.4"

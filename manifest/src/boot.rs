@@ -42,6 +42,65 @@ pub struct Boot {
     pub device_wait: Option<u32>,
     /// Seconds the phone takes to come back to its known-good system after a try
     pub back_wait: Option<u32>,
+    /// How the lab takes the phone from its Linux to its bootloader: a helper pushed to the phone and the command that
+    /// runs it (busybox's `reboot bootloader` drops the argument; the helper hands it to reboot(2) RESTART2)
+    pub to_bootloader: Option<ToBootloader>,
+}
+
+/// `[boot.to_bootloader]`: the helper (an `[images.NAME]` with a sha256) the lab pushes to the phone at `to`, and `run`,
+/// the command it then runs there as root: `to` first, then plain words.
+#[derive(Debug, Clone, Deserialize, PartialEq, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ToBootloader {
+    /// the name of the `[images.NAME]` pushed
+    pub tool: String,
+    /// where it lands on the phone: a file under /tmp/ or /run/ (tmpfs, so nothing touches the card)
+    pub to: String,
+    /// the command run on the phone: `to`, then arguments
+    pub run: String,
+}
+
+impl ToBootloader {
+    pub(crate) fn validate(&self, images: Option<&crate::images::Images>) -> Result<(), String> {
+        let at = "boot.to_bootloader";
+        let plain = |s: &str| {
+            !s.is_empty()
+                && s.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || "/_.-".contains(c))
+        };
+        // a scratch place only (it is pushed and run as root: a typo must not overwrite a system file), plain components
+        let inside = ["/tmp/", "/run/"]
+            .iter()
+            .find_map(|p| self.to.strip_prefix(p))
+            .is_some_and(|rest| {
+                rest.split('/')
+                    .all(|c| !c.is_empty() && c != "." && c != "..")
+            });
+        if !inside || !plain(&self.to) {
+            return Err(format!(
+                "{at}: to {:?} is not a file under /tmp/ or /run/ (letters, digits and _.- in plain components, no .. and no empty one)",
+                self.to
+            ));
+        }
+        let mut words = self.run.split(' ');
+        if words.next() != Some(self.to.as_str()) || !words.all(plain) {
+            return Err(format!(
+                "{at}: run {:?} must be `{}` then arguments of letters, digits and _.-/ separated by single spaces",
+                self.run, self.to
+            ));
+        }
+        match images.and_then(|i| i.named.get(&self.tool)) {
+            None => Err(format!(
+                "{at}: needs [images.{}] (the helper pushed)",
+                self.tool
+            )),
+            Some(i) if i.sha256.is_none() => Err(format!(
+                "{at}: [images.{}] needs a sha256 (the helper is run as root)",
+                self.tool
+            )),
+            Some(_) => Ok(()),
+        }
+    }
 }
 
 /// `[boot.gadget]`: what the bring-up init says of the phone on the USB cable. The functions (ACM serial
