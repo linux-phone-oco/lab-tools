@@ -3,7 +3,8 @@
 //! - boot counting: the entry is pmos-NAME+1-0.conf, sorted ahead of stock; systemd-boot counts the
 //!   try down on the ESP, an entry with no tries left sorts last, so the next boot is stock; the test
 //!   kernel's command line masks systemd-bless-boot, so even a good boot runs once. No EFI variables.
-//! - a boot timeout: a second initramfs adds a hook that, with no real system after 5 minutes, saves
+//! - a boot trail and timeout: a second initramfs adds a hook that writes test-boot.stage on the ESP from its
+//!   first second (a heartbeat every 10 s) and, with no real system after 5 minutes, saves
 //!   the initramfs log and kernel messages to the ESP and reboots;
 //! - the test kernel's own copies of the modules the stock initramfs carries.
 
@@ -14,20 +15,46 @@ use std::process::{Command, Stdio};
 
 /// The hook the second initramfs adds: shell builtins decide, so it cannot misfire after switch_root.
 pub const TIMEOUT_HOOK: &str = r#"#!/bin/sh
-# A test kernel's boot timeout: no real system after 5 minutes -> save the log to the ESP, reboot.
+# A test kernel's boot trail and timeout. From its first second it leaves breadcrumbs on the ESP
+# (test-boot.stage: a stage line, then every 10 s the uptime and the last kernel lines), so a hang
+# says how far the kernel got. The ESP is mounted for one write and let go again, never held, so the
+# real system finds it clean. No real system after 5 minutes -> save the log to the ESP, reboot.
+# The TEST_BOOT_* variables are for the hook's own test; the initramfs sets none.
 (
-	sleep 300
-	read -r pid1 < /proc/1/comm
+	proc=${TEST_BOOT_PROC:-/proc}
+	esp=${TEST_BOOT_ESP:-/tmp/esp}
+	kmsg=${TEST_BOOT_KMSG:-/dev/kmsg}
+	uuid=$(sed -n 's/.*pmos_boot_uuid=\([^ ]*\).*/\1/p' "$proc/cmdline")
+	mkdir -p "$esp"
+	beats=0
+	while [ $beats -lt 30 ]; do
+		# the initramfs is gone (switch_root) when PID 1 cannot be read: the real system runs
+		read -r pid1 < "$proc/1/comm" || exit 0
+		[ "$pid1" = systemd ] && exit 0
+		read -r up _ < "$proc/uptime"
+		if mount -t vfat "$(findfs "UUID=$uuid")" "$esp" 2> /dev/null; then
+			if [ $beats = 0 ]; then
+				echo "initramfs start, uptime $up" >> "$esp/test-boot.stage"
+			else
+				{ echo "heartbeat, uptime $up"; dmesg | tail -3; } >> "$esp/test-boot.stage"
+			fi
+			sync
+			umount "$esp"
+		else
+			echo "test boot: the ESP is not mounted yet (uptime $up)" > "$kmsg"
+		fi
+		beats=$((beats + 1))
+		sleep 10
+	done
+	read -r pid1 < "$proc/1/comm" || exit 0
 	[ "$pid1" = systemd ] && exit 0
-	echo "test boot timeout: saving the log to the ESP and rebooting" > /dev/kmsg
-	uuid=$(sed -n 's/.*pmos_boot_uuid=\([^ ]*\).*/\1/p' /proc/cmdline)
-	mkdir -p /tmp/esp
-	if mount -t vfat "$(findfs "UUID=$uuid")" /tmp/esp; then
-		cp /pmOS_init.log /tmp/esp/test-boot.log 2>/dev/null
-		dmesg > /tmp/esp/test-boot.dmesg
-		umount /tmp/esp
+	echo "test boot timeout: saving the log to the ESP and rebooting" > "$kmsg"
+	if mount -t vfat "$(findfs "UUID=$uuid")" "$esp"; then
+		cp /pmOS_init.log "$esp/test-boot.log" 2>/dev/null
+		dmesg > "$esp/test-boot.dmesg"
+		sync
+		umount "$esp"
 	fi
-	sync
 	reboot -f
 ) &
 "#;
@@ -342,7 +369,7 @@ pub fn try_once(phone: &Phone, name: &str) -> Result<()> {
     }
     let (ok, out) = phone.root(&format!(
         "set -e\nls /boot/loader/entries/ | grep -q '^pmos-{name}+[1-9]' || {{ echo 'pmos-{name} has no try left: install it again' >&2; exit 1; }}\n\
-         rm -f /boot/test-boot.log /boot/test-boot.dmesg\nsync; systemd-run --on-active=2 systemctl reboot >/dev/null\necho 'trying pmos-{name} once'\n"
+         rm -f /boot/test-boot.log /boot/test-boot.dmesg /boot/test-boot.stage\nsync; systemd-run --on-active=2 systemctl reboot >/dev/null\necho 'trying pmos-{name} once'\n"
     ))?;
     eprint!("{out}");
     if !ok {
@@ -415,7 +442,7 @@ pub fn unkeep(phone: &Phone, name: &str) -> Result<()> {
 }
 
 pub fn log(phone: &Phone) -> Result<()> {
-    let (_, out) = phone.root("for f in /boot/test-boot.log /boot/test-boot.dmesg; do [ -f $f ] && { echo \"== $f\"; tail -60 $f; }; done; true\n")?;
+    let (_, out) = phone.root("for f in /boot/test-boot.log /boot/test-boot.dmesg /boot/test-boot.stage; do [ -f $f ] && { echo \"== $f\"; tail -60 $f; }; done; true\n")?;
     print!("{out}");
     Ok(())
 }
@@ -453,7 +480,7 @@ pub fn remove_script(name: &str) -> String {
          done\n\
          apk info -q --who-owns \"/lib/modules/$release\" >/dev/null 2>&1 && keep=\"a package owns them\"\n\
          fi\n\
-         rm -f pmos-{name}.conf pmos-{name}+*.conf pmos-{name}-cl.conf pmos-{name}-cl+*.conf pmos-{name}-dt.conf pmos-{name}-dt+*.conf /boot/vmlinuz-{name} /boot/initramfs-{name} /boot/test-boot.log /boot/test-boot.dmesg\n\
+         rm -f pmos-{name}.conf pmos-{name}+*.conf pmos-{name}-cl.conf pmos-{name}-cl+*.conf pmos-{name}-dt.conf pmos-{name}-dt+*.conf /boot/vmlinuz-{name} /boot/initramfs-{name} /boot/test-boot.log /boot/test-boot.dmesg /boot/test-boot.stage\n\
          rm -rf /boot/dtbs-{name} /boot/dtbs-{name}-dt\n\
          if [ -z \"$release\" ]; then echo 'removed: pmos-{name} (no modules of its own found)'\n\
          elif [ -n \"$keep\" ]; then echo \"removed: pmos-{name}; the modules of $release stay: $keep\"\n\
@@ -783,8 +810,141 @@ mod tests {
     #[test]
     fn the_timeout_hook_decides_with_builtins_only() {
         assert!(
-            TIMEOUT_HOOK.contains("read -r pid1 < /proc/1/comm")
+            TIMEOUT_HOOK.contains("read -r pid1 < \"$proc/1/comm\"")
                 && TIMEOUT_HOOK.contains("[ \"$pid1\" = systemd ] && exit 0")
+        );
+    }
+
+    /// A pretend initramfs: proc files, a stub bin of the commands the hook calls, an ESP folder.
+    /// Stubs only record; after `after` sleeps (0 = never) `sleep` runs `then` in proc/1 (PID 1 becomes systemd, or the root is gone).
+    fn run_hook(after: u32, then: &str) -> (String, String) {
+        use std::os::unix::fs::PermissionsExt;
+        let d = std::env::temp_dir().join(format!(
+            "devlab-hook-{}-{after}-{}",
+            std::process::id(),
+            then.len(),
+        ));
+        let _ = std::fs::remove_dir_all(&d);
+        for sub in ["proc/1", "esp", "bin"] {
+            std::fs::create_dir_all(d.join(sub)).unwrap();
+        }
+        std::fs::write(
+            d.join("proc/cmdline"),
+            "quiet pmos_boot_uuid=AAAA-BBBB root=x\n",
+        )
+        .unwrap();
+        std::fs::write(d.join("proc/uptime"), "12.34 40.00\n").unwrap();
+        std::fs::write(d.join("proc/1/comm"), "init\n").unwrap();
+        let stubs = [
+            ("findfs", "echo /dev/sda1".to_string()),
+            ("mount", format!("echo mount >> {0}/calls", d.display())),
+            ("umount", format!("echo umount >> {0}/calls", d.display())),
+            ("sync", "true".to_string()),
+            ("dmesg", "echo '[   12.3] last kernel line'".to_string()),
+            ("reboot", format!("echo reboot >> {0}/calls", d.display())),
+            (
+                "sleep",
+                format!(
+                    "n=$(cat {0}/slept 2>/dev/null || echo 0); n=$((n+1)); echo $n > {0}/slept\n\
+                     [ -f {0}/esp/test-boot.stage ] && echo stage-before-sleep-$n >> {0}/calls\n\
+                     [ {1} -gt 0 ] && [ $n -ge {1} ] && cd {0}/proc/1 && {2}\ntrue",
+                    d.display(),
+                    after,
+                    then
+                ),
+            ),
+        ];
+        for (name, body) in stubs {
+            let p = d.join("bin").join(name);
+            std::fs::write(&p, format!("#!/bin/sh\n{body}\n")).unwrap();
+            std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let hook = d.join("hook.sh");
+        std::fs::write(&hook, TIMEOUT_HOOK).unwrap();
+        let path = format!("{}:/usr/bin:/bin", d.join("bin").display());
+        let st = Command::new("sh")
+            .arg(&hook)
+            .env("PATH", path)
+            .env("TEST_BOOT_PROC", d.join("proc"))
+            .env("TEST_BOOT_ESP", d.join("esp"))
+            .env("TEST_BOOT_KMSG", d.join("kmsg"))
+            .status()
+            .unwrap();
+        assert!(st.success());
+        // the hook's loop runs in the background: it has ended when its sleeps stop counting
+        let slept = || std::fs::read_to_string(d.join("slept")).unwrap_or_default();
+        let (mut last, mut still) = (String::new(), 0);
+        for _ in 0..200 {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            let now = slept();
+            still = if now == last && !now.is_empty() {
+                still + 1
+            } else {
+                0
+            };
+            if still >= 5 {
+                break;
+            }
+            last = now;
+        }
+        let rd = |f: &str| std::fs::read_to_string(d.join(f)).unwrap_or_default();
+        let out = (rd("esp/test-boot.stage"), rd("calls"));
+        let _ = std::fs::remove_dir_all(&d);
+        out
+    }
+
+    #[test]
+    fn the_hook_writes_its_stage_line_before_it_sleeps_and_beats_until_systemd_runs() {
+        let (stage, calls) = run_hook(3, "echo systemd > comm");
+        let first = stage.lines().next().unwrap_or("");
+        assert!(
+            first.starts_with("initramfs start") && first.contains("12.34"),
+            "{stage}"
+        );
+        assert!(
+            calls.contains("stage-before-sleep-1"),
+            "the first sleep came after the stage line: {calls}"
+        );
+        let beats = stage.lines().filter(|l| l.starts_with("heartbeat")).count();
+        assert_eq!(beats, 2, "a heartbeat each pass until systemd: {stage}");
+        assert!(
+            stage.contains("last kernel line"),
+            "the last kernel lines ride along: {stage}"
+        );
+        assert!(
+            !calls.contains("reboot"),
+            "a good boot leaves quietly: {calls}"
+        );
+        let (m, u) = (
+            calls.matches("mount\n").count(),
+            calls.matches("umount").count(),
+        );
+        assert!(
+            u > 0 && m == 2 * u,
+            "every mount let go again (mount lines count umount too): {calls}"
+        );
+    }
+
+    #[test]
+    fn the_hook_leaves_quietly_when_the_initramfs_root_is_gone() {
+        let (stage, calls) = run_hook(2, "rm comm");
+        assert!(stage.starts_with("initramfs start"), "{stage}");
+        assert!(!calls.contains("reboot"), "{calls}");
+        assert!(stage.lines().count() == 3, "stops at once: {stage}");
+    }
+
+    #[test]
+    fn the_hook_saves_the_log_and_reboots_when_systemd_never_runs() {
+        let (stage, calls) = run_hook(0, "true");
+        assert_eq!(
+            stage.lines().filter(|l| l.starts_with("heartbeat")).count(),
+            29,
+            "{stage}"
+        );
+        let saved = calls.rfind("umount").zip(calls.rfind("reboot"));
+        assert!(
+            saved.is_some_and(|(u, r)| u < r),
+            "the ESP is let go before the reboot: {calls}"
         );
     }
 
