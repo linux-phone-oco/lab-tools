@@ -521,7 +521,7 @@ fn devlab_calls(dir: &Path, case: &str, kernel: &str, code: u32) -> Output {
         &devlab,
         format!(
             "#!/bin/sh\necho \"$*\" >> {args}\n[ \"$1\" = --device ] && shift 2
-case \"$1 $2\" in \"kernel try\") echo 'trying once'; exit {code};; \"fastboot boot\") echo 'booted from memory'; exit {code};; \"phone put\") cp \"$3\" \"$4\"; exit 0;; \"fastboot state\") if [ -e {dir}/state-fails ]; then echo 'no serial' >&2; exit 1; fi; if {{ [ -e {dir}/not-in-fastboot ] && ! grep -q 'restart2 bootloader' {dir}/rebooted 2>/dev/null; }} || [ -e {dir}/never-in-fastboot ]; then echo 'x: S is not in fastboot now (off)'; else echo 'x: S is in fastboot'; fi; exit 0;; esac\nPATH={bin}:$PATH exec sh -s\n",
+case \"$1 $2\" in \"kernel try\") echo 'trying once'; exit {code};; \"fastboot boot\") echo 'booted from memory'; exit {code};; \"phone put\") if [ -e {dir}/put-fails ]; then echo 'no gadget to push to' >&2; exit 1; fi; cp \"$3\" \"$4\"; exit 0;; \"fastboot state\") if [ -e {dir}/state-fails ]; then echo 'no serial' >&2; exit 1; fi; if {{ [ -e {dir}/not-in-fastboot ] && ! grep -q 'restart2 bootloader' {dir}/rebooted 2>/dev/null; }} || [ -e {dir}/never-in-fastboot ]; then echo 'x: S is not in fastboot now (off)'; else echo 'x: S is in fastboot'; fi; exit 0;; esac\nPATH={bin}:$PATH exec sh -s\n",
             args = dir.join("args").display(),
             dir = dir.display(),
             bin = dir.join("phone/bin").display()
@@ -1954,6 +1954,27 @@ fn a_helper_whose_checksum_is_not_the_declared_one_is_never_pushed() {
     let args = fs::read_to_string(dir.join("args")).unwrap();
     assert!(
         !args.contains("phone put") && !args.contains("phone root"),
+        "{args}"
+    );
+    assert!(!Path::new(&to).exists(), "{t}");
+}
+
+#[test]
+fn a_helper_that_cannot_be_pushed_is_never_run_and_the_step_says_what_the_push_said() {
+    let dir = tmp("boot-fastboot-put-fails");
+    declare_fastboot_boot(&dir, 4);
+    let to = declare_to_bootloader(&dir, None);
+    usb_tree(&dir, Some(("1d6b", "0104")));
+    fs::write(dir.join("not-in-fastboot"), "").unwrap();
+    fs::write(dir.join("put-fails"), "").unwrap();
+    let o = devlab_calls(&dir, "boot-once", "z21", 0);
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(1), "{t}");
+    assert!(t.contains("no gadget to push to"), "{t}");
+    assert!(!dir.join("rebooted").exists(), "{t}");
+    let args = fs::read_to_string(dir.join("args")).unwrap();
+    assert!(
+        !args.contains("phone root") && !args.contains("fastboot boot now"),
         "{args}"
     );
     assert!(!Path::new(&to).exists(), "{t}");
