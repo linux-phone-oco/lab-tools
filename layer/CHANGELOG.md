@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.48.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-layer-v0.48.0...lpoco-layer-v0.48.1) - 2026-11-23
+
+### Added
+
+- *(host)* follow is not stopped by a tool it installs itself, and asks GitHub with the token ([#384](https://github.com/linux-phone-oco/lab-tools/pull/384))
+
 ## [0.48.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-layer-v0.47.1...lpoco-layer-v0.48.0) - 2026-11-23
 
 ### Added
