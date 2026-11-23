@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.46.3](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-lab-v0.46.2...lpoco-lab-v0.46.3) - 2026-11-23
+
+### Added
+
+- *(bringup)* image ensure - an image by sha256 from Nix's store, a cache or its recipe ([#368](https://github.com/linux-phone-oco/lab-tools/pull/368))
+
 ## [0.46.2](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-lab-v0.46.1...lpoco-lab-v0.46.2) - 2026-11-23
 
 ### Added
