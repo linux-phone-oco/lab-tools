@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.44.7](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-tone-v0.44.6...lpoco-tone-v0.44.7) - 2026-11-23
+
+### Other
+
+- *(host)* follow builds a release that has no binaries with cargo ([#346](https://github.com/linux-phone-oco/lab-tools/pull/346))
+
 ## [0.44.6](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-tone-v0.44.5...lpoco-tone-v0.44.6) - 2026-11-23
 
 ### Added
