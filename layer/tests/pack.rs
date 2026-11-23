@@ -5,7 +5,7 @@
 
 use lpoco_layer::{
     add_deviceinfo, check, deviceinfo, kernel_package, materialize, nfpm_yaml, packages,
-    post_install, stale, Format,
+    post_install, refuse_overlaps, stale, Format,
 };
 use lpoco_manifest::Manifest;
 use std::fs;
@@ -781,4 +781,55 @@ fn a_layer_without_files_still_gets_its_dependencies_on_the_config_package_that_
     );
     assert_eq!(pkgs[0].name, "google-walleye-config");
     assert_eq!(pkgs[0].depends, vec!["qrtr".to_string()]);
+}
+
+#[test]
+fn a_path_two_files_of_one_package_both_write_is_refused() {
+    // proof: lpoco-layer-pack; the source is nfpm's contents rule that a dst is one file (nfpm would take one, silently)
+    let (dir, stage) = fixture("dup1");
+    let m = Manifest::parse(DEVICE).unwrap();
+    let mut layer = m.layer.clone().unwrap();
+    let mut f = layer.file[0].clone();
+    f.from = layer.file[1].from.clone();
+    layer.file.push(f);
+    let pkgs = packages(&layer, Format::Deb);
+    let p = pkgs
+        .iter()
+        .find(|p| p.name == "xiaomi-surya-config")
+        .unwrap();
+    let e = materialize(p, &dir, &stage).unwrap_err();
+    assert!(
+        e.contains("/usr/share/alsa/ucm2/Xiaomi/surya/HiFi.conf") && e.contains("twice"),
+        "{e}"
+    );
+}
+
+#[test]
+fn a_path_two_packages_of_the_layer_both_own_is_refused() {
+    // proof: lpoco-layer-pack; review of the per-package check: a declared file on a path the boot package also writes
+    // would fail at install time in the package manager
+    let m = Manifest::parse(DEVICE).unwrap();
+    let layer = m.layer.clone().unwrap();
+    let pkgs = packages(&layer, Format::Deb);
+    assert!(
+        refuse_overlaps(&pkgs).is_ok(),
+        "an honest layer has no overlap"
+    );
+    let boot_dst = pkgs
+        .iter()
+        .find(|p| p.name == "xiaomi-surya-boot")
+        .and_then(|p| p.items.first())
+        .map(|i| i.dst.clone())
+        .expect("a deb layer with an initramfs has a boot package");
+    let mut layer = layer;
+    let mut f = layer.file[0].clone();
+    f.to = boot_dst.clone();
+    layer.file.push(f);
+    let e = refuse_overlaps(&packages(&layer, Format::Deb)).unwrap_err();
+    assert!(
+        e.contains(&boot_dst)
+            && e.contains("xiaomi-surya-boot")
+            && e.contains("xiaomi-surya-config"),
+        "{e}"
+    );
 }
