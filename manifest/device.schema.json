@@ -123,6 +123,13 @@
         }
       ]
     },
+    "kernel_builds": {
+      "description": "The kernel files made from int/ tags in the sandbox, by name",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/KernelBuild"
+      }
+    },
     "images": {
       "description": "The images a procedure puts on the phone, by name",
       "anyOf": [
@@ -1306,6 +1313,87 @@
           "type": "string",
           "const": "fastboot"
         }
+      ]
+    },
+    "KernelBuild": {
+      "description": "`[kernel_builds.NAME]`: one kernel file and how it is made.",
+      "type": "object",
+      "properties": {
+        "tag": {
+          "description": "the int/ tag the kernel is built from (made by `lpoco-bringup kernel assemble`)",
+          "type": "string"
+        },
+        "rev": {
+          "description": "the commit the tag points at, 40 lowercase hex digits: what Nix fetches (a tag can be moved, a commit cannot)",
+          "type": "string"
+        },
+        "repo": {
+          "description": "the git repository holding the tag (the kernel fork when none)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "epoch": {
+          "description": "seconds since 1970 the build's clock is fixed to (KBUILD_BUILD_TIMESTAMP; the tag's own time is a good one)",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "defconfig": {
+          "description": "`make` target that writes the default config",
+          "type": "string",
+          "default": "defconfig"
+        },
+        "configs": {
+          "description": "config fragments merged after the defconfig, each by the sha256 of its file",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "patches": {
+          "description": "unified diffs applied to the tree (`patch -p1`), each by the sha256 of its file: the lab's dts and Makefile line",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "targets": {
+          "description": "`make` targets built",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "Image.gz"
+          ]
+        },
+        "dtc_flags": {
+          "description": "DTC_FLAGS for the build (`-@` keeps the symbols an overlay merge needs)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "output": {
+          "description": "the file the kernel is, under the build folder",
+          "type": "string",
+          "default": "arch/arm64/boot/Image.gz"
+        },
+        "sha256": {
+          "description": "lowercase hex sha256 the output must have: Nix refuses a build that is not these bytes",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "tag",
+        "rev",
+        "epoch",
+        "sha256"
       ]
     },
     "Images": {

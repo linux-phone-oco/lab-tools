@@ -6,6 +6,7 @@
 
 pub mod boot;
 pub mod images;
+pub mod kernel_build;
 pub mod layer;
 
 use schemars::JsonSchema;
@@ -13,6 +14,7 @@ use serde::Deserialize;
 
 pub use boot::{Boot, BootGadget, Console, ShellWord, ToBootloader};
 pub use images::{Image, Images, ProcValue};
+pub use kernel_build::KernelBuild;
 pub use layer::{
     BootMethod, FileKind, FirmwareMethod, Layer, LayerBoot, LayerFile, LayerFirmware,
     LayerInitramfs, LayerKernel,
@@ -56,6 +58,9 @@ pub struct Manifest {
     pub tools: Option<Tools>,
     /// The kernels `lpoco lab kernel` keeps on the phone beside stock
     pub kernels: Option<Kernels>,
+    /// The kernel files made from int/ tags in the sandbox, by name
+    #[serde(default)]
+    pub kernel_builds: std::collections::BTreeMap<String, KernelBuild>,
     /// The images a procedure puts on the phone, by name
     pub images: Option<Images>,
     /// Values only one procedure uses, per procedure (a free table of numbers and words)
@@ -92,6 +97,23 @@ impl Manifest {
         }
         if let Some(t) = m.boot.as_ref().and_then(|b| b.to_bootloader.as_ref()) {
             t.validate(m.images.as_ref())?;
+        }
+        for (n, k) in &m.kernel_builds {
+            k.validate(n)?;
+            if m.images.as_ref().is_some_and(|i| i.named.contains_key(n)) {
+                return Err(format!(
+                    "kernel_builds.{n} and images.{n}: one name, two meanings (image ensure {n} would take the image)"
+                ));
+            }
+            if let Some((o, _)) = m
+                .kernel_builds
+                .iter()
+                .find(|(o, p)| *o != n && p.sha256 == k.sha256)
+            {
+                return Err(format!(
+                    "kernel_builds.{n} and kernel_builds.{o} declare the same sha256"
+                ));
+            }
         }
         images::validate_procedures(&m.procedures)?;
         m.health.validate()?;

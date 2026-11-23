@@ -5,13 +5,15 @@
 //! 2026-11-23-image-recipes-on-nix-fixed-output-paths). What is built or seeded is copied to the cache.
 //! The path an image has in the store is computed from its sha256 and name alone (`nix-store --print-fixed-path`).
 
-use lpoco_manifest::{images::Recipe, Manifest};
+use lpoco_manifest::{images::Recipe, KernelBuild, Manifest};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 const GENERIC_DERIVATION: &str = include_str!("ensure.nix");
+const KERNEL_DERIVATION: &str = include_str!("kernel.nix");
+const KERNEL_REPO: &str = "https://github.com/linux-phone-oco/linux.git";
 const NIXPKGS_PIN: &str = include_str!("../../nixpkgs.nix");
 const NIX: [&str; 2] = ["--extra-experimental-features", "nix-command"];
 
@@ -49,6 +51,15 @@ pub fn ensure(
     sources: &Sources,
     say: &mut dyn FnMut(String),
 ) -> Result<PathBuf, String> {
+    if !manifest
+        .images
+        .as_ref()
+        .is_some_and(|i| i.named.contains_key(name))
+    {
+        if let Some(k) = manifest.kernel_builds.get(name) {
+            return ensure_kernel(name, k, sources, say);
+        }
+    }
     let (wanted, recipe) = image(manifest, name)?;
     if let Some(path) = held(&wanted, sources, say, name)? {
         return Ok(path);
@@ -163,9 +174,20 @@ fn build(
                 name: format!("{part}-{}", &sha[..12]),
             };
             let label = format!("{name} {part}");
-            let path = held(&input, sources, say, &label)?.ok_or_else(|| {
-                format!("{label}: sha256 {sha} is not in the store, the cache or the seed (nothing makes it)")
-            })?;
+            // a kernel no store, cache or seed holds may be one a [kernel_builds] row makes
+            let made = manifest
+                .kernel_builds
+                .iter()
+                .find(|(_, k)| part == "kernel" && k.sha256 == *sha);
+            let path = match (held(&input, sources, say, &label)?, made) {
+                (Some(p), _) => p,
+                (None, Some((n, k))) => ensure_kernel(n, k, sources, say)?,
+                (None, None) => {
+                    return Err(format!(
+                        "{label}: sha256 {sha} is not in the store, the cache or the seed (nothing makes it)"
+                    ))
+                }
+            };
             args.push((part, path.display().to_string()));
         }
     }
@@ -185,19 +207,24 @@ fn build(
         ));
     }
     let scratch = scratch(name)?;
-    let result = nix_build(&scratch, &args);
+    let result = nix_build(&scratch, "ensure.nix", GENERIC_DERIVATION, &args);
     let _ = fs::remove_dir_all(&scratch);
     Ok(PathBuf::from(result?))
 }
 
-fn nix_build(scratch: &Path, args: &[(&str, String)]) -> Result<String, String> {
+fn nix_build(
+    scratch: &Path,
+    file: &str,
+    derivation: &str,
+    args: &[(&str, String)],
+) -> Result<String, String> {
     let write = |f: &str, text: &str| {
         fs::write(scratch.join(f), text)
             .map_err(|e| format!("cannot write {}/{f}: {e}", scratch.display()))
     };
     write("nixpkgs.nix", NIXPKGS_PIN)?;
-    write("ensure.nix", GENERIC_DERIVATION)?;
-    let expr = scratch.join("ensure.nix");
+    write(file, derivation)?;
+    let expr = scratch.join(file);
     let mut cmd = vec![expr.to_str().unwrap().to_string(), "--no-out-link".into()];
     for (k, v) in args {
         // paths and text alike go in as strings; the derivation turns a store path into one
@@ -330,4 +357,65 @@ fn valid(path: &Path) -> bool {
         .args(["--check-validity", path.to_str().unwrap_or_default()])
         .output()
         .is_ok_and(|o| o.status.success())
+}
+
+/// The name a kernel file has in the store: by its sha256, as a recipe's `kernel` part is looked up.
+fn kernel_wanted(k: &KernelBuild) -> Wanted {
+    Wanted {
+        sha256: k.sha256.clone(),
+        name: format!("kernel-{}", &k.sha256[..12]),
+    }
+}
+
+/// The kernel `[kernel_builds.NAME]`: its store path, held by its sha256 or built from its tag's commit in the sandbox.
+fn ensure_kernel(
+    name: &str,
+    k: &KernelBuild,
+    sources: &Sources,
+    say: &mut dyn FnMut(String),
+) -> Result<PathBuf, String> {
+    let wanted = kernel_wanted(k);
+    if let Some(path) = held(&wanted, sources, say, name)? {
+        return Ok(path);
+    }
+    let mut args: Vec<(&str, String)> = vec![
+        ("name", wanted.name.clone()),
+        ("sha256", k.sha256.clone()),
+        ("repo", k.repo.clone().unwrap_or_else(|| KERNEL_REPO.into())),
+        ("tag", k.tag.clone()),
+        ("rev", k.rev.clone()),
+        ("epoch", k.epoch.to_string()),
+        ("defconfig", k.defconfig.clone()),
+        ("targets", k.targets.join(" ")),
+        ("output", k.output.clone()),
+        ("dtcFlags", k.dtc_flags.clone().unwrap_or_default()),
+    ];
+    for (key, what, shas) in [
+        ("configs", "config", &k.configs),
+        ("patches", "patch", &k.patches),
+    ] {
+        let mut paths = Vec::new();
+        for sha in shas {
+            let input = Wanted {
+                sha256: sha.clone(),
+                name: format!("{what}-{}", &sha[..12]),
+            };
+            let label = format!("{name} {what}");
+            let path = held(&input, sources, say, &label)?.ok_or_else(|| {
+                format!("{label}: sha256 {sha} is not in the store, the cache or the seed (nothing makes it)")
+            })?;
+            paths.push(path.display().to_string());
+        }
+        args.push((key, paths.join(" ")));
+    }
+    let scratch = scratch(name)?;
+    let result = nix_build(&scratch, "kernel.nix", KERNEL_DERIVATION, &args);
+    let _ = fs::remove_dir_all(&scratch);
+    let path = PathBuf::from(result?);
+    publish(&path, sources.cache)?;
+    say(format!(
+        "{name}: built from its recipe (tag {}), equal to its declared sha256",
+        k.tag
+    ));
+    Ok(path)
 }
