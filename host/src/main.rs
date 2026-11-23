@@ -1548,7 +1548,9 @@ fn follow(st: &State, now: bool) -> Result<i32, String> {
                 ""
             }
         );
-        keep_success(&st.home);
+        if now {
+            keep_success(&st.home);
+        }
         return Ok(0);
     }
     if !now {
@@ -1873,8 +1875,13 @@ fn ok_file(home: &str) -> String {
 
 fn keep_success(home: &str) {
     let file = ok_file(home);
+    let at = match epoch_now() {
+        Ok(at) => at,
+        Err(e) => {
+            return eprintln!("cannot keep follow's success: {e}; `check` will not know it ran")
+        }
+    };
     let _ = fs::create_dir_all(Path::new(&file).parent().unwrap_or(Path::new(".")));
-    let at = epoch_now().unwrap_or(0);
     if let Err(e) = fs::write(&file, format!("{at}\n")) {
         eprintln!("cannot keep follow's success ({file}): {e}; `check` will not know it ran");
     }

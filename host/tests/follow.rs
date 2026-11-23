@@ -1531,3 +1531,28 @@ fn a_follow_that_finishes_keeps_when_and_one_that_waits_does_not() {
         ok_stamp(&l)
     );
 }
+
+#[test]
+fn a_stale_follow_line_in_the_check_does_not_stop_the_follow_that_would_clear_it() {
+    let l = lab("stale-line", "[follow]\nevery = \"15min\"\n");
+    publish_release(&l, "0.2.1", 0, NO_ROOT);
+    releases(&l, &["0.2.1", "0.2.0"]);
+    fs::write(
+        l.dir.join("check.out"),
+        "follow: FAIL, its last success was 999 min ago, more than 3 rounds of every = 15min\n",
+    )
+    .unwrap();
+    install_old_host(&l, 1, NO_ROOT);
+    let o = follow(&l, &["now"]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert_eq!(landed_pin(&l).0, "lpoco = \"0.2.1\"", "{}", text(&o));
+}
+
+#[test]
+fn a_dry_run_keeps_no_success() {
+    let l = lab("stamp-dry", "");
+    releases(&l, &["0.2.0"]);
+    install_old(&l);
+    follow(&l, &[]);
+    assert_eq!(ok_stamp(&l), "");
+}

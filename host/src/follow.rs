@@ -656,11 +656,13 @@ mod lease_tests {
 
 /// `judge_check` for a host whose named tools are off their pins on purpose (a follow is about to move them): their
 /// `tool NAME: FAIL, ...` lines are not failures, and the exit 1 they cause is not either when nothing else failed.
+/// Nor is the `follow: FAIL, ` line (follow's own staleness): only a follow that runs can clear it.
 pub fn judge_check_without(exit: Option<i32>, stdout: &str, tools: &[String]) -> (bool, String) {
     let ignored = |l: &str| {
-        tools
-            .iter()
-            .any(|t| l.starts_with(&format!("tool {t}: FAIL, ")))
+        l.starts_with("follow: FAIL, ")
+            || tools
+                .iter()
+                .any(|t| l.starts_with(&format!("tool {t}: FAIL, ")))
     };
     let dropped = stdout.lines().any(ignored);
     let kept: Vec<&str> = stdout.lines().filter(|l| !ignored(l)).collect();
