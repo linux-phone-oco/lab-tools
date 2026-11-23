@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.46.4](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-v0.46.3...lpoco-v0.46.4) - 2026-11-23
+
+### Added
+
+- *(bringup)* image ensure builds a kernel from an int/ tag in the sandbox ([#373](https://github.com/linux-phone-oco/lab-tools/pull/373))
+- *(devlab)* the kernel try's hook leaves a heartbeat on the ESP from its first second ([#370](https://github.com/linux-phone-oco/lab-tools/pull/370))
+
 ## [0.46.3](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-v0.46.2...lpoco-v0.46.3) - 2026-11-23
 
 ### Added
