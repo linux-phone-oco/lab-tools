@@ -1,6 +1,6 @@
 [package]
 name = "lpoco-health"
-version = "0.44.4"
+version = "0.44.5"
 edition = "2021"
 description = "The phone's health, measured on the phone: one suite that runs scheduled tests, gathers their results, and switches tests on or off with a reason"
 license = "MIT OR Apache-2.0"
