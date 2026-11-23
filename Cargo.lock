@@ -573,7 +573,7 @@ name = "lpoco-attended"
 version = "0.45.1"
 dependencies = [
  "argenv-resolve",
- "lpoco-manifest 0.46.0",
+ "lpoco-manifest 0.47.0 (git+https://github.com/linux-phone-oco/lab-tools?tag=lpoco-manifest-v0.47.0)",
  "serde",
  "sha2",
  "toml",
@@ -656,8 +656,7 @@ dependencies = [
 
 [[package]]
 name = "lpoco-manifest"
-version = "0.46.0"
-source = "git+https://github.com/linux-phone-oco/lab-tools?tag=lpoco-manifest-v0.46.0#aaf37cb2ffed93cfa17e91e749a25b07630570ba"
+version = "0.47.0"
 dependencies = [
  "argenv-resolve",
  "schemars",
@@ -669,6 +668,7 @@ dependencies = [
 [[package]]
 name = "lpoco-manifest"
 version = "0.47.0"
+source = "git+https://github.com/linux-phone-oco/lab-tools?tag=lpoco-manifest-v0.47.0#dcec12611581f96d6b97c0d40157aa2943dfe137"
 dependencies = [
  "argenv-resolve",
  "schemars",
