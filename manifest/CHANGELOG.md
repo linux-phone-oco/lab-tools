@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.44.4](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-manifest-v0.44.3...lpoco-manifest-v0.44.4) - 2026-11-23
+
+### Added
+
+- *(host)* follow does not retry a failed release before every has passed ([#340](https://github.com/linux-phone-oco/lab-tools/pull/340))
+
 ## [0.44.3](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-manifest-v0.44.2...lpoco-manifest-v0.44.3) - 2026-11-23
 
 ### Fixed
