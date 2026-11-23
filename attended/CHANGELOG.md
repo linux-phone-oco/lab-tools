@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.45.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-attended-v0.44.6...lpoco-attended-v0.45.0) - 2026-11-23
+
+### Added
+
+- *(attended)* [**breaking**] a check names its source, and the dry run refuses one that names none ([#364](https://github.com/linux-phone-oco/lab-tools/pull/364))
+
 ## [0.44.6](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-attended-v0.44.5...lpoco-attended-v0.44.6) - 2026-11-23
 
 ### Added
