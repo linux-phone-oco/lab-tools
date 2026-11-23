@@ -1613,7 +1613,8 @@ fn moved_words(tools: &[ToolPlan]) -> String {
 }
 
 /// `follow` for tools of other projects: each declared tool whose pin moved is installed from its release at the pin,
-/// in a window with no keeper, every phone's lease held while it installs, judged by the host's own `check` and
+/// at once (decision 2026-11-23: a tool outside the family never drives a phone, so no keeper's lease holds it back and
+/// none is taken; only the family keeps the lease window), judged by the host's own `check` and
 /// stepped back (binary and stamp) when the install or the check fails. No pin is landed: the pin is what moved.
 /// Kept in memory only: a run killed after the install and before its check leaves the new tool, unchecked.
 fn follow_tools(st: &State, now: bool, began: u64, moved: Vec<ToolPlan>) -> Result<i32, String> {
@@ -1626,9 +1627,6 @@ fn follow_tools(st: &State, now: bool, began: u64, moved: Vec<ToolPlan>) -> Resu
         return Ok(0);
     }
     let key = format!("tools:{words}").replace(' ', "_");
-    if waits_for_keeper(st, &words) {
-        return Ok(0);
-    }
     if tried_too_lately(st, &key, &words)? {
         return Ok(0);
     }
@@ -1641,18 +1639,6 @@ fn follow_tools(st: &State, now: bool, began: u64, moved: Vec<ToolPlan>) -> Resu
         );
         return Ok(1);
     }
-    let _leases = match follow::take_leases(&st.home, &st.found, &lease_age) {
-        Ok(l) => l,
-        Err(follow::NotTaken::Kept { phone, who }) => {
-            println!("waits: {who} keeps {phone}; {words} is installed in a window with no keeper");
-            return Ok(0);
-        }
-        Err(follow::NotTaken::Unusable { phone, why }) => {
-            return Err(format!(
-                "the lease of {phone} could not be taken ({why}): nothing is changed"
-            ));
-        }
-    };
     let previous = save_tools(st, &moved)?;
     println!("following: {words}");
     let stepped_back = |why: String| {
