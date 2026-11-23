@@ -120,7 +120,7 @@ fn lab(name: &str, follow_toml: &str) -> Lab {
     exe(
         &stubs.join("curl"),
         &format!(
-            "echo \"$0 $@\" >> {0}\n[ -d \"$HOME/.cache/lpoco-host/follow/journal\" ] && echo journal-present >> {0}\nwhile [ $# -gt 0 ]; do case \"$1\" in --output) out=\"$2\"; shift;; --*) ;; *) url=\"$1\";; esac; shift; done\nsrc=\"${{url#file://}}\"\n[ -f \"$src\" ] || {{ printf 404; exit 22; }}\nprintf 200\ncp \"$src\" \"$out\"",
+            "echo \"$0 $@\" >> {0}\n[ -d \"$HOME/.cache/lpoco-host/follow/journal\" ] && echo journal-present >> {0}\nfor f in \"$HOME\"/.local/state/devlab/*/keeper.lease/holder; do [ -f \"$f\" ] && echo \"lease-held $(cat \"$f\")\" >> {0}; done\nwhile [ $# -gt 0 ]; do case \"$1\" in --output) out=\"$2\"; shift;; --*) ;; *) url=\"$1\";; esac; shift; done\nsrc=\"${{url#file://}}\"\n[ -f \"$src\" ] || {{ printf 404; exit 22; }}\nprintf 200\ncp \"$src\" \"$out\"",
             dir.join("calls").display()
         ),
     );
@@ -376,6 +376,58 @@ fn a_newer_release_with_both_leases_free_is_installed_checked_and_its_pin_landed
     // the rest of lab.toml, its comment included, is as it was
     let toml = git(&l.dir.join("origin.git"), &["show", "main:lab.toml"]);
     assert!(toml.contains("# the family"), "{toml}");
+}
+
+fn leases_left(l: &Lab) -> Vec<String> {
+    let root = l.dir.join("home/.local/state/devlab");
+    let mut left: Vec<String> = fs::read_dir(&root)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| e.path().join("keeper.lease").exists())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    left.sort();
+    left
+}
+
+#[test]
+fn every_phones_lease_is_held_by_the_follow_while_it_installs_and_given_back_after() {
+    let l = lab("holds", "");
+    releases(&l, &["0.2.1", "0.2.0"]);
+    install_old(&l);
+    // a lapsed lease is taken over, not waited for
+    lease(&l, "xiaomi-surya", "surya-keeper", "3 hours ago");
+    let o = follow(&l, &["now"]);
+    assert!(o.status.success(), "{}", text(&o));
+    // every fetch of a program (the journal is on disk then) saw the follow's lease, never the lapsed keeper's
+    let c = calls(&l);
+    let lines: Vec<&str> = c.lines().collect();
+    let installing: Vec<usize> = (0..lines.len())
+        .filter(|&i| lines[i] == "journal-present")
+        .collect();
+    assert!(!installing.is_empty(), "{c}");
+    for i in installing {
+        assert_eq!(lines[i + 1], "lease-held lpoco-host-follow", "{c}");
+        assert_eq!(lines[i + 2], "lease-held lpoco-host-follow", "{c}");
+    }
+    assert_eq!(leases_left(&l), Vec::<String>::new(), "{}", text(&o));
+}
+
+#[test]
+fn a_failing_check_gives_the_leases_back_too() {
+    let l = lab("holds-failing", "");
+    publish_release(&l, "0.2.1", 1, NO_ROOT);
+    releases(&l, &["0.2.1", "0.2.0"]);
+    install_old(&l);
+    let o = follow(&l, &["now"]);
+    assert!(!o.status.success(), "{}", text(&o));
+    assert!(
+        calls(&l).contains("lease-held lpoco-host-follow"),
+        "{}",
+        calls(&l)
+    );
+    assert_eq!(leases_left(&l), Vec::<String>::new(), "{}", text(&o));
 }
 
 #[test]
@@ -1205,4 +1257,16 @@ fn an_installed_version_that_cannot_be_read_is_said_not_judged_instead_of_up_to_
     install_old(&l);
     let s = text(&follow(&l, &["now"]));
     assert!(s.contains("up to date") && s.contains("not judged"), "{s}");
+}
+
+#[test]
+fn a_lease_a_killed_follow_left_does_not_hold_the_next_follow_back() {
+    let l = lab("own-leftover", "");
+    releases(&l, &["0.2.1", "0.2.0"]);
+    install_old(&l);
+    lease(&l, "xiaomi-surya", "lpoco-host-follow", "now");
+    let o = follow(&l, &["now"]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert!(installed(&l, "lpoco").contains("0.2.1"), "{}", text(&o));
+    assert_eq!(leases_left(&l), Vec::<String>::new(), "{}", text(&o));
 }
