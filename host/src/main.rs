@@ -1648,16 +1648,16 @@ struct Judged {
 
 impl Judged {
     fn of(host: &str, lab: &str) -> Result<Judged, String> {
-        Self::judged(host, lab, &[])
+        Self::run_judged(host, lab, &[])
     }
 
     /// The baseline before a tool is followed: the moved tools are off their pins by definition, so their own FAIL
     /// lines are not held against the host.
     fn before_tools(host: &str, lab: &str, tools: &[String]) -> Result<Judged, String> {
-        Self::judged(host, lab, tools)
+        Self::run_judged(host, lab, tools)
     }
 
-    fn judged(host: &str, lab: &str, ignore: &[String]) -> Result<Judged, String> {
+    fn run_judged(host: &str, lab: &str, ignore: &[String]) -> Result<Judged, String> {
         let run = |verb: &str| {
             Proc::new(host)
                 .args([verb, "--lab", lab])
