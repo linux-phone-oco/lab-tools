@@ -46,6 +46,13 @@ pub enum ToolPin {
         rev: String,
         version: String,
     },
+    /// A release asset of another project's GitHub repository at a tag, installed only when its `.sha256` matches
+    /// (`repository = "owner/name"`, `tag`, `asset`); never built, so a release without it installs nothing.
+    Release {
+        repository: String,
+        tag: String,
+        asset: String,
+    },
 }
 
 /// `devices = "glob"` or `devices = ["glob", ...]`: where the device manifests are.
@@ -816,6 +823,15 @@ impl Step {
                 to,
                 also: _,
                 fallback,
+            } if fallback.is_empty() => {
+                format!("fetch {url} (hash from {sha_url}) to {to}, never built")
+            }
+            Step::Release {
+                url,
+                sha_url,
+                to,
+                also: _,
+                fallback,
             } => format!(
                 "fetch {url} (hash from {sha_url}) to {to}, else {}",
                 fallback.join(" ")
@@ -887,6 +903,7 @@ pub fn tools_for(
     stamp: &dyn Fn(&str) -> Option<String>,
     on_path: &dyn Fn(&str) -> bool,
     release_base: Option<&str>,
+    github: &str,
 ) -> Vec<ToolPlan> {
     let mut plans = Vec::new();
     for (name, pin) in &lab.tools {
@@ -973,6 +990,37 @@ pub fn tools_for(
                         Step::Stamp {
                             to: stamp_path(home, name),
                             rev: rev.clone(),
+                        },
+                    ],
+                });
+            }
+            ToolPin::Release {
+                repository,
+                tag,
+                asset,
+            } => {
+                let url = format!(
+                    "{}/{repository}/releases/download/{tag}/{asset}",
+                    github.trim_end_matches('/')
+                );
+                plans.push(ToolPlan {
+                    name: name.clone(),
+                    pinned: tag.clone(),
+                    installed_by: None,
+                    by_rev: true,
+                    on_path: on_path(name),
+                    found: if on_path(name) { stamp(name) } else { None },
+                    steps: vec![
+                        Step::Release {
+                            sha_url: format!("{url}.sha256"),
+                            url,
+                            to: format!("{home}/.local/bin/{name}"),
+                            also: vec![],
+                            fallback: vec![],
+                        },
+                        Step::Stamp {
+                            to: stamp_path(home, name),
+                            rev: tag.clone(),
                         },
                     ],
                 });
@@ -1191,6 +1239,41 @@ fn validate_lab(lab: &Lab) -> Result<(), String> {
                 if path.starts_with('/') || path.split('/').any(|c| c == "..") {
                     return Err(format!(
                         "[tools.{name}] path {path:?} must stay inside the repository"
+                    ));
+                }
+            }
+            ToolPin::Release {
+                repository,
+                tag,
+                asset,
+            } => {
+                for (w, s) in [("repository", repository), ("tag", tag), ("asset", asset)] {
+                    if s.chars().any(|c| c.is_whitespace() || c.is_control())
+                        || s.starts_with('-')
+                        || s.is_empty()
+                    {
+                        return Err(format!("[tools.{name}] {w} {s:?} is not usable"));
+                    }
+                }
+                let url_unsafe = |s: &str| s.contains(['?', '#', '%', '\\']);
+                if repository.matches('/').count() != 1
+                    || repository.split('/').any(|c| c.is_empty() || c == "..")
+                    || url_unsafe(repository)
+                {
+                    return Err(format!(
+                        "[tools.{name}] repository {repository:?} must be owner/name"
+                    ));
+                }
+                for (w, s) in [("tag", tag), ("asset", asset)] {
+                    if s.contains('/') || s.contains("..") || url_unsafe(s) {
+                        return Err(format!(
+                            "[tools.{name}] {w} {s:?} must be one path word of the release's URL"
+                        ));
+                    }
+                }
+                if FAMILY.contains(&name.as_str()) || OLD_NAMES.iter().any(|(o, _)| o == name) {
+                    return Err(format!(
+                        "[tools.{name}] is a program of the lpoco family: pin it with `lpoco`"
                     ));
                 }
             }

@@ -58,6 +58,8 @@ struct State {
     fs_root: String,
     /// where release assets are fetched from; None when this host fits none (then cargo builds)
     release_base: Option<String>,
+    /// where other projects' releases are (a tool pinned by repository, tag and asset)
+    github: String,
 }
 
 /// Where lab.toml is when none is given.
@@ -123,6 +125,9 @@ fn load(r: &Resolution) -> Result<State, String> {
                 .get_from(r)
                 .unwrap_or_else(|| format!("{FAMILY_URL}/releases/download"))
         }),
+        github: Contract::GITHUB
+            .get_from(r)
+            .unwrap_or_else(|| "https://github.com".to_string()),
         user: Contract::USER.get_from(r),
         home,
         root: root.split_whitespace().map(String::from).collect(),
@@ -437,6 +442,7 @@ fn tool_plans(st: &State) -> Vec<ToolPlan> {
         },
         &|n| on_path(&format!("{}/.local/bin:{}", st.home, st.path), n).is_some(),
         st.release_base.as_deref(),
+        &st.github,
     )
 }
 
@@ -1305,6 +1311,8 @@ fn install_release(
         }
     } else if let Err(e) = got {
         Err(e)
+    } else if fallback.is_empty() {
+        Err(format!("no release asset at {url}: not installed"))
     } else {
         println!("no release asset at {url}: building with cargo");
         let status = Proc::new(&fallback[0])
@@ -1761,6 +1769,7 @@ fn install_family(st: &State, newest: &str) -> Result<(), String> {
         &|_| None,
         &|_| false,
         st.release_base.as_deref(),
+        &st.github,
     )
     .into_iter()
     .filter(|t| FAMILY.contains(&t.name.as_str()))

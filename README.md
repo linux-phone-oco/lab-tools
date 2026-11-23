@@ -352,7 +352,8 @@ without it no watcher is enabled for it, and an instance already enabled for a d
 Root is one prefix, `LPOCO_ROOT`, then the lab declaration's `root`, then `sudo` (the author's typed password: no standing grant, decision of 2026-11-18); the commands are a fixed
 list the plan prints. `lab.toml` tools: `lpoco = "0.2.0"` installs the family from its release tags with cargo into
 `~/.local`; `[tools.NAME]` with `git`, `path`, `rev`, `version` installs a script of another repository at a commit (`version` is a label only; the pin is `rev`)
-into `~/.local/bin` and stamps the rev in `~/.local/share/lpoco-host/rev-NAME`: a script is judged by that stamp (never by `--version`; on PATH without a stamp it is "rev not known"). A device whose `[tools] lpoco` the lab's pin does not meet is named and nothing is prepared for it.
+into `~/.local/bin`, and stamps the rev in `~/.local/share/lpoco-host/rev-NAME`: a script is judged by that stamp (never by `--version`; on PATH without a stamp it is "rev not known"). A device whose `[tools] lpoco` the lab's pin does not meet is named and nothing is prepared for it.
+`[tools.NAME]` with `repository` (`owner/name`), `tag`, `asset` installs another project's release binary the same way: fetched from `LPOCO_GITHUB` (GitHub when none is given) with its `.sha256`, installed only when the hash matches, never built, the tag stamped (the hash comes from the same release: it catches a damaged download, not a replaced release).
 
 `lpoco = "X.Y.Z"` must be a full version (it names the release tags); a tool with no source yet is `oco-work = "unknown"`
 and is listed as "not known yet". Codenames, serials, module and tool names that reach a root command or a file name are

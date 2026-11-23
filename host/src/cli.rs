@@ -94,6 +94,14 @@ contract! {
         ..Input::EMPTY
     };
 
+    GITHUB: String = Input {
+        key: "github",
+        ty: Type::String,
+        env: Some(Env::new("LPOCO_GITHUB")),
+        summary: "Where other projects' releases are (https://github.com when none is given): a tool pinned by repository, tag and asset is fetched from REPOSITORY/releases/download/TAG/ASSET and its .sha256. A file:// folder serves tests.",
+        ..Input::EMPTY
+    };
+
     RELEASES: String = Input {
         key: "releases",
         ty: Type::String,
