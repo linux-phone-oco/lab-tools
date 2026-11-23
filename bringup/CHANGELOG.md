@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.47.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.47.0...lpoco-bringup-v0.47.1) - 2026-11-23
+
+### Added
+
+- *(layer)* a path two files or two packages of a layer both write is refused before packing ([#380](https://github.com/linux-phone-oco/lab-tools/pull/380))
+
 ## [0.47.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.46.5...lpoco-bringup-v0.47.0) - 2026-11-23
 
 ### Added
