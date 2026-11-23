@@ -351,6 +351,8 @@ without it no watcher is enabled for it, and an instance already enabled for a d
 
 `lab.toml` `[follow]` with `every = "15min"` makes `plan` list, and `prepare now` write and enable, the user timer `lpoco-host-follow.timer` that runs `lpoco-host follow now`. A phone's keeper lease is `~/.local/state/devlab/CODENAME/keeper.lease/holder`, held while renewed in the last 90 minutes. `LPOCO_RELEASES` names the releases list (GitHub's API when none is given).
 
+A tool pinned by release (`[tools.NAME]` with `repository`, `tag`, `asset`) may ship user timers: `timers = ["rhizoid-bump"]` makes `prepare now` write the tag's `packaging/systemd/NAME.service` and `NAME.timer` as user units and enable the timer, and `env_file = ".config/rhizoid/bump.env"` with `env = { RHIZOID_GRAPH_CLONE = "~/Projects/linux-phone-oco/docs" }` writes that file (mode 600; a leading `~/` in a value is the home). `plan` fetches the tag's units to compare: one that differs is named `hand-changed`; a tag without the unit stops `prepare` with nothing written (prepare therefore needs the network when timers are declared; the units are fetched by tag, with no hash check, unlike the binary). The env file never appears in `plan` output, its mode is set back to 600, and a changed timer that was already installed is restarted.
+
 Root is one prefix, `LPOCO_ROOT`, then the lab declaration's `root`, then `sudo` (the author's typed password: no standing grant, decision of 2026-11-18); the commands are a fixed
 list the plan prints. `lab.toml` tools: `lpoco = "0.2.0"` installs the family from its release tags with cargo into
 `~/.local`; `[tools.NAME]` with `git`, `path`, `rev`, `version` installs a script of another repository at a commit (`version` is a label only; the pin is `rev`)
