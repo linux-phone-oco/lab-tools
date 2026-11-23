@@ -1310,6 +1310,30 @@ fn token_of(raw: Option<String>) -> Result<Option<String>, String> {
     }
 }
 
+/// Whether `url` is GitHub's API: the only host a token is ever sent to.
+fn is_github_api(url: &str) -> bool {
+    url.starts_with("https://api.github.com/")
+}
+
+/// The token `gh` is logged in with, for a GitHub API url when no GITHUB_TOKEN is given: the service and the user then ask
+/// the API as the same account without a token file. None when `gh` is not there, not logged in, or prints what is not a token.
+fn gh_token(url: &str) -> Option<String> {
+    if !is_github_api(url) {
+        return None;
+    }
+    let o = Proc::new("gh")
+        .args(["auth", "token", "--hostname", "github.com", "--no-refresh"])
+        .env("GH_PROMPT_DISABLED", "1")
+        .output()
+        .ok()?;
+    if !o.status.success() {
+        return None;
+    }
+    token_of(Some(String::from_utf8_lossy(&o.stdout).to_string()))
+        .ok()
+        .flatten()
+}
+
 /// Runs curl; a token goes to it as a config on its stdin (`header = "Authorization: Bearer ..."`), never as an argument.
 fn run_curl(
     curl: &mut Proc,
@@ -2004,7 +2028,8 @@ fn newest_release(st: &State) -> Result<Option<String>, String> {
     fs::create_dir_all(&work).map_err(|e| format!("cannot make {work}: {e}"))?;
     let file = Path::new(&work).join("releases.json");
     let _ = fs::remove_file(&file);
-    if !fetch_with(&st.releases_url, &file, st.token.as_deref())? {
+    let token = st.token.clone().or_else(|| gh_token(&st.releases_url));
+    if !fetch_with(&st.releases_url, &file, token.as_deref())? {
         return Err(format!("{} has no releases list", st.releases_url));
     }
     let text =

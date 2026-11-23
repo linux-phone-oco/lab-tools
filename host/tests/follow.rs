@@ -1556,3 +1556,143 @@ fn a_dry_run_keeps_no_success() {
     follow(&l, &[]);
     assert_eq!(ok_stamp(&l), "");
 }
+
+#[test]
+fn with_no_token_given_follow_asks_gh_for_the_one_it_is_logged_in_with() {
+    // the stub gh prints a token for `gh auth token`; the stub curl records the config it is given on stdin
+    let l = lab("ghauth", "");
+    releases(&l, &["0.2.0"]);
+    install_old(&l);
+    exe(
+        &l.dir.join("stubs/gh"),
+        "[ \"$*\" = \"auth token --hostname github.com --no-refresh\" ] && echo ghp_FROMGH",
+    );
+    exe(
+        &l.dir.join("stubs/curl"),
+        &format!(
+            "echo \"$0 $@\" >> {calls}\ncat >> {cfg}\nwhile [ $# -gt 0 ]; do case \"$1\" in --output) out=\"$2\"; shift;; esac; shift; done\nprintf 200\ncp {rel} \"$out\"",
+            calls = l.dir.join("calls").display(),
+            cfg = l.dir.join("curl-config").display(),
+            rel = l.dir.join("releases.json").display()
+        ),
+    );
+    let o = Command::new(env!("CARGO_BIN_EXE_lpoco-host"))
+        .args(["follow"])
+        .env_clear()
+        .env("HOME", l.dir.join("home"))
+        .env(
+            "PATH",
+            format!(
+                "{}:{}",
+                l.dir.join("stubs").display(),
+                l.dir.join("home/.local/bin").display()
+            ),
+        )
+        .env(
+            "LPOCO_LAB",
+            l.dir.join("home/Projects/lab-machine/lab.toml"),
+        )
+        .env(
+            "LPOCO_RELEASES",
+            "https://api.github.com/repos/linux-phone-oco/lab-tools/releases?per_page=100",
+        )
+        .output()
+        .unwrap();
+    let cfg = fs::read_to_string(l.dir.join("curl-config")).unwrap_or_default();
+    assert!(
+        cfg.contains("Authorization: Bearer ghp_FROMGH"),
+        "{}\n{cfg}",
+        text(&o)
+    );
+    assert!(!calls(&l).contains("ghp_FROMGH"), "{}", calls(&l));
+}
+
+/// A lab whose gh stub leaves a marker when it runs and whose curl stub records its stdin config.
+fn gh_lab(name: &str, gh_body: &str) -> Lab {
+    let l = lab(name, "");
+    releases(&l, &["0.2.0"]);
+    install_old(&l);
+    exe(
+        &l.dir.join("stubs/gh"),
+        &format!("echo ran >> {}\n{gh_body}", l.dir.join("gh-ran").display()),
+    );
+    exe(
+        &l.dir.join("stubs/curl"),
+        &format!(
+            "cat >> {cfg}\nwhile [ $# -gt 0 ]; do case \"$1\" in --output) out=\"$2\"; shift;; esac; shift; done\nprintf 200\ncp {rel} \"$out\"",
+            cfg = l.dir.join("curl-config").display(),
+            rel = l.dir.join("releases.json").display()
+        ),
+    );
+    l
+}
+
+fn follow_with(l: &Lab, url: &str, token: Option<&str>) -> String {
+    let mut c = Command::new(env!("CARGO_BIN_EXE_lpoco-host"));
+    c.args(["follow"])
+        .env_clear()
+        .env("HOME", l.dir.join("home"))
+        .env(
+            "PATH",
+            format!(
+                "{}:{}",
+                l.dir.join("stubs").display(),
+                l.dir.join("home/.local/bin").display()
+            ),
+        )
+        .env(
+            "LPOCO_LAB",
+            l.dir.join("home/Projects/lab-machine/lab.toml"),
+        )
+        .env("LPOCO_RELEASES", url);
+    if let Some(t) = token {
+        c.env("GITHUB_TOKEN", t);
+    }
+    text(&c.output().unwrap())
+}
+
+const API: &str = "https://api.github.com/repos/linux-phone-oco/lab-tools/releases?per_page=100";
+
+#[test]
+fn a_given_token_wins_and_gh_is_not_asked() {
+    let l = gh_lab("ghwins", "echo ghp_FROMGH");
+    follow_with(&l, API, Some("ghp_GIVEN"));
+    let cfg = fs::read_to_string(l.dir.join("curl-config")).unwrap_or_default();
+    assert!(
+        cfg.contains("ghp_GIVEN") && !cfg.contains("ghp_FROMGH"),
+        "{cfg}"
+    );
+    assert!(!l.dir.join("gh-ran").exists());
+}
+
+#[test]
+fn gh_is_not_asked_for_a_url_that_is_not_githubs_api() {
+    let l = gh_lab("ghnotapi", "echo ghp_FROMGH");
+    follow_with(&l, "https://example.org/releases.json", None);
+    assert!(!l.dir.join("gh-ran").exists());
+    assert!(!fs::read_to_string(l.dir.join("curl-config"))
+        .unwrap_or_default()
+        .contains("ghp_"));
+}
+
+#[test]
+fn a_gh_that_fails_or_prints_no_token_leaves_follow_anonymous_and_silent_of_it() {
+    for (name, body) in [
+        ("ghfail", "echo ghp_FROMGH; exit 1"),
+        ("ghjunk", "echo 'not a token!'"),
+    ] {
+        let l = gh_lab(name, body);
+        let s = follow_with(&l, API, None);
+        assert!(l.dir.join("gh-ran").exists(), "{name}");
+        assert!(
+            !fs::read_to_string(l.dir.join("curl-config"))
+                .unwrap_or_default()
+                .contains("Bearer"),
+            "{name}"
+        );
+        assert!(
+            !s.contains("ghp_FROMGH") && !s.contains("not a token"),
+            "{name}: {s}"
+        );
+    }
+}
