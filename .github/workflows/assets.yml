@@ -63,7 +63,7 @@ jobs:
         if: steps.tag.outputs.version != ''
         run: |
           cargo build --release --locked --target "$TARGET" \
-            -p lpoco -p lpoco-lab -p lpoco-bringup -p lpoco-health -p lpoco-host -p lpoco-tone -p lpoco-attended
+            -p lpoco -p lpoco-lab -p lpoco-bringup -p lpoco-health -p lpoco-host -p lpoco-tone
       - name: attach
         if: steps.tag.outputs.version != ''
         env:
@@ -71,7 +71,7 @@ jobs:
         run: |
           v="$V"
           mkdir -p dist
-          for p in lpoco lpoco-lab lpoco-bringup lpoco-health lpoco-host lpoco-tone lpoco-attended; do
+          for p in lpoco lpoco-lab lpoco-bringup lpoco-health lpoco-host lpoco-tone; do
             f="$p-$TARGET"
             cp "target/$TARGET/release/$p" "dist/$f"
             (cd dist && sha256sum "$f" > "$f.sha256")

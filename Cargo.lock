@@ -573,7 +573,7 @@ name = "lpoco-attended"
 version = "0.44.4"
 dependencies = [
  "argenv-resolve",
- "lpoco-manifest",
+ "lpoco-manifest 0.44.4 (git+https://github.com/linux-phone-oco/lab-tools?tag=lpoco-manifest-v0.44.4)",
  "serde",
  "sha2",
  "toml",
@@ -586,7 +586,7 @@ dependencies = [
  "abootimg-oxide",
  "argenv-resolve",
  "flate2",
- "lpoco-manifest",
+ "lpoco-manifest 0.44.4",
  "serde",
  "sha1",
  "toml",
@@ -616,7 +616,7 @@ version = "0.44.4"
 dependencies = [
  "argenv-resolve",
  "glob",
- "lpoco-manifest",
+ "lpoco-manifest 0.44.4",
  "serde",
  "serde_json",
  "sha1",
@@ -633,7 +633,7 @@ dependencies = [
  "hound",
  "ideal-agent",
  "lpoco-host",
- "lpoco-manifest",
+ "lpoco-manifest 0.44.4",
  "lpoco-tone",
  "rmcp",
  "serde",
@@ -647,13 +647,25 @@ name = "lpoco-layer"
 version = "0.44.4"
 dependencies = [
  "argenv-resolve",
- "lpoco-manifest",
+ "lpoco-manifest 0.44.4",
  "serde",
 ]
 
 [[package]]
 name = "lpoco-manifest"
 version = "0.44.4"
+dependencies = [
+ "argenv-resolve",
+ "schemars",
+ "serde",
+ "serde_json",
+ "toml",
+]
+
+[[package]]
+name = "lpoco-manifest"
+version = "0.44.4"
+source = "git+https://github.com/linux-phone-oco/lab-tools?tag=lpoco-manifest-v0.44.4#951fa639f673cfbd6e918c32e2544053625d167c"
 dependencies = [
  "argenv-resolve",
  "schemars",

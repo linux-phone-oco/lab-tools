@@ -6,7 +6,7 @@
 //!                                                    run procedures/NAME.rs; the options go to the procedure as given
 //!   lpoco-attended check [--host]                    dry-run every procedure; exit 1 naming each that fails;
 //!                                                    --host also runs the installed devlab on the manifest (read-only, cut after 30 s)
-//!   lpoco-attended --version                         this program's version (the lpoco family's one version)
+//!   lpoco-attended --version                         this program's version (its own: tagged only when attended changes)
 
 use argenv_resolve::*;
 

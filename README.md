@@ -255,7 +255,7 @@ script that needs more sources it. The user manager keeps its units after logout
 
 `lpoco NAME args...` finds `lpoco-NAME` beside itself or on PATH and runs it, returning its exit code
 (`lpoco health latest`). The family is released together under one version (release-plz `version_group`):
-a program whose `--version` differs from lpoco's is refused, naming both. `lpoco list` shows the
+a program whose `--version` differs from lpoco's is refused, naming both (`lpoco-attended` is the exception: a library tagged only when it changes, at its own version). `lpoco list` shows the
 programs found with versions; `lpoco completions SHELL` and `lpoco man` come from the argenv declaration.
 Lab-side only: the phone runs `lpoco-health` directly and gets no dispatcher.
 

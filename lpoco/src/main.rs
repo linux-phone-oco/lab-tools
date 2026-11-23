@@ -2,6 +2,7 @@
 //! `lpoco` - one front door for the linux-phone-oco tools. `lpoco NAME args...` finds `lpoco-NAME`
 //! beside this program or on PATH and runs it, returning its exit code. The family is released
 //! together, so a program whose `--version` differs from lpoco's is refused, naming both versions.
+//! The exception is a program released on its own (OWN_VERSION: `attended`), tagged only when it changes.
 //! The phone gets no dispatcher: it runs `lpoco-health` and the others directly.
 
 mod cli;
@@ -14,6 +15,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
+/// Programs released on their own, outside the family's one version: tagged only when they change.
+const OWN_VERSION: &[&str] = &["attended"];
 const MAN_DATE: &str = "2026-11-17";
 
 /// Where programs are looked for, in order: beside this program, then each PATH folder.
@@ -68,6 +71,8 @@ fn run(name: &str, args: &[String]) -> i32 {
     };
     match version_of(&prog) {
         Some(v) if v == VERSION => {}
+        // released on its own (release-plz.toml): it reports a version, whatever lpoco's is
+        Some(_) if OWN_VERSION.contains(&name) => {}
         Some(v) => {
             eprintln!(
                 "lpoco: {} is version {v} but lpoco is {VERSION}; the family runs one version, install them together",
@@ -118,7 +123,7 @@ fn list() -> i32 {
     println!("lpoco {VERSION}");
     for (name, (path, v)) in found() {
         let (shown, note) = match v {
-            Some(v) if v == VERSION => (v, ""),
+            Some(v) if v == VERSION || OWN_VERSION.contains(&name.as_str()) => (v, ""),
             Some(v) => (v, "  (differs: lpoco refuses to run it)"),
             None => (
                 "unknown".into(),

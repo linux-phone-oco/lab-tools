@@ -1,6 +1,6 @@
 [package]
 name = "lpoco-attended"
-# the family is released together: one version with lpoco and every lpoco-* program (release-plz.toml, version_group)
+# released on its own: tagged only when this library changes (release-plz.toml has it outside version_group lpoco)
 version = "0.44.4"
 edition = "2021"
 description = "lpoco attended: a lane's attended procedure as a plain list of named steps that each stop the run, with --dry-run and a log"
@@ -12,8 +12,10 @@ name = "lpoco_attended"
 [dependencies]
 # the command line is declared once (argenv), not parsed by hand
 argenv-resolve = "0.4"
-# the device manifest a procedure names: its values are read from the same declared tables every lpoco program reads
-lpoco-manifest = { path = "../manifest" }
+# the device manifest a procedure names, at its released tag and not by path: a path dependency would move this
+# library at every family release (release-plz.toml). `rhizoid bump` moves the tag, when attended needs a newer manifest.
+# the values it reads are the same declared tables every lpoco program reads
+lpoco-manifest = { git = "https://github.com/linux-phone-oco/lab-tools", tag = "lpoco-manifest-v0.44.4" }
 serde = { version = "1", features = ["derive"] }
 # the checksum an image is declared with is checked before it is booted
 sha2 = "0.11"
