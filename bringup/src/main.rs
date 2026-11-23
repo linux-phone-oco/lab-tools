@@ -63,6 +63,12 @@ fn run(r: &argenv_resolve::Resolution) -> Result<i32, String> {
     if (command == Some(Command::DtCheck)) != matches!(verb, Verb::Binding | Verb::Dtbs) {
         return Err("binding and dtbs are for dt-check: lpoco-bringup dt-check binding|dtbs SRC --image NAME@sha256:DIGEST --out SCRATCH".into());
     }
+    if (command == Some(Command::Kernel)) != matches!(verb, Verb::Assemble | Verb::Publish) {
+        return Err("assemble and publish are for the kernel: lpoco-bringup kernel assemble LIST --lists FILE --repo DIR --records DIR | kernel publish TAG --repo DIR".into());
+    }
+    if command == Some(Command::Kernel) {
+        return kernel(verb, r);
+    }
     if command == Some(Command::DtCheck) {
         return dt_check(verb, r);
     }
@@ -210,7 +216,14 @@ fn run(r: &argenv_resolve::Resolution) -> Result<i32, String> {
             println!("{out}: {} (net {net})", names.join(", "));
             Ok(0)
         }
-        Verb::Capture | Verb::Diff | Verb::Binding | Verb::Dtbs => unreachable!("handled above"),
+        Verb::Capture
+        | Verb::Diff
+        | Verb::Binding
+        | Verb::Dtbs
+        | Verb::Assemble
+        | Verb::Publish => {
+            unreachable!("handled above")
+        }
         Verb::Check => {
             let path = need(Contract::IMAGE.get_from(r), "an image (IMG)")?;
             let bytes = read(&path)?;
@@ -266,6 +279,51 @@ fn net_of(r: &argenv_resolve::Resolution) -> Result<u8, String> {
             .parse::<u8>()
             .map_err(|_| format!("--net {n}: a number from 0 to 255")),
     }
+}
+
+/// `kernel assemble` and `kernel publish`: a phone's test kernel from its named list, then its tag kept once an image names it.
+fn kernel(verb: Verb, r: &argenv_resolve::Resolution) -> Result<i32, String> {
+    use lpoco_bringup::kernel as k;
+    let rhizoid = Contract::RHIZOID
+        .get_from(r)
+        .unwrap_or_else(|| "rhizoid".into());
+    let repo = need(Contract::REPO.get_from(r), "--repo DIR (the kernel clone)")?;
+    let name = need(
+        Contract::LIST.get_from(r),
+        "the list (assemble) or the tag (publish)",
+    )?;
+    if verb == Verb::Publish {
+        let device = Contract::DEVICE
+            .get_from(r)
+            .unwrap_or_else(|| "device.toml".into());
+        let text = fs::read_to_string(&device).map_err(|e| format!("cannot read {device}: {e}"))?;
+        let tags = k::image_tags(&text).map_err(|e| format!("{device}: {e}"))?;
+        if !k::publish(&rhizoid, &name, Path::new(&repo), &tags)? {
+            println!("{name}: refused, no image names it (an [images.NAME] kernel_tag in {device}); not pushed");
+            return Ok(1);
+        }
+        println!("{name}: pushed, its worktree ended");
+        return Ok(0);
+    }
+    let lists = need(Contract::LISTS.get_from(r), "--lists FILE")?;
+    let records = need(Contract::RECORDS.get_from(r), "--records DIR")?;
+    let tad = Contract::TAD.get_from(r).unwrap_or_else(|| "tad".into());
+    let text = fs::read_to_string(&lists).map_err(|e| format!("cannot read {lists}: {e}"))?;
+    let carried = k::carried_from(&tad, Path::new(&records))?;
+    let refused = k::check(&text, &name, Path::new(&repo), &carried)?;
+    if !refused.is_empty() {
+        for l in &refused {
+            println!("{l}");
+        }
+        println!(
+            "{name}: refused, {} things to put right before rhizoid runs",
+            refused.len()
+        );
+        return Ok(1);
+    }
+    let (code, said) = k::assemble(&rhizoid, &name, Path::new(&lists), Path::new(&repo))?;
+    print!("{said}");
+    Ok(code)
 }
 
 /// `dt-check binding|dtbs`: the kernel's devicetree checks in a container.

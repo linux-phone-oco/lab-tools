@@ -197,3 +197,16 @@ fn an_unknown_field_is_refused_in_the_firmware_and_initramfs_tables() {
         assert!(Manifest::parse(&format!("{HEAD}{}", LAYER.replace(from, to))).is_err());
     }
 }
+
+#[test]
+fn an_images_kernel_tag_is_an_int_tag() {
+    let ok = |t: &str| {
+        Manifest::parse(&format!(
+            "{HEAD}[images.a]\npath = \"a.img\"\nkernel_tag = \"{t}\"\n"
+        ))
+    };
+    assert!(ok("int/surya/ufs-off/v7.1/1").is_ok());
+    for bad in ["v7.1", "int/", "int/a b"] {
+        assert!(ok(bad).is_err(), "{bad} is not an int/ tag");
+    }
+}

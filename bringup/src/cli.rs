@@ -24,6 +24,10 @@
 //!                                                a snapshot of what the stock OS does (device tree, gpio, pinctrl, regulators, clocks, interrupts, drivers) taken over adb or ssh
 //!   lpoco-bringup reference diff PART --live DIR --ours DIR [--match WORDS]
 //!                                                every difference between two snapshots for one part, named; exit 1 on a difference, 2 when the part is not known yet
+//!   lpoco-bringup kernel assemble LIST --lists FILE --repo DIR --records DIR [--rhizoid PROGRAM] [--tad PROGRAM]
+//!                                                the record checks of one list (every topic has an upstream-item row, every carried subject its item's tag; exit 1 on a miss), then rhizoid assemble makes int/DEVICE/LIST/BASE/N
+//!   lpoco-bringup kernel publish TAG --repo DIR [--device device.toml] [--rhizoid PROGRAM]
+//!                                                once an [images.NAME] kernel_tag names TAG: push the tag, end rhizoid's worktree for it (--force)
 //!   lpoco-bringup --version                      this program's version (the lpoco family's one version)
 
 use argenv_resolve::*;
@@ -36,10 +40,12 @@ pub enum Command {
     Reference,
     #[serde(rename = "dt-check")]
     DtCheck,
+    Kernel,
 }
 
 impl Command {
-    pub const TOKENS: &'static [&'static str] = &["image", "initramfs", "reference", "dt-check"];
+    pub const TOKENS: &'static [&'static str] =
+        &["image", "initramfs", "reference", "dt-check", "kernel"];
 }
 
 impl FromRaw for Command {
@@ -49,6 +55,7 @@ impl FromRaw for Command {
             "initramfs" => Command::Initramfs,
             "reference" => Command::Reference,
             "dt-check" => Command::DtCheck,
+            "kernel" => Command::Kernel,
             _ => return None,
         })
     }
@@ -70,12 +77,14 @@ pub enum Verb {
     Diff,
     Binding,
     Dtbs,
+    Assemble,
+    Publish,
 }
 
 impl Verb {
     pub const TOKENS: &'static [&'static str] = &[
         "info", "unpack", "pack", "check", "swap", "bisect", "build", "init", "files", "capture",
-        "diff", "binding", "dtbs",
+        "diff", "binding", "dtbs", "assemble", "publish",
     ];
 }
 
@@ -95,6 +104,8 @@ impl FromRaw for Verb {
             "diff" => Verb::Diff,
             "binding" => Verb::Binding,
             "dtbs" => Verb::Dtbs,
+            "assemble" => Verb::Assemble,
+            "publish" => Verb::Publish,
             _ => return None,
         })
     }
@@ -114,9 +125,9 @@ contract! {
         key: "verb",
         ty: Type::Enum,
         allowed: Verb::TOKENS,
-        subcommands: &[Command::Image, Command::Initramfs, Command::Reference, Command::DtCheck],
+        subcommands: &[Command::Image, Command::Initramfs, Command::Reference, Command::DtCheck, Command::Kernel],
         arg: Some(Arg::positional(0)),
-        summary: "What to do: image info, unpack, pack, check, swap or bisect; initramfs build, init or files; reference capture or diff; dt-check binding or dtbs.",
+        summary: "What to do: image info, unpack, pack, check, swap or bisect; initramfs build, init or files; reference capture or diff; dt-check binding or dtbs; kernel assemble or publish.",
         ..Input::EMPTY
     };
 
@@ -132,7 +143,7 @@ contract! {
     DEVICE: String, Command = Input {
         key: "device",
         ty: Type::String,
-        subcommands: &[Command::Image, Command::Initramfs],
+        subcommands: &[Command::Image, Command::Initramfs, Command::Kernel],
         arg: Some(Arg { value_name: "FILE", ..Arg::long("device") }),
         env: Some(Env::new("LPOCO_DEVICE")),
         summary: "The device manifest whose [boot] table says the header facts (initramfs init: its [boot.gadget]) (device.toml in the current folder when none is given).",
@@ -320,6 +331,65 @@ contract! {
         arg: Some(Arg { value_name: "PROGRAM", ..Arg::long("docker") }),
         env: Some(Env::new("LPOCO_DOCKER")),
         summary: "dt-check: the container program (docker when none is given).",
+        ..Input::EMPTY
+    };
+
+    LIST: String, Command = Input {
+        key: "list",
+        ty: Type::String,
+        subcommands: &[Command::Kernel],
+        arg: Some(Arg { value_name: "LIST", ..Arg::positional(1) }),
+        summary: "kernel assemble: the named list of the lists file; kernel publish: the int/ tag an image names.",
+        ..Input::EMPTY
+    };
+
+    LISTS: String, Command = Input {
+        key: "lists",
+        ty: Type::String,
+        subcommands: &[Command::Kernel],
+        arg: Some(Arg { value_name: "FILE", ..Arg::long("lists") }),
+        env: Some(Env::new("LPOCO_KERNEL_LISTS")),
+        summary: "kernel assemble: the lab's kernel/topics.toml, in rhizoid's list format.",
+        ..Input::EMPTY
+    };
+
+    REPO: String, Command = Input {
+        key: "repo",
+        ty: Type::String,
+        subcommands: &[Command::Kernel],
+        arg: Some(Arg { value_name: "DIR", ..Arg::long("repo") }),
+        env: Some(Env::new("LPOCO_KERNEL_REPO")),
+        summary: "kernel: the lab clone of the kernel repository.",
+        ..Input::EMPTY
+    };
+
+    RECORDS: String, Command = Input {
+        key: "records",
+        ty: Type::String,
+        subcommands: &[Command::Kernel],
+        arg: Some(Arg { value_name: "DIR", ..Arg::long("records") }),
+        env: Some(Env::new("LPOCO_RECORDS")),
+        summary: "kernel assemble: the base whose upstream-item rows the topics are checked against (tad q carried runs there).",
+        ..Input::EMPTY
+    };
+
+    RHIZOID: String, Command = Input {
+        key: "rhizoid",
+        ty: Type::String,
+        subcommands: &[Command::Kernel],
+        arg: Some(Arg { value_name: "PROGRAM", ..Arg::long("rhizoid") }),
+        env: Some(Env::new("LPOCO_RHIZOID")),
+        summary: "kernel: git-rhizoid's program (rhizoid on PATH when none is given).",
+        ..Input::EMPTY
+    };
+
+    TAD: String, Command = Input {
+        key: "tad",
+        ty: Type::String,
+        subcommands: &[Command::Kernel],
+        arg: Some(Arg { value_name: "PROGRAM", ..Arg::long("tad") }),
+        env: Some(Env::new("LPOCO_TAD")),
+        summary: "kernel assemble: the tad program (tad on PATH when none is given).",
         ..Input::EMPTY
     };
 
