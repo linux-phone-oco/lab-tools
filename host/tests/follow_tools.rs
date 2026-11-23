@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! `lpoco host follow` installs a declared tool whose lab.toml pin moved (backlog host-installs-moved-tool-pins):
-//! the family is current, `[tools.rhizoid]` names a newer tag than the installed binary's stamp, and follow - under
-//! the leases of every phone, judged by the host's own check - installs the asset at its pin, or leaves it while a
-//! keeper holds a lease, or puts the old binary back when the check fails. The release is a folder
+//! the family is current, `[tools.rhizoid]` names a newer tag than the installed binary's stamp, and follow -
+//! with no phone's lease taken or waited for (it never drives one), judged by the host's own check - installs the asset at
+//! its pin, or puts the old binary back when the check fails. The release is a folder
 //! (`LPOCO_GITHUB=file://DIR`), curl a stub that copies from it.
 
 use std::fs;
@@ -182,7 +182,7 @@ fn lease(l: &Lab, holder: &str) {
 }
 
 #[test]
-fn a_tool_pin_newer_than_the_installed_binary_is_installed_with_the_leases_held_and_stamped() {
+fn a_tool_pin_newer_than_the_installed_binary_is_installed_and_stamped_without_taking_a_lease() {
     let l = lab("moved", 0);
     let o = follow(&l, &["now"]);
     let s = text(&o);
@@ -190,9 +190,9 @@ fn a_tool_pin_newer_than_the_installed_binary_is_installed_with_the_leases_held_
     assert!(rhizoid(&l).contains("rhizoid new"), "{s}");
     assert_eq!(stamp(&l), NEW);
     assert!(s.contains("followed: rhizoid") && s.contains(NEW), "{s}");
-    // the asset was fetched while the phone's lease was ours, and the family was left alone
+    // a tool that never drives a phone takes no phone's lease; the family was left alone
     assert!(
-        calls(&l).contains("lease-held lpoco-host-follow"),
+        !calls(&l).contains("lease-held lpoco-host-follow"),
         "{}",
         calls(&l)
     );
@@ -205,16 +205,25 @@ fn a_tool_pin_newer_than_the_installed_binary_is_installed_with_the_leases_held_
 }
 
 #[test]
-fn a_held_lease_leaves_the_old_tool_and_fetches_nothing() {
+fn a_keepers_lease_does_not_hold_back_a_tool_that_never_drives_a_phone() {
     let l = lab("held", 0);
     lease(&l, "surya keeper");
     let o = follow(&l, &["now"]);
     let s = text(&o);
     assert!(o.status.success(), "{s}");
-    assert!(s.contains("waits: surya keeper keeps xiaomi-surya"), "{s}");
-    assert!(rhizoid(&l).contains("rhizoid old"));
-    assert_eq!(stamp(&l), OLD);
-    assert!(!calls(&l).contains(ASSET), "{}", calls(&l));
+    assert!(!s.contains("waits:"), "{s}");
+    assert!(rhizoid(&l).contains("rhizoid new"), "{s}");
+    assert_eq!(stamp(&l), NEW);
+    // no lease of ours was taken, and the keeper's is as it was
+    assert!(
+        !calls(&l).contains("lease-held lpoco-host-follow"),
+        "{}",
+        calls(&l)
+    );
+    let holder = l
+        .dir
+        .join("home/.local/state/devlab/xiaomi-surya/keeper.lease/holder");
+    assert_eq!(fs::read_to_string(holder).unwrap(), "surya keeper\n");
 }
 
 #[test]
