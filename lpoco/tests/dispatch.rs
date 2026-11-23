@@ -140,3 +140,26 @@ fn link_lpoco(own: &Path) {
     let _ = fs::remove_file(own);
     fs::hard_link(env!("CARGO_BIN_EXE_lpoco"), own).unwrap_or_else(|e| panic!("{own:?}: {e}"));
 }
+
+/// lpoco-manifest is tagged only when manifest/ changes (proof: manifest-releases-when-it-changes),
+/// so `lpoco manifest` runs it at its own version too.
+#[test]
+fn lpoco_manifest_runs_at_its_own_version() {
+    let d = tmp("manifest-own");
+    let p = d.join("lpoco-manifest");
+    fs::write(
+        &p,
+        "#!/bin/sh\nif [ \"$1\" = --version ]; then echo 'lpoco-manifest 0.1.0'; exit 0; fi\necho \"manifest got: $*\"\nexit 7\n",
+    )
+    .unwrap();
+    fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).unwrap();
+    let own = d.join("lpoco");
+    link_lpoco(&own);
+    let o = Command::new(&own)
+        .args(["manifest", "schema"])
+        .env("PATH", &d)
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(7), "{}", text(&o.stderr));
+    assert_eq!(text(&o.stdout), "manifest got: schema\n");
+}

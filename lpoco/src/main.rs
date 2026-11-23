@@ -2,7 +2,7 @@
 //! `lpoco` - one front door for the linux-phone-oco tools. `lpoco NAME args...` finds `lpoco-NAME`
 //! beside this program or on PATH and runs it, returning its exit code. The family is released
 //! together, so a program whose `--version` differs from lpoco's is refused, naming both versions.
-//! The exception is a program released on its own (OWN_VERSION: `attended`), tagged only when it changes.
+//! The exception is a program released on its own (OWN_VERSION: `attended`, `manifest`), tagged only when it changes.
 //! The phone gets no dispatcher: it runs `lpoco-health` and the others directly.
 
 mod cli;
@@ -16,7 +16,7 @@ use std::process::Command;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Programs released on their own, outside the family's one version: tagged only when they change.
-const OWN_VERSION: &[&str] = &["attended"];
+const OWN_VERSION: &[&str] = &["attended", "manifest"];
 const MAN_DATE: &str = "2026-11-17";
 
 /// Where programs are looked for, in order: beside this program, then each PATH folder.
