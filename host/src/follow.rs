@@ -65,7 +65,7 @@ pub fn held_leases(
         .iter()
         .filter_map(|d| {
             let (who, age) = age_of(&lease_holder_file(home, &d.codename))?;
-            (age < LEASE_LAPSE).then(|| (d.codename.clone(), who))
+            (age < LEASE_LAPSE && who != LEASE_HOLDER).then(|| (d.codename.clone(), who))
         })
         .collect();
     held.sort();
@@ -225,14 +225,26 @@ impl Drop for Leases {
     }
 }
 
-/// Takes the lease of each phone, as devlab does (a directory made atomically, the holder's name in it); a lease
-/// that has lapsed, or was half made, is taken over. A lease that is live is not: the phone and who keeps it
-/// are returned, and what was taken is given back.
+/// Why the leases were not all taken.
+#[derive(Debug, PartialEq)]
+pub enum NotTaken {
+    /// A keeper's lease is live: the phone and who keeps it. A wait, not a failure.
+    Kept { phone: String, who: String },
+    /// The lease could not be made or moved: a failure to say, not a wait.
+    Unusable { phone: String, why: String },
+}
+
+/// Takes the lease of each phone: the lease is made whole (a folder holding the holder's name) beside its place and
+/// moved there, so it is never seen half made (a move onto a folder that has files fails). A live lease is never
+/// taken, whoever its holder reads as (a renewing keeper's holder file is empty for an instant); one that lapsed,
+/// was half made, or is a killed follow's own is moved aside, then taken. What was taken is given back when one is
+/// refused.
 pub fn take_leases(
     home: &str,
     devices: &[Device],
     age_of: &dyn Fn(&str) -> Option<(String, Duration)>,
-) -> Result<Leases, (String, String)> {
+) -> Result<Leases, NotTaken> {
+    use std::fs;
     let mut taken = Leases { dirs: Vec::new() };
     let mut codenames: Vec<&str> = devices.iter().map(|d| d.codename.as_str()).collect();
     codenames.sort();
@@ -243,37 +255,56 @@ pub fn take_leases(
             .parent()
             .map(std::path::Path::to_path_buf)
             .unwrap_or_default();
-        let unusable = |why: &str| {
-            (
-                code.to_string(),
-                format!("the lease could not be taken ({why})"),
-            )
+        let unusable = |what: &str, e: std::io::Error| NotTaken::Unusable {
+            phone: code.to_string(),
+            why: format!("{what}: {e}"),
         };
-        if let Some(parent) = dir.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| unusable(&e.to_string()))?;
-        }
-        let mut have = false;
-        for _ in 0..2 {
-            if std::fs::create_dir(&dir).is_ok() {
-                have = true;
+        let state = dir
+            .parent()
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_default();
+        fs::create_dir_all(&state).map_err(|e| unusable("make its folder", e))?;
+        let whole = state.join(format!("keeper.lease.follow-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&whole);
+        fs::create_dir(&whole).map_err(|e| unusable("make the lease", e))?;
+        fs::write(whole.join("holder"), format!("{LEASE_HOLDER}\n"))
+            .map_err(|e| unusable("write the holder", e))?;
+        let mut moved = false;
+        for pass in 0..2 {
+            if fs::rename(&whole, &dir).is_ok() {
+                moved = true;
                 break;
             }
             match age_of(&holder_file) {
-                Some((who, age)) if !who.is_empty() && who != LEASE_HOLDER && age < LEASE_LAPSE => {
-                    return Err((code.to_string(), who));
+                Some((who, age)) if age < LEASE_LAPSE && who != LEASE_HOLDER => {
+                    let _ = fs::remove_dir_all(&whole);
+                    return Err(NotTaken::Kept {
+                        phone: code.to_string(),
+                        who,
+                    });
                 }
-                // lapsed, a half-made lease, or one a killed follow left: taken away, then taken
-                _ => {
-                    let _ = std::fs::remove_dir_all(&dir);
+                _ if pass == 0 => {
+                    let aside = state.join(format!("keeper.lease.aside-{}", std::process::id()));
+                    let _ = fs::remove_dir_all(&aside);
+                    if let Err(e) = fs::rename(&dir, &aside) {
+                        if e.kind() != std::io::ErrorKind::NotFound {
+                            let _ = fs::remove_dir_all(&whole);
+                            return Err(unusable("move the old lease aside", e));
+                        }
+                    }
+                    let _ = fs::remove_dir_all(&aside);
                 }
+                _ => {}
             }
         }
-        if !have {
-            return Err(unusable("it kept being made by another"));
+        if !moved {
+            let _ = fs::remove_dir_all(&whole);
+            return Err(NotTaken::Unusable {
+                phone: code.to_string(),
+                why: "another keeper made its lease as this one was taken".into(),
+            });
         }
-        taken.dirs.push(dir.clone());
-        std::fs::write(dir.join("holder"), format!("{LEASE_HOLDER}\n"))
-            .map_err(|e| unusable(&e.to_string()))?;
+        taken.dirs.push(dir);
     }
     Ok(taken)
 }
@@ -403,5 +434,117 @@ mod tests {
     #[test]
     fn without_a_fail_line_the_last_three_lines_are_given_in_order() {
         assert_eq!(judge_check(Some(2), "a\nb\nc\nd\n").1, "b | c | d");
+    }
+}
+
+#[cfg(test)]
+mod lease_tests {
+    use super::*;
+    use std::fs;
+
+    fn device(code: &str) -> Device {
+        Device {
+            path: Default::default(),
+            codename: code.into(),
+            host: Default::default(),
+            lpoco_pin: None,
+            fastboot_serial: None,
+            usb_address: None,
+            pieces: vec![],
+            user_configs: vec![],
+        }
+    }
+
+    fn home(name: &str) -> String {
+        let h = std::env::temp_dir().join(format!("lpoco-leases-{}-{name}", std::process::id()));
+        let _ = fs::remove_dir_all(&h);
+        fs::create_dir_all(&h).unwrap();
+        h.to_string_lossy().into_owned()
+    }
+
+    fn age(file: &str) -> Option<(String, Duration)> {
+        let who = fs::read_to_string(file).ok()?;
+        let t = fs::metadata(file).ok()?.modified().ok()?;
+        Some((
+            who.trim().into(),
+            std::time::SystemTime::now()
+                .duration_since(t)
+                .unwrap_or_default(),
+        ))
+    }
+
+    fn live_lease(h: &str, code: &str, holder: &str) {
+        let d = format!("{h}/.local/state/devlab/{code}/keeper.lease");
+        fs::create_dir_all(&d).unwrap();
+        fs::write(format!("{d}/holder"), holder).unwrap();
+    }
+
+    fn present(h: &str, code: &str) -> bool {
+        std::path::Path::new(&lease_holder_file(h, code)).exists()
+    }
+
+    #[test]
+    fn a_live_keepers_lease_on_the_second_phone_refuses_and_gives_back_the_first() {
+        let h = home("second");
+        live_lease(&h, "b-phone", "a-keeper\n");
+        let devs = [device("a-phone"), device("b-phone")];
+        let got = take_leases(&h, &devs, &age).err().unwrap();
+        assert_eq!(
+            got,
+            NotTaken::Kept {
+                phone: "b-phone".into(),
+                who: "a-keeper".into()
+            }
+        );
+        assert!(!present(&h, "a-phone"), "the first lease was kept");
+        assert_eq!(
+            fs::read_to_string(lease_holder_file(&h, "b-phone")).unwrap(),
+            "a-keeper\n"
+        );
+    }
+
+    #[test]
+    fn a_lease_whose_holder_reads_empty_while_a_keeper_renews_is_live_not_half_made() {
+        let h = home("empty");
+        live_lease(&h, "a-phone", "");
+        let got = take_leases(&h, &[device("a-phone")], &age).err().unwrap();
+        assert!(matches!(got, NotTaken::Kept { .. }), "{got:?}");
+        assert!(present(&h, "a-phone"));
+    }
+
+    #[test]
+    fn a_killed_follows_own_leftover_is_taken_over_and_not_counted_as_a_keeper() {
+        let h = home("leftover");
+        live_lease(&h, "a-phone", &format!("{LEASE_HOLDER}\n"));
+        let devs = [device("a-phone")];
+        assert!(held_leases(&h, &devs, &age).is_empty());
+        let leases = take_leases(&h, &devs, &age).unwrap();
+        assert!(present(&h, "a-phone"));
+        drop(leases);
+        assert!(!present(&h, "a-phone"));
+    }
+
+    #[test]
+    fn a_lapsed_lease_is_taken_and_a_dropped_lease_is_given_back_only_while_it_is_ours() {
+        let h = home("lapsed");
+        live_lease(&h, "a-phone", "old-keeper\n");
+        let long_ago = |f: &str| age(f).map(|(w, _)| (w, LEASE_LAPSE + Duration::from_secs(1)));
+        let leases = take_leases(&h, &[device("a-phone")], &long_ago).unwrap();
+        assert_eq!(
+            fs::read_to_string(lease_holder_file(&h, "a-phone")).unwrap(),
+            format!("{LEASE_HOLDER}\n")
+        );
+        // a keeper that took it since is not robbed of it
+        fs::write(lease_holder_file(&h, "a-phone"), "new-keeper\n").unwrap();
+        drop(leases);
+        assert!(present(&h, "a-phone"));
+    }
+
+    #[test]
+    fn a_state_folder_that_cannot_be_made_is_unusable_not_a_wait() {
+        let h = home("unusable");
+        fs::write(format!("{h}/.local"), "a file where a folder should be").unwrap();
+        let got = take_leases(&h, &[device("a-phone")], &age).err().unwrap();
+        assert!(matches!(got, NotTaken::Unusable { .. }), "{got:?}");
     }
 }

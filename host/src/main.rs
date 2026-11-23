@@ -1401,9 +1401,14 @@ fn follow(st: &State, now: bool) -> Result<i32, String> {
     // (a keeper that asks meanwhile is told the phone is kept), so no keeper meets programs of two versions.
     let _leases = match follow::take_leases(&st.home, &st.found, &lease_age) {
         Ok(l) => l,
-        Err((phone, who)) => {
+        Err(follow::NotTaken::Kept { phone, who }) => {
             println!("waits: {who} keeps {phone}; release {newest} is installed in a window with no keeper");
             return Ok(0);
+        }
+        Err(follow::NotTaken::Unusable { phone, why }) => {
+            return Err(format!(
+                "the lease of {phone} could not be taken ({why}): nothing is changed"
+            ));
         }
     };
     let previous = save_programs(&st.home)?;

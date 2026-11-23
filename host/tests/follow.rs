@@ -1258,3 +1258,15 @@ fn an_installed_version_that_cannot_be_read_is_said_not_judged_instead_of_up_to_
     let s = text(&follow(&l, &["now"]));
     assert!(s.contains("up to date") && s.contains("not judged"), "{s}");
 }
+
+#[test]
+fn a_lease_a_killed_follow_left_does_not_hold_the_next_follow_back() {
+    let l = lab("own-leftover", "");
+    releases(&l, &["0.2.1", "0.2.0"]);
+    install_old(&l);
+    lease(&l, "xiaomi-surya", "lpoco-host-follow", "now");
+    let o = follow(&l, &["now"]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert!(installed(&l, "lpoco").contains("0.2.1"), "{}", text(&o));
+    assert_eq!(leases_left(&l), Vec::<String>::new(), "{}", text(&o));
+}
