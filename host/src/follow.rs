@@ -110,11 +110,15 @@ pub fn plan_root_commands(plan_out: &str) -> Option<Vec<String>> {
 pub fn valid_every(table: &str, s: &str) -> Result<(), String> {
     let digits = s.chars().take_while(|c| c.is_ascii_digit()).count();
     let unit = &s[digits..];
-    if digits > 0 && !unit.is_empty() && unit.chars().all(|c| c.is_ascii_lowercase()) {
+    if digits > 0
+        && !unit.is_empty()
+        && unit.chars().all(|c| c.is_ascii_lowercase())
+        && every_seconds(s).is_some()
+    {
         Ok(())
     } else {
         Err(format!(
-            "{table} every = {s:?} must be a number and a unit, as 15min or 1h"
+            "{table} every = {s:?} must be a number and a unit (s, min, h, d, w), as 15min or 1h"
         ))
     }
 }
@@ -140,8 +144,11 @@ pub fn parse_tried(text: &str) -> Option<(String, u64)> {
     Some((release.to_string(), at.parse().ok()?))
 }
 
+/// What a timer run may come early by: systemd's default `AccuracySec`.
+const RETRY_SLACK: u64 = 60;
+
 /// Seconds a release that failed still waits before it is tried again: None when it is another release than the one
-/// that failed, or `every` has passed since that run began (the timer's own beat, so a timer run is never held).
+/// that failed, or `every` (less a minute: systemd places a timer run within its accuracy, and the stamp is taken after the unit started) has passed since that run began, or the stamp is from a clock ahead of this one.
 pub fn retry_wait(
     tried: Option<(String, u64)>,
     release: &str,
@@ -152,7 +159,10 @@ pub fn retry_wait(
     if failed != release {
         return None;
     }
-    let due = began.saturating_add(every);
+    if began > now {
+        return None;
+    }
+    let due = began.saturating_add(every.saturating_sub(RETRY_SLACK));
     due.checked_sub(now).filter(|left| *left > 0)
 }
 
@@ -406,7 +416,7 @@ mod tests {
         assert_eq!(every_seconds("2days"), Some(172_800));
         assert_eq!(every_seconds("5fortnights"), None);
         let tried = || parse_tried("0.2.1 1000\n");
-        assert_eq!(retry_wait(tried(), "0.2.1", 900, 1500), Some(400));
+        assert_eq!(retry_wait(tried(), "0.2.1", 900, 1500), Some(340));
         assert_eq!(
             retry_wait(tried(), "0.2.1", 900, 1900),
             None,
@@ -414,6 +424,20 @@ mod tests {
         );
         assert_eq!(retry_wait(tried(), "0.2.2", 900, 1100), None);
         assert_eq!(retry_wait(None, "0.2.1", 900, 1100), None);
+        assert_eq!(
+            retry_wait(tried(), "0.2.1", 900, 1899),
+            None,
+            "a timer run a second early is not held"
+        );
+        assert_eq!(
+            retry_wait(parse_tried("0.2.1 90000"), "0.2.1", 900, 1000),
+            None,
+            "a stamp from a clock ahead holds nothing"
+        );
+        assert!(
+            valid_every("[follow]", "5ms").is_err(),
+            "a unit every_seconds cannot read must not pass quietly"
+        );
         assert_eq!(parse_tried("0.2.1"), None);
         assert_eq!(parse_tried("0.2.1 soon"), None);
     }

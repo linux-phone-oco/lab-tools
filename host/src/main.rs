@@ -1565,7 +1565,9 @@ fn tried_too_lately(st: &State, release: &str) -> Result<bool, String> {
 fn remember_failed_try(home: &str, release: &str, began: u64) {
     let file = tried_file(home);
     let _ = fs::create_dir_all(Path::new(&file).parent().unwrap_or(Path::new(".")));
-    let _ = fs::write(file, format!("{release} {began}\n"));
+    if let Err(e) = fs::write(&file, format!("{release} {began}\n")) {
+        eprintln!("cannot keep the failed try of {release} ({file}): {e}; it is not rate limited");
+    }
 }
 
 /// Says so and returns true when a phone's keeper holds the lab now.
