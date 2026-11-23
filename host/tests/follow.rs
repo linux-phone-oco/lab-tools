@@ -1696,3 +1696,39 @@ fn a_gh_that_fails_or_prints_no_token_leaves_follow_anonymous_and_silent_of_it()
         );
     }
 }
+
+#[test]
+fn a_401_for_the_token_gh_gave_is_retried_anonymous_and_a_given_token_is_not() {
+    // source: GitHub answers 401 "Bad credentials" to a bearer token it does not know, whatever the endpoint;
+    // curl --fail then exits 22 with the code on --write-out (host/src/main.rs fetch_with reads that code)
+    let stub = |l: &Lab| {
+        exe(
+            &l.dir.join("stubs/curl"),
+            &format!(
+                "cfg=$(cat)\necho \"$cfg\" >> {cfg}\nwhile [ $# -gt 0 ]; do case \"$1\" in --output) out=\"$2\"; shift;; esac; shift; done\ncase \"$cfg\" in *Bearer*) printf 401; exit 22;; esac\nprintf 200\ncp {rel} \"$out\"",
+                cfg = l.dir.join("curl-config").display(),
+                rel = l.dir.join("releases.json").display()
+            ),
+        );
+    };
+    let l = gh_lab("gh401", "echo ghp_STALE");
+    stub(&l);
+    let said = follow_with(&l, API, None);
+    assert!(
+        !said.contains("HTTP 401") && !said.contains("cannot fetch"),
+        "{said}"
+    );
+    let cfg = fs::read_to_string(l.dir.join("curl-config")).unwrap_or_default();
+    assert!(
+        cfg.contains("Bearer ghp_STALE"),
+        "tried the gh token first: {cfg}"
+    );
+
+    let l = gh_lab("gh401given", "echo ghp_FROMGH");
+    stub(&l);
+    let said = follow_with(&l, API, Some("ghp_GIVEN"));
+    assert!(
+        said.contains("HTTP 401"),
+        "a token the user gave is not dropped: {said}"
+    );
+}

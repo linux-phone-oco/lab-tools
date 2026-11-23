@@ -2028,8 +2028,20 @@ fn newest_release(st: &State) -> Result<Option<String>, String> {
     fs::create_dir_all(&work).map_err(|e| format!("cannot make {work}: {e}"))?;
     let file = Path::new(&work).join("releases.json");
     let _ = fs::remove_file(&file);
-    let token = st.token.clone().or_else(|| gh_token(&st.releases_url));
-    if !fetch_with(&st.releases_url, &file, token.as_deref())? {
+    let from_gh = if st.token.is_none() {
+        gh_token(&st.releases_url)
+    } else {
+        None
+    };
+    let token = st.token.clone().or(from_gh.clone());
+    let got = match fetch_with(&st.releases_url, &file, token.as_deref()) {
+        // a stale gh login must not lock follow out: ask again as anyone; a token the user gave is never dropped
+        Err(e) if from_gh.is_some() && e.contains("(HTTP 401,") => {
+            fetch_with(&st.releases_url, &file, None)?
+        }
+        other => other?,
+    };
+    if !got {
         return Err(format!("{} has no releases list", st.releases_url));
     }
     let text =
