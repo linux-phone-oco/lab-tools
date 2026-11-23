@@ -1,9 +1,34 @@
+---
+what: the lpoco tools - bringing up and testing Linux phones, not tied to one device
+kept by: orchestration; its lab-tools builder lands here, one backlog item per run
+records in: linux-phone-oco/docs (tad q backlog --project lab-tools)
+branches: builder/WHAT, one change each, deleted when landed; release PRs are release-plz's
+project map: linux-phone-oco/docs MAP.md
+---
+
 # lab-tools
 
 Tools for bringing up and testing Linux phones, not tied to one device: each takes what any phone
 gives (a WAV recording, a log) and does the work on the lab machine, so a new device needs no
 toolchain of its own. Surya (Xiaomi POCO X3 NFC) is the first device they serve; the flows that use
 them live in its lab (linux-phone-oco/surya-lab).
+## Map
+
+| folder | what it is |
+|---|---|
+| `lpoco/` | `lpoco`, the one front door: `lpoco NAME` runs `lpoco-NAME` |
+| `devlab/` | `lpoco lab`: reach a phone, flash, try a kernel once, its keeper's lease, long jobs |
+| `manifest/` | `device.toml`'s types and JSON Schema, read by every program |
+| `health/` | `lpoco-health`, the suite the phone runs on itself, and the generic checks |
+| `bringup/` | `lpoco bringup`: boot images made, read and checked; device-tree checks |
+| `attended/` | `lpoco attended`: a procedure as named steps that each stop the run |
+| `host/` | `lpoco host`: the lab machine prepared from declarations |
+| `layer/` | `lpoco layer`: a phone's device layer packed as distribution packages |
+| `tone/` | `lpoco tone`: a test tone made, and found in a recording |
+| `ffs-acm/` | a serial console for a phone through FunctionFS |
+| `packaging/` | the Alpine package and signed repository key; the release conveyor |
+
+One crate per folder, each with its README and CHANGELOG. Never at the top: run outputs, recordings, worktrees.
 
 ## devlab (lpoco lab)
 
