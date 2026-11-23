@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.45.2](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-attended-v0.45.1...lpoco-attended-v0.45.2) - 2026-11-23
+
+### Added
+
+- *(attended)* boot an image by ensure when its recipe is declared and its file is absent ([#375](https://github.com/linux-phone-oco/lab-tools/pull/375))
+
+### Other
+
+- *(deps)* lpoco-manifest 0.46.0 -> 0.47.0 ([#374](https://github.com/linux-phone-oco/lab-tools/pull/374))
+- *(deps)* lpoco-manifest 0.45.0 -> 0.46.0 ([#372](https://github.com/linux-phone-oco/lab-tools/pull/372))
+
 ## [0.45.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-attended-v0.45.0...lpoco-attended-v0.45.1) - 2026-11-23
 
 ### Added
