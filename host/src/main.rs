@@ -1,4 +1,4 @@
-// SPDX-Licnse-Identoken: token_of(Contract::TOKEN.get_from(r))?,ifier: MIT OR Apache-2.0
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! lpoco-host: the lab host prepared from declarations (run as `lpoco host ...`). `plan` (the default) changes
 //! nothing; `prepare now` changes only what differs; `check` reads. See cli.rs for the invocation surface.
 
@@ -116,7 +116,7 @@ fn load(r: &Resolution) -> Result<State, String> {
     Ok(State {
         lab_path: lab_path.clone(),
         clock: Contract::CLOCK.get_from(r),
-        token: Contract::TOKEN.get_from(r).filter(|t| !t.trim().is_empty()),
+        token: token_of(Contract::TOKEN.get_from(r))?,
         releases_url: Contract::RELEASES.get_from(r).unwrap_or_else(|| {
             "https://api.github.com/repos/linux-phone-oco/lab-tools/releases?per_page=100"
                 .to_string()
