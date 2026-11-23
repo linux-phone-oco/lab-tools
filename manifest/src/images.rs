@@ -108,11 +108,31 @@ impl Images {
                         ));
                     }
                 }
-                if let Some(c) = r.cmdline.as_ref().filter(|c| c.contains(['\0', '\n'])) {
+                if let Some(c) = r
+                    .cmdline
+                    .as_ref()
+                    .filter(|c| c.contains(['\0', '\n']) || c.len() > 1535)
+                {
                     return Err(format!(
-                        "{at}.recipe cmdline {c:?} holds a NUL or a newline"
+                        "{at}.recipe cmdline {c:?} holds a NUL or a newline, or is over the 1535 bytes the header holds"
                     ));
                 }
+            }
+        }
+        for name in self.named.keys() {
+            // the controls from this image on, each an image of this manifest: none may be met twice
+            let mut chain = vec![name.as_str()];
+            let mut at = name.as_str();
+            while let Some(r) = self.named.get(at).and_then(|i| i.recipe.as_ref()) {
+                at = r.control.as_str();
+                if chain.contains(&at) {
+                    chain.push(at);
+                    return Err(format!(
+                        "images.{name}.recipe: controls form a cycle ({})",
+                        chain.join(" -> ")
+                    ));
+                }
+                chain.push(at);
             }
         }
         Ok(())

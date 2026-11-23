@@ -260,3 +260,33 @@ fn a_recipe_names_another_image_and_files_by_sha256_and_needs_its_own_sha256() {
         assert!(images(&recipe, &own).is_err(), "{what} was accepted");
     }
 }
+
+#[test]
+fn recipes_that_lead_back_to_themselves_are_refused_naming_the_chain() {
+    let sha = "ab".repeat(32);
+    let two = format!(
+        "{HEAD}[images.a]\npath = \"a.img\"\nsha256 = \"{sha}\"\n[images.a.recipe]\ncontrol = \"b\"\n\n\
+         [images.b]\npath = \"b.img\"\nsha256 = \"{sha}\"\n[images.b.recipe]\ncontrol = \"a\"\n"
+    );
+    let e = Manifest::parse(&two).expect_err("a cycle was accepted");
+    assert!(
+        e.contains("a") && e.contains("b") && e.contains("cycle"),
+        "{e}"
+    );
+}
+
+#[test]
+fn a_recipes_command_line_must_fit_the_header() {
+    let sha = "ab".repeat(32);
+    let with = |n: usize| {
+        Manifest::parse(&format!(
+            "{HEAD}[images.a]\npath = \"a.img\"\nsha256 = \"{sha}\"\n\n[images.b]\npath = \"b.img\"\nsha256 = \"{sha}\"\n[images.b.recipe]\ncontrol = \"a\"\ncmdline = \"{}\"\n",
+            "x".repeat(n)
+        ))
+    };
+    assert!(with(1535).is_ok());
+    assert!(
+        with(1536).is_err(),
+        "the header holds 1535 bytes (bringup swap)"
+    );
+}

@@ -160,8 +160,9 @@ fn ensure(device: &Path, cache: &Path, seed: &Path, name: &str) -> Output {
 #[test]
 fn an_image_is_served_by_its_sha256_from_the_store_or_the_cache_else_built_from_its_recipe_and_checked(
 ) {
-    if !have("nix-store", "--version") || !have("avbtool", "--help") {
-        eprintln!("not measured: no nix or no avbtool");
+    // the sandbox pins avbtool 1.4.0 (ensure.nix): the expected image is made with the same one
+    if !have("nix-store", "--version") || !avbtool_is_1_4() {
+        eprintln!("not measured: no nix, or no avbtool 1.4 (the sandbox's)");
         return;
     }
     let dir = tmp("z");
@@ -209,12 +210,14 @@ fn an_image_is_served_by_its_sha256_from_the_store_or_the_cache_else_built_from_
         text(&o.stdout),
         text(&o.stderr)
     );
-    let said = text(&o.stdout);
-    assert!(said.contains("built"), "{said}");
-    assert!(
-        said.trim().ends_with(&out_path),
-        "names the store path {out_path}: {said}"
+    let said = text(&o.stderr);
+    assert_eq!(
+        text(&o.stdout).trim(),
+        out_path,
+        "stdout is the store path alone"
     );
+    assert!(said.contains("built"), "{said}");
+    assert!(said.contains("built from its recipe"), "{said}");
     assert_eq!(
         sha256(Path::new(&out_path)),
         out_sha,
@@ -224,9 +227,9 @@ fn an_image_is_served_by_its_sha256_from_the_store_or_the_cache_else_built_from_
     // 2. in the store: nothing runs
     let o = ensure(&device, &cache, &seed, "out");
     assert!(
-        text(&o.stdout).contains("in the store"),
+        text(&o.stderr).contains("in the store"),
         "{}{}",
-        text(&o.stdout),
+        text(&o.stderr),
         text(&o.stderr)
     );
     assert!(!text(&o.stdout).contains("built"));
@@ -237,10 +240,10 @@ fn an_image_is_served_by_its_sha256_from_the_store_or_the_cache_else_built_from_
     assert!(
         o.status.success(),
         "ensure (cache): {}{}",
-        text(&o.stdout),
+        text(&o.stderr),
         text(&o.stderr)
     );
-    let said = text(&o.stdout);
+    let said = text(&o.stderr);
     assert!(
         said.contains("from the cache") && !said.contains("built"),
         "{said}"
@@ -262,9 +265,9 @@ fn an_image_is_served_by_its_sha256_from_the_store_or_the_cache_else_built_from_
     // Nix leaves the refused file at the path, not registered: a second ensure must not take it for the image
     let o = ensure(&device, &cache, &seed, "out");
     assert!(
-        !o.status.success() && !text(&o.stdout).contains("out: in the store"),
+        !o.status.success() && !text(&o.stderr).contains("out: in the store"),
         "{}",
-        text(&o.stdout)
+        text(&o.stderr)
     );
 }
 
@@ -275,4 +278,11 @@ fn valid(path: &str) -> bool {
         .unwrap()
         .status
         .success()
+}
+
+fn avbtool_is_1_4() -> bool {
+    Command::new("avbtool")
+        .arg("version")
+        .output()
+        .is_ok_and(|o| text(&o.stdout).trim().ends_with(" 1.4.0"))
 }

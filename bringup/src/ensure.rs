@@ -103,7 +103,7 @@ fn held(
         return Ok(Some(path));
     }
     if let Some(cache) = sources.cache {
-        let _ = run(
+        if let Err(e) = run(
             "nix",
             &[
                 NIX[0],
@@ -113,7 +113,12 @@ fn held(
                 &url(cache)?,
                 path.to_str().unwrap(),
             ],
-        );
+        ) {
+            // a path the cache lacks is a miss; any other failure is said
+            if !e.contains("no substituter that can build") {
+                eprintln!("{label}: the cache did not serve it: {e}");
+            }
+        }
         if valid(&path) {
             say(format!("{label}: from the cache"));
             return Ok(Some(path));
@@ -142,11 +147,9 @@ fn build(
     sources: &Sources,
     say: &mut dyn FnMut(String),
 ) -> Result<PathBuf, String> {
-    let control = ensure(manifest, &recipe.control, sources, say)?;
     let mut args: Vec<(&str, String)> = vec![
         ("name", wanted.name.clone()),
         ("sha256", wanted.sha256.clone()),
-        ("control", control.display().to_string()),
         ("version", sources.version.to_string()),
     ];
     for (part, sha) in [
@@ -166,6 +169,9 @@ fn build(
             args.push((part, path.display().to_string()));
         }
     }
+    // the missing parts are found before the control, which may take a build of its own
+    let control = ensure(manifest, &recipe.control, sources, say)?;
+    args.push(("control", control.display().to_string()));
     if let Some(c) = &recipe.cmdline {
         args.push(("cmdline", c.clone()));
     }
@@ -214,7 +220,8 @@ fn find(dir: &Path, sha256: &str) -> Result<Option<PathBuf>, String> {
             if let Some(f) = find(&path, sha256)? {
                 return Ok(Some(f));
             }
-        } else if path.is_file() && sum(&path)? == sha256 {
+        } else if path.is_file() && sum(&path).is_ok_and(|s| s == sha256) {
+            // a file that cannot be read is not the wanted one, not a failure of the run
             return Ok(Some(path));
         }
     }
@@ -222,11 +229,19 @@ fn find(dir: &Path, sha256: &str) -> Result<Option<PathBuf>, String> {
 }
 
 fn sum(path: &Path) -> Result<String, String> {
-    let bytes = fs::read(path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
-    Ok(Sha256::digest(bytes)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect())
+    let mut file =
+        fs::File::open(path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+    let mut hash = Sha256::new();
+    let mut chunk = [0u8; 64 * 1024];
+    loop {
+        let n = std::io::Read::read(&mut file, &mut chunk)
+            .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+        if n == 0 {
+            break;
+        }
+        hash.update(&chunk[..n]);
+    }
+    Ok(hash.finalize().iter().map(|b| format!("{b:02x}")).collect())
 }
 
 /// The file as the store's path of its sha256 and name (a copy under that name first: the store names by file name).
@@ -274,12 +289,19 @@ fn url(cache: &Path) -> Result<String, String> {
 }
 
 fn scratch(what: &str) -> Result<PathBuf, String> {
+    // a new folder only the user can enter: never one another user planted in the shared temp folder
+    use std::os::unix::fs::DirBuilderExt;
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
     let dir = std::env::temp_dir().join(format!(
-        "lpoco-bringup-ensure-{}-{what}",
+        "lpoco-bringup-ensure-{}-{nanos}-{what}",
         std::process::id()
     ));
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).map_err(|e| format!("cannot make {}: {e}", dir.display()))?;
+    fs::DirBuilder::new()
+        .mode(0o700)
+        .create(&dir)
+        .map_err(|e| format!("cannot make {}: {e}", dir.display()))?;
     Ok(dir)
 }
 
@@ -293,7 +315,9 @@ fn run(tool: &str, args: &[&str]) -> Result<String, String> {
         let tail: Vec<&str> = err.lines().rev().take(12).collect();
         return Err(format!(
             "{tool} {} failed: {}",
-            args.first().unwrap_or(&""),
+            args.iter()
+                .find(|a| !a.starts_with('-') && **a != "nix-command")
+                .unwrap_or(&""),
             tail.into_iter().rev().collect::<Vec<_>>().join("\n")
         ));
     }

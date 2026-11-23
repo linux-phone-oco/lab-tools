@@ -23,7 +23,7 @@ fn main() {
             "{}",
             cli::usage(
                 "lpoco-bringup",
-                "Boot images and bring-up steps. Commands: image info|unpack|pack|check|swap|bisect; dt-check binding|dtbs."
+                "Boot images and bring-up steps. Commands: image info|unpack|pack|check|swap|bisect|ensure; dt-check binding|dtbs."
             )
         );
         return;
@@ -53,7 +53,7 @@ fn read(path: &str) -> Result<Vec<u8>, String> {
 fn run(r: &argenv_resolve::Resolution) -> Result<i32, String> {
     let Some(verb) = Contract::VERB.get_from(r) else {
         return Err(
-            "usage: lpoco bringup image info|unpack|pack|check|swap|bisect ... (lpoco-bringup --version)"
+            "usage: lpoco bringup image info|unpack|pack|check|swap|bisect|ensure ... (lpoco-bringup --version)"
                 .into(),
         );
     };
@@ -84,7 +84,7 @@ fn run(r: &argenv_resolve::Resolution) -> Result<i32, String> {
                 "build, init and files are for the initramfs: lpoco-bringup initramfs build --spec FILE --out FILE | initramfs init [--device FILE] | initramfs files --out DIR"
                     .into()
             }
-            _ => "image verbs go with image: lpoco-bringup image info|unpack|pack|check|swap|bisect ..."
+            _ => "image verbs go with image: lpoco-bringup image info|unpack|pack|check|swap|bisect|ensure ..."
                 .into(),
         });
     }
@@ -445,7 +445,7 @@ fn image_ensure(name: &str, device: &str, r: &argenv_resolve::Resolution) -> Res
         source: source.as_deref().map(Path::new),
         version: VERSION,
     };
-    let path = ensure::ensure(&manifest, name, &sources, &mut |line| println!("{line}"))?;
+    let path = ensure::ensure(&manifest, name, &sources, &mut |line| eprintln!("{line}"))?;
     println!("{}", path.display());
     Ok(0)
 }
