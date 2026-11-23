@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
 # One image of a recipe as a fixed-output derivation: the control image with parts swapped in by
 # `lpoco-bringup image swap`, and Nix refuses a result whose sha256 is not the declared one (outputHash).
 # Everything it reads is a store path (the control, the parts) or the pinned nixpkgs; no network is needed
