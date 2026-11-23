@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.44.6](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-attended-v0.44.5...lpoco-attended-v0.44.6) - 2026-11-23
+
+### Added
+
+- *(attended)* into_fastboot sends the declared [boot.to_bootloader] helper ([#361](https://github.com/linux-phone-oco/lab-tools/pull/361))
+
+### Other
+
+- *(attended)* a helper that cannot be pushed is never run and the step says what the push said ([#363](https://github.com/linux-phone-oco/lab-tools/pull/363))
+- *(deps)* lpoco-manifest 0.44.5 -> 0.45.0 ([#360](https://github.com/linux-phone-oco/lab-tools/pull/360))
+- *(deps)* lpoco-manifest 0.44.4 -> 0.44.5 ([#357](https://github.com/linux-phone-oco/lab-tools/pull/357))
+
 ## [0.44.5](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-attended-v0.44.4...lpoco-attended-v0.44.5) - 2026-11-23
 
 ### Added
