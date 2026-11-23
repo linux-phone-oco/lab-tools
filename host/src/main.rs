@@ -592,15 +592,18 @@ fn plan(st: &State) {
         Ok(all) => {
             for t in &all {
                 println!("\ntool timers (user units from the pinned tag, no root; prepare writes them; one that differs is hand-changed or from an older tag):");
-                for (f, _) in &t.files {
-                    let state = if f.state() == "changes" {
-                        "hand-changed"
-                    } else {
-                        f.state()
+                for (f, mode) in &t.files {
+                    let state = match f.state() {
+                        "changes" => "differs: hand-changed or from an older tag",
+                        _ if wrong_mode(&f.dst, *mode) => "mode differs",
+                        s => s,
                     };
                     println!("    {} ({state})", f.dst);
-                    for l in f.diff() {
-                        println!("        {l}");
+                    // the private file holds values: its lines are never printed
+                    if *mode != 0o600 {
+                        for l in f.diff() {
+                            println!("        {l}");
+                        }
                     }
                 }
                 for c in &t.cmds {
@@ -705,7 +708,11 @@ fn prepare(st: &State) -> Result<i32, String> {
         ucmds.extend(cmds);
     }
     for t in &tool_timers {
-        for (f, mode) in t.files.iter().filter(|(f, _)| f.changed()) {
+        for (f, mode) in t
+            .files
+            .iter()
+            .filter(|(f, m)| f.changed() || wrong_mode(&f.dst, *m))
+        {
             if let Some(d) = Path::new(&f.dst).parent() {
                 fs::create_dir_all(d).map_err(|e| format!("cannot make {}: {e}", d.display()))?;
             }
@@ -2278,7 +2285,7 @@ fn tool_timer_units(st: &State) -> Result<Vec<ToolTimers>, String> {
         for timer in timers {
             for kind in ["service", "timer"] {
                 let url = format!("{base}/{timer}.{kind}");
-                let to = scratch.join(format!("unit-{timer}.{kind}"));
+                let to = scratch.join(format!("unit-{timer}.{kind}-{}", std::process::id()));
                 if !fetch(&url, &to)? {
                     return Err(format!(
                         "{repository} {tag} holds no packaging/systemd/{timer}.{kind} ({url}): nothing written"
@@ -2329,9 +2336,26 @@ fn tool_timer_units(st: &State) -> Result<Vec<ToolTimers>, String> {
                     "--now",
                     &format!("{timer}.timer"),
                 ]));
+                // a timer already running keeps its old schedule until it is restarted
+                let timer_file = format!("{dir}/{timer}.timer");
+                if files.iter().any(|(f, _)| {
+                    f.dst == timer_file && f.changed() && !matches!(f.seen, Seen::Absent)
+                }) {
+                    cmds.push(s(&[
+                        "systemctl",
+                        "--user",
+                        "restart",
+                        &format!("{timer}.timer"),
+                    ]));
+                }
             }
         }
         out.push(ToolTimers { files, cmds });
     }
     Ok(out)
+}
+
+/// A file that is there with another mode than it is declared in.
+fn wrong_mode(dst: &str, mode: u32) -> bool {
+    fs::metadata(dst).is_ok_and(|m| m.permissions().mode() & 0o777 != mode)
 }

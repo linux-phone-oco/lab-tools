@@ -182,7 +182,7 @@ fn a_hand_changed_unit_is_reported_and_prepare_puts_the_tags_text_back() {
     )
     .unwrap();
     let s = text_of(&host(&l, &["plan"]));
-    assert!(s.contains("rhizoid-bump.timer (hand-changed)"), "{s}");
+    assert!(s.contains("rhizoid-bump.timer (differs"), "{s}");
     assert!(host(&l, &["prepare", "now"]).status.success());
     assert_eq!(
         fs::read_to_string(unit(&l, "rhizoid-bump.timer")).unwrap(),
@@ -212,6 +212,8 @@ fn a_timer_declaration_that_could_leave_its_folders_is_refused() {
         "timers = [\"x\"]\nenv = { A = \"1\" }\n",
         "timers = [\"x\"]\nenv_file = \"x.env\"\nenv = { \"a b\" = \"1\" }\n",
         "timers = [\"x\"]\nenv_file = \"x.env\"\nenv = { A = \"1\\n2\" }\n",
+        "timers = [\"x\"]\nenv_file = \"x.env\"\nenv = { A = \"a\\\\\" }\n",
+        "timers = [\"x\"]\nenv_file = \"x.env\"\nenv = { A = \"a\\\"b\" }\n",
     ];
     for (i, d) in bad.iter().enumerate() {
         let l = lab(&format!("bad-{i}"), d);
@@ -223,4 +225,52 @@ fn a_timer_declaration_that_could_leave_its_folders_is_refused() {
             text_of(&o)
         );
     }
+}
+
+#[test]
+fn plan_never_prints_the_env_files_values() {
+    let l = lab("secret", DECLARED);
+    publish(&l, Some(SERVICE), Some(TIMER));
+    let s = text_of(&host(&l, &["plan"]));
+    assert!(
+        s.contains("bump.env (new)") && !s.contains("RHIZOID_GRAPH_CLONE="),
+        "{s}"
+    );
+    assert!(host(&l, &["prepare", "now"]).status.success());
+    fs::write(env_file(&l), "GITHUB_TOKEN=ghp_SECRET\n").unwrap();
+    let s = text_of(&host(&l, &["plan"]));
+    assert!(
+        s.contains("bump.env (differs") && !s.contains("ghp_SECRET"),
+        "{s}"
+    );
+}
+
+#[test]
+fn a_loose_env_file_mode_is_named_and_set_back() {
+    let l = lab("mode", DECLARED);
+    publish(&l, Some(SERVICE), Some(TIMER));
+    assert!(host(&l, &["prepare", "now"]).status.success());
+    fs::set_permissions(env_file(&l), fs::Permissions::from_mode(0o644)).unwrap();
+    let s = text_of(&host(&l, &["plan"]));
+    assert!(s.contains("bump.env (mode differs)"), "{s}");
+    assert!(host(&l, &["prepare", "now"]).status.success());
+    assert_eq!(
+        fs::metadata(env_file(&l)).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+}
+
+#[test]
+fn a_changed_timer_that_was_installed_is_restarted_and_a_new_one_is_not() {
+    let l = lab("again", DECLARED);
+    publish(&l, Some(SERVICE), Some(TIMER));
+    assert!(host(&l, &["prepare", "now"]).status.success());
+    assert!(!fs::read_to_string(&l.calls).unwrap().contains("restart"));
+    publish(&l, Some(SERVICE), Some(&TIMER.replace("hourly", "daily")));
+    assert!(host(&l, &["prepare", "now"]).status.success());
+    let calls = fs::read_to_string(&l.calls).unwrap();
+    assert!(
+        calls.contains("--user restart rhizoid-bump.timer"),
+        "{calls}"
+    );
 }

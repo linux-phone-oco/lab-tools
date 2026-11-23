@@ -1656,6 +1656,13 @@ fn valid_timers(
         if v.contains(['\n', '\r']) {
             return Err(at("env", format!("{k} must be on one line")));
         }
+        // systemd reads EnvironmentFile values with quotes and a trailing backslash as continuation
+        if v.chars().any(|c| c.is_control() || c == '"' || c == '\'') || v.ends_with('\\') {
+            return Err(at(
+                "env",
+                format!("{k}: a value may hold no control character, quote or trailing backslash"),
+            ));
+        }
     }
     Ok(())
 }
