@@ -9,7 +9,7 @@
 //! Fedora runs the real `kernel-install add` and Arch a real `pacman -U`; Debian runs the plugin by hand with kernel-install's
 //! arguments (linux-image runs /etc/kernel/postinst.d, bridged to kernel-install only by systemd-boot).
 //!
-//! Not covered: nfpm's own packages
+//! Not covered: nfpm's own packages (the files come from the same item list, copied in, not installed by dpkg,
 //! rpm or pacman), and a real kernel package's scriptlets.
 
 use lpoco_layer::{add_boot_trigger, materialize, packages, Format};
