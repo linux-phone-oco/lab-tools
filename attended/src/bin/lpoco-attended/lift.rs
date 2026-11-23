@@ -10,6 +10,9 @@ pub struct Step {
     pub place: String,
     pub name: String,
     pub body: String,
+    /// It returns a `Group` (a named run of steps with its way back), not one `Step`. The body has no
+    /// `crate ::`-like prefixes; `a::b::run()` and `c::run()` stay different.
+    pub returns_group: bool,
 }
 
 /// One line of the answer: what to do, the step's names, and every `place:name` it was found at.
@@ -64,10 +67,11 @@ fn steps_in(dir: &Path, place: &str, out: &mut Vec<Step>) -> Result<(), String> 
                 public_fns(&text)
                     .map_err(|e| format!("{}: {e}", p.display()))?
                     .into_iter()
-                    .map(|(n, body)| Step {
+                    .map(|f| Step {
                         place: place.into(),
-                        name: n,
-                        body,
+                        name: f.name,
+                        returns_group: f.returns_group,
+                        body: f.body,
                     }),
             );
         }
@@ -154,8 +158,16 @@ fn closing(t: &[String], open: usize) -> Result<usize, String> {
     Err("a brace is never closed".into())
 }
 
-/// Each top-level `pub fn`: its name and everything after the name up to its closing brace, as one string.
-pub fn public_fns(text: &str) -> Result<Vec<(String, String)>, String> {
+/// One top-level `pub fn`: its name, everything after the name up to its closing brace (prefix-stripped, see
+/// [`unqualified`]) as one string, and whether its return type is `Group`.
+pub struct PubFn {
+    pub name: String,
+    pub body: String,
+    pub returns_group: bool,
+}
+
+/// Each top-level `pub fn`.
+pub fn public_fns(text: &str) -> Result<Vec<PubFn>, String> {
     let t = tokens(text)?;
     let (mut i, mut depth, mut out) = (0, 0i32, Vec::new());
     while i < t.len() {
@@ -174,7 +186,11 @@ pub fn public_fns(text: &str) -> Result<Vec<(String, String)>, String> {
                 }
                 if j < t.len() && t[j] == "{" {
                     let k = closing(&t, j)?;
-                    out.push((name, t[i + 3..=k].join(" ")));
+                    out.push(PubFn {
+                        name,
+                        body: unqualified(&t[i + 3..=k]).join(" "),
+                        returns_group: returns_group(&t[i + 3..j]),
+                    });
                     i = k;
                 }
             }
@@ -183,6 +199,55 @@ pub fn public_fns(text: &str) -> Result<Vec<(String, String)>, String> {
         i += 1;
     }
     Ok(out)
+}
+
+/// Whether a signature (the tokens after the name, up to the body's brace) returns `Group`, by whatever path:
+/// the type after the last `->` outside the parameter list, up to `where`, is `Group` or `a::b::Group` and nothing
+/// else (`GroupKind`, `Option<Group>` and a `Fn() -> Group` parameter are not).
+fn returns_group(signature: &[String]) -> bool {
+    let mut parens = 0i32;
+    let mut arrow = None;
+    for (k, tok) in signature.iter().enumerate() {
+        match tok.as_str() {
+            "(" | "[" => parens += 1,
+            ")" | "]" => parens -= 1,
+            "-" if parens == 0 && signature.get(k + 1).map(String::as_str) == Some(">") => {
+                arrow = Some(k + 2);
+            }
+            _ => {}
+        }
+    }
+    let Some(from) = arrow else { return false };
+    let ret: Vec<&str> = signature[from..]
+        .iter()
+        .map(String::as_str)
+        .take_while(|t| *t != "where")
+        .collect();
+    let mut rest = &ret[..];
+    while rest.len() > 1 && rest[1] == ":" && rest.get(2) == Some(&":") {
+        rest = &rest[3..];
+    }
+    rest == ["Group"]
+}
+
+/// The tokens without a `crate ::`, `self ::`, `super ::` or `lpoco_attended ::` prefix: `crate::group(..) -> crate::Group` in one repo's
+/// library module and `group(..) -> Group` in another's are the same body.
+fn unqualified(t: &[String]) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < t.len() {
+        let prefix = matches!(t[i].as_str(), "crate" | "self" | "super" | "lpoco_attended");
+        if prefix
+            && t.get(i + 1).map(String::as_str) == Some(":")
+            && t.get(i + 2).map(String::as_str) == Some(":")
+        {
+            i += 3;
+        } else {
+            out.push(t[i].as_str());
+            i += 1;
+        }
+    }
+    out
 }
 
 fn at(s: &Step) -> String {
@@ -212,7 +277,8 @@ fn group_row(kind: &'static str, group: &[&Step]) -> Row {
 }
 
 /// What to do with each step: use the library's; lift one copied into two repos; lift one that differs in
-/// three; or only list it.
+/// three; or only list it. Equal bodies of functions returning a `Group` are `lift-group` (the CSV kind `lift` was
+/// theirs before groups were told apart). A group differing in three repos is still `lift-differing`.
 pub fn lift(mine: &[Step], library: &[Step]) -> Vec<Row> {
     let mut rows = Vec::new();
     let mut used = vec![false; mine.len()];
@@ -249,7 +315,13 @@ pub fn lift(mine: &[Step], library: &[Step]) -> Vec<Row> {
         let group: Vec<&Step> = idx.iter().map(|&i| &mine[i]).collect();
         if distinct_places(&group) >= 2 {
             idx.iter().for_each(|&i| used[i] = true);
-            rows.push(group_row("lift", &group));
+            // equal bodies share a return type, so the first says what all are
+            let kind = if group[0].returns_group {
+                "lift-group"
+            } else {
+                "lift"
+            };
+            rows.push(group_row(kind, &group));
         }
     }
     for (_, s) in mine.iter().enumerate().filter(|(i, _)| !used[*i]) {

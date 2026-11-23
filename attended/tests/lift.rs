@@ -169,3 +169,104 @@ fn a_file_that_cannot_be_read_whole_stops_the_run_naming_it() {
     assert!(!o.status.success());
     assert!(String::from_utf8_lossy(&o.stderr).contains("lib.rs"));
 }
+
+const READY: &str = "pub fn phone_is_up() -> Group {\n    // reach it\n    group(\"the phone is up\", [wait_for_phone(60, 5), shell_answers()]).way_back(back())\n}\n";
+const READY_RENAMED: &str = "pub fn reach_the_phone() -> crate::Group {\n    crate::group(\"the phone is up\", [wait_for_phone(60,   5), shell_answers()]).way_back(back())\n}\n";
+
+#[test]
+fn a_group_copied_and_renamed_into_two_repos_is_one_flagged_pair_with_both_places() {
+    let d = tmp("group-pair");
+    steps(&d, "walleye", "lib.rs", READY);
+    steps(&d, "surya", "lib.rs", READY_RENAMED);
+    let out = lift(&d, &["walleye", "surya"], &[]);
+    let flagged: Vec<&str> = out
+        .lines()
+        .filter(|l| l.starts_with("lift-group,"))
+        .collect();
+    assert_eq!(flagged.len(), 1, "{out}");
+    assert!(
+        flagged[0].contains("walleye:phone_is_up") && flagged[0].contains("surya:reach_the_phone"),
+        "{out}"
+    );
+}
+
+#[test]
+fn a_group_the_library_already_has_is_flagged_use_the_library() {
+    let d = tmp("group-library");
+    steps(&d, "walleye", "lib.rs", READY_RENAMED);
+    fs::create_dir_all(d.join("lib")).unwrap();
+    fs::write(d.join("lib/steps.rs"), READY).unwrap();
+    let out = lift(
+        &d,
+        &["walleye"],
+        &["--library", d.join("lib").to_str().unwrap()],
+    );
+    let r = row(&out, "reach_the_phone");
+    assert_eq!(r.len(), 1, "{out}");
+    assert!(r[0].starts_with("use-library,"), "{out}");
+    assert!(r[0].contains("phone_is_up"), "{out}");
+}
+
+fn kinds(out: &str, step: &str) -> Vec<String> {
+    row(out, step)
+        .iter()
+        .map(|l| l.split(',').next().unwrap().to_string())
+        .collect()
+}
+
+#[test]
+fn a_return_type_that_only_starts_with_group_or_holds_one_in_a_parameter_is_not_a_group() {
+    let d = tmp("not-group");
+    let kind = "pub fn k() -> GroupKind {\n    GroupKind::new(1)\n}\n";
+    let param = "pub fn p(f: impl Fn() -> Group) -> Step {\n    step(\"x\", f)\n}\n";
+    steps(&d, "walleye", "lib.rs", &format!("{kind}{param}"));
+    steps(&d, "surya", "lib.rs", &format!("{kind}{param}"));
+    let out = lift(&d, &["walleye", "surya"], &[]);
+    assert_eq!(kinds(&out, "walleye:k"), ["lift"], "{out}");
+    assert_eq!(kinds(&out, "walleye:p"), ["lift"], "{out}");
+}
+
+#[test]
+fn a_group_is_a_group_by_any_path_to_the_type_and_a_renamed_copy_may_come_first() {
+    let d = tmp("group-paths");
+    let a = "pub fn up() -> lpoco_attended::Group {\n    group(\"up\", [s()])\n}\n";
+    let b = "pub fn ready() -> self::Group {\n    group(\"up\", [s()])\n}\n";
+    let c = "pub fn alive() -> Group {\n    group(\"up\", [s()])\n}\n";
+    steps(&d, "a", "lib.rs", a);
+    steps(&d, "b", "lib.rs", b);
+    steps(&d, "c", "lib.rs", c);
+    let out = lift(&d, &["a", "b", "c"], &[]);
+    let flagged: Vec<&str> = out
+        .lines()
+        .filter(|l| l.starts_with("lift-group,"))
+        .collect();
+    assert_eq!(flagged.len(), 1, "{out}");
+    assert!(
+        flagged[0].contains("a:up")
+            && flagged[0].contains("b:ready")
+            && flagged[0].contains("c:alive"),
+        "{out}"
+    );
+}
+
+#[test]
+fn two_calls_that_differ_by_their_module_path_stay_two_different_steps() {
+    let d = tmp("paths-differ");
+    steps(
+        &d,
+        "a",
+        "lib.rs",
+        "pub fn go() -> Step {\n    crate::one::run()\n}\n",
+    );
+    steps(
+        &d,
+        "b",
+        "lib.rs",
+        "pub fn go2() -> Step {\n    crate::two::run()\n}\n",
+    );
+    let out = lift(&d, &["a", "b"], &[]);
+    assert!(
+        out.lines().skip(1).all(|l| l.starts_with("listed,")),
+        "{out}"
+    );
+}
