@@ -300,6 +300,24 @@ is still avbtool's, pinned to the AOSP revision the host's avbtool 1.4.0 is (nix
 footer differs by a byte); `image-avb-footer-in-rust` removes it. Proof: `bringup/tests/ensure.rs` (where nix or avbtool is
 absent it says "not measured"); measured on the lab 2026-11-23 for walleye's z21 from z20 and its dtb.
 
+A recipe's `kernel` is a file by sha256; `[kernel_builds.NAME]` makes one from an `int/` tag, and `image ensure NAME` takes
+the same ways (store, cache, seed) before building it:
+
+    [kernel_builds.walleye]
+    tag = "int/walleye/ufs-off/v7.3/1"
+    rev = "41f3b5fd..."          # the commit the tag points at: Nix fetches this, a tag can move
+    epoch = 1795421017           # the build's clock (KBUILD_BUILD_TIMESTAMP): the tag's own time
+    configs = ["5424de9b..."]    # fragments merged after the defconfig, by sha256 (seeded or cached)
+    patches = []                 # diffs applied with patch -p1, by sha256
+    targets = ["Image.gz"]       # make targets; output = "arch/arm64/boot/Image.gz"; dtc_flags = "-@"
+    sha256 = "..."               # what the build must be: Nix refuses any other bytes
+
+`bringup/src/kernel.nix` builds the tag's commit with the pinned nixpkgs' clang and lld (`LLVM=1`), the user `lpoco`, the
+host `lab`, the counter 1 and the clock from `epoch`: the knobs whose absence made hand builds differ (research
+image-recipes-how-it-stands, measurement 4). A recipe whose `kernel` sha256 a `[kernel_builds]` row declares gets it built
+when nothing holds it. Proof: `bringup/tests/ensure_kernel.rs` (a stand-in tree with the kernel's make interface; the real
+tree is measured on the lab and recorded as research).
+
 ### lpoco bringup kernel: a phone's test kernel from its named list
 
     lpoco bringup kernel assemble LIST --lists kernel/topics.toml --repo CLONE --records DOCS [--reproduces COMMIT]

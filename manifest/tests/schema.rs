@@ -290,3 +290,104 @@ fn a_recipes_command_line_must_fit_the_header() {
         "the header holds 1535 bytes (bringup swap)"
     );
 }
+
+/// `[kernel_builds.NAME]` (item image-recipe-kernel-from-int-tag): a kernel file made from an int/ tag in the
+/// sandbox. Every value Nix needs to reproduce it is declared: the tag and its commit, the config and the tree
+/// edits by sha256, the time the build's clock is fixed to, and the sha256 the result must have (research
+/// image-recipes-how-it-stands, measurement 4: the time of day and the environment were what made hand builds differ).
+#[test]
+fn a_kernel_build_names_its_tag_and_commit_and_every_input_by_sha256() {
+    let sha = "ab".repeat(32);
+    let rev = "0e20c7a89ac5748fbd38f59a2b66324aad84cbbb";
+    let build = |extra: &str| {
+        Manifest::parse(&format!(
+            "{HEAD}[kernel_builds.walleye]\ntag = \"int/walleye/ufs-off/v7.3/1\"\nrev = \"{rev}\"\nepoch = 1795421017\nsha256 = \"{sha}\"\n{extra}"
+        ))
+    };
+    assert!(build("").is_ok());
+    assert!(build(&format!(
+        "configs = [\"{sha}\"]\npatches = [\"{sha}\"]\ntargets = [\"Image.gz\", \"qcom/x.dtb\"]\ndtc_flags = \"-@\"\n"
+    ))
+    .is_ok());
+    for (what, extra) in [
+        (
+            "a config that is a path",
+            "configs = [\"walleye.config\"]\n",
+        ),
+        ("a patch that is a path", "patches = [\"../p\"]\n"),
+        ("no targets", "targets = []\n"),
+        ("a target with a space", "targets = [\"Image.gz V=1\"]\n"),
+        (
+            "an output that leaves the build folder",
+            "output = \"../x\"\n",
+        ),
+        ("a misspelt key", "config = \"x\"\n"),
+    ] {
+        assert!(build(extra).is_err(), "{what} was accepted");
+    }
+    let bad = |from: &str, to: &str| {
+        Manifest::parse(&format!(
+            "{HEAD}[kernel_builds.walleye]\ntag = \"int/walleye/ufs-off/v7.3/1\"\nrev = \"{rev}\"\nepoch = 1795421017\nsha256 = \"{sha}\"\n"
+        ).replace(from, to))
+    };
+    assert!(
+        bad(&format!("rev = \"{rev}\""), "rev = \"v7.3\"").is_err(),
+        "a rev that is not a commit"
+    );
+    assert!(
+        bad("tag = \"int/walleye/ufs-off/v7.3/1\"", "tag = \"v7.3\"").is_err(),
+        "a tag that is not int/"
+    );
+    assert!(
+        bad("[kernel_builds.walleye]", "[kernel_builds.Walleye]").is_err(),
+        "a name with a capital"
+    );
+    assert!(
+        bad(&format!("sha256 = \"{sha}\""), "sha256 = \"abc\"").is_err(),
+        "a short sha256"
+    );
+}
+
+#[test]
+fn a_kernel_build_refuses_what_git_or_make_would_misread_and_a_name_or_sha_that_means_two_things() {
+    let sha = "ab".repeat(32);
+    let rev = "0e20c7a89ac5748fbd38f59a2b66324aad84cbbb";
+    let row = |name: &str, extra: &str, sha: &str| {
+        format!(
+            "[kernel_builds.{name}]\ntag = \"int/a/b/v1/1\"\nrev = \"{rev}\"\nepoch = 1\nsha256 = \"{sha}\"\n{extra}"
+        )
+    };
+    let one = |extra: &str| Manifest::parse(&format!("{HEAD}{}", row("k", extra, &sha)));
+    for (what, extra) in [
+        (
+            "a repo with a scheme git does not take here",
+            "repo = \"ext::sh -c x\"\n",
+        ),
+        ("a repo with a space", "repo = \"https://a b/x.git\"\n"),
+        (
+            "a target that is a make option",
+            "targets = [\"-fother\"]\n",
+        ),
+        ("an absolute output", "output = \"/etc/x\"\n"),
+        ("a defconfig with a space", "defconfig = \"a b\"\n"),
+        ("dtc flags with a quote", "dtc_flags = \"-@ 'x\"\n"),
+    ] {
+        assert!(one(extra).is_err(), "{what} was accepted");
+    }
+    assert!(one("repo = \"https://github.com/linux-phone-oco/linux.git\"\n").is_ok());
+    assert!(
+        Manifest::parse(&format!(
+            "{HEAD}{}",
+            row("k", "", &sha).replace("int/a/b/v1/1", "int/a:b")
+        ))
+        .is_err(),
+        "a tag with a colon (a refspec) was accepted"
+    );
+    // one name, one meaning; one sha256, one row
+    let both = format!("{HEAD}[images.k]\npath = \"k.img\"\n{}", row("k", "", &sha));
+    let e = Manifest::parse(&both).unwrap_err();
+    assert!(e.contains("two meanings"), "{e}");
+    let twice = format!("{HEAD}{}{}", row("k", "", &sha), row("j", "", &sha));
+    let e = Manifest::parse(&twice).unwrap_err();
+    assert!(e.contains("same sha256"), "{e}");
+}
