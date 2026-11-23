@@ -26,14 +26,6 @@ let
     cargoBuildFlags = [ "-p" "lpoco-bringup" ];
     doCheck = false;
   };
-  # avbtool 1.4.0 as the lab's host has it (sha256 1aa6f2b4...): nixpkgs' android-tools writes avbtool 1.3.0, whose
-  # footer differs by one byte (measured 2026-11-23). The source is the AOSP revision android-tools 37.0.0p1 vendors,
-  # until image-avb-footer-in-rust removes avbtool from the recipe.
-  avb = builtins.fetchGit {
-    url = "https://android.googlesource.com/platform/external/avb";
-    rev = "ba2dec4b035b0a3b61c5f8f8a74d86bcd450b1ee";
-  };
-  avbtool = pkgs.writeShellScriptBin "avbtool" ''exec ${pkgs.python3}/bin/python3 ${avb}/avbtool.py "$@"'';
   part = flag: p: pkgs.lib.optionals (p != null) [ flag (builtins.storePath p) ];
 in
 derivation {
@@ -46,8 +38,6 @@ derivation {
     ++ part "--dtb" dtb
     ++ part "--ramdisk" ramdisk
     ++ pkgs.lib.optionals (cmdline != null) [ "--cmdline" cmdline ];
-  # the AVB footer is still avbtool's (image-avb-footer-in-rust removes it)
-  PATH = "${avbtool}/bin";
   outputHashMode = "flat";
   outputHashAlgo = "sha256";
   outputHash = sha256;

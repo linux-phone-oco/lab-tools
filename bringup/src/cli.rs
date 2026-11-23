@@ -9,7 +9,7 @@
 //!   lpoco-bringup image check IMG [--device device.toml]
 //!                                                count the image against the manifest's [boot]; exit 1 on a miss
 //!   lpoco-bringup image swap CONTROL --out IMG [--ramdisk R] [--kernel K] [--dtb DTB] [--cmdline TEXT]
-//!                                                the control with those parts replaced, its AVB hash footer rebuilt (avbtool),
+//!                                                the control with those parts replaced, its AVB hash footer rebuilt (by lpoco-bringup itself),
 //!                                                and what differs said
 //!   lpoco-bringup image ensure NAME [--device device.toml] [--cache DIR] [--seed DIR] [--source DIR] [--dry-run]
 //!                                                (--dry-run: only say which of these it would be, changing nothing)

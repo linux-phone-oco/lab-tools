@@ -6,6 +6,7 @@
 //! declared parts among ramdisk, kernel, dtb and command line differ, no other of the four, the footer verifies at
 //! the control's size (or is absent where declared so). The second stage and other header fields are not compared.
 
+use crate::avb;
 use crate::fdt;
 use crate::image;
 use crate::swap::{self, Parts};
@@ -118,23 +119,6 @@ fn cmdline(img: &image::Image) -> Vec<u8> {
     c[..c.iter().position(|&b| b == 0).unwrap_or(c.len())].to_vec()
 }
 
-/// A footer verifies when avbtool accepts the image (it looks the partition up by file name: a copy named boot.img).
-fn verifies(img: &[u8], tool: &str) -> Result<bool, String> {
-    let dir = swap::scratch("verify")?;
-    let p = dir.join("boot.img");
-    let r = fs::write(&p, img)
-        .map_err(|e| format!("cannot write {}: {e}", p.display()))
-        .map(|_| {
-            std::process::Command::new(tool)
-                .args(["verify_image", "--image", p.to_str().unwrap()])
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false)
-        });
-    let _ = fs::remove_dir_all(&dir);
-    r
-}
-
 /// The image without its AVB footer and padding; an error when the footer claims more than the file holds.
 fn body_len(img: &[u8]) -> Result<usize, String> {
     if !has_footer(img) {
@@ -182,7 +166,7 @@ pub fn run(series_path: &Path, out: &Path) -> Result<Report, String> {
             cmdline: e.cmdline.clone(),
             no_footer: !e.footer,
         };
-        let (img, _) = swap::swap(&control, &parts, "avbtool")?;
+        let (img, _) = swap::swap(&control, &parts)?;
         let file = out.join(format!("boot-{}.img", e.name));
         fs::write(&file, &img).map_err(|e| format!("cannot write {}: {e}", file.display()))?;
 
@@ -210,7 +194,7 @@ pub fn run(series_path: &Path, out: &Path) -> Result<Report, String> {
         if e.footer && control_footer {
             if !has_footer(&img) || img.len() != control.len() {
                 misses.push(format!("no footer at the control's size {}", control.len()));
-            } else if !verifies(&img, "avbtool")? {
+            } else if !avb::verify(&img)? {
                 misses.push("the AVB footer does not verify".into());
             }
         } else if !e.footer && has_footer(&img) {
