@@ -58,6 +58,11 @@ fn run(r: &argenv_resolve::Resolution) -> Result<i32, String> {
         );
     };
     let command = Contract::COMMAND.get_from(r);
+    if Contract::DRY_RUN.get_from(r).unwrap_or(false) && !matches!(verb, Verb::Ensure) {
+        return Err(
+            "--dry-run is for image ensure: lpoco-bringup image ensure NAME --dry-run".into(),
+        );
+    }
     if matches!(verb, Verb::Capture | Verb::Diff) != (command == Some(Command::Reference)) {
         return Err("capture and diff are for the reference: lpoco-bringup reference capture --via COMMAND --out DIR | reference diff PART --live DIR --ours DIR".into());
     }
@@ -445,6 +450,11 @@ fn image_ensure(name: &str, device: &str, r: &argenv_resolve::Resolution) -> Res
         source: source.as_deref().map(Path::new),
         version: VERSION,
     };
+    if Contract::DRY_RUN.get_from(r).unwrap_or(false) {
+        let (origin, path) = ensure::plan(&manifest, name, &sources)?;
+        println!("{name}: {origin} ({})", path.display());
+        return Ok(0);
+    }
     let path = ensure::ensure(&manifest, name, &sources, &mut |line| eprintln!("{line}"))?;
     println!("{}", path.display());
     Ok(0)

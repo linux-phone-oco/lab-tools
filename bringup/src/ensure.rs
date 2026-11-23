@@ -78,6 +78,78 @@ pub fn ensure(
     Ok(path)
 }
 
+/// Where an image would come from.
+#[derive(Debug, PartialEq)]
+pub enum Origin {
+    Store,
+    Cache,
+    Seed,
+    Build,
+}
+
+impl std::fmt::Display for Origin {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str(match self {
+            Origin::Store => "in the store",
+            Origin::Cache => "from the cache",
+            Origin::Seed => "from the seed",
+            Origin::Build => "would be built from its recipe",
+        })
+    }
+}
+
+/// Where [`ensure`] would take the image `name` from, and the store path it would have: it reads the store, the
+/// cache and the seed and changes none of them (nothing is copied, added or built).
+pub fn plan(
+    manifest: &Manifest,
+    name: &str,
+    sources: &Sources,
+) -> Result<(Origin, PathBuf), String> {
+    let named = manifest
+        .images
+        .as_ref()
+        .is_some_and(|i| i.named.contains_key(name));
+    if !named && manifest.kernel_builds.contains_key(name) {
+        return Ok((Origin::Build, PathBuf::new()));
+    }
+    let (wanted, recipe) = image(manifest, name)?;
+    let path = wanted.path()?;
+    if valid(&path) {
+        return Ok((Origin::Store, path));
+    }
+    if let Some(cache) = sources.cache {
+        // a cache that is not there holds nothing; one that answers "no" is a miss
+        if cache.is_dir()
+            && run(
+                "nix",
+                &[
+                    NIX[0],
+                    NIX[1],
+                    "path-info",
+                    "--store",
+                    &url(cache)?,
+                    path.to_str().unwrap(),
+                ],
+            )
+            .is_ok()
+        {
+            return Ok((Origin::Cache, path));
+        }
+    }
+    if let Some(dir) = sources.seed {
+        if find(dir, &wanted.sha256)?.is_some() {
+            return Ok((Origin::Seed, path));
+        }
+    }
+    if recipe.is_some() {
+        return Ok((Origin::Build, path));
+    }
+    Err(format!(
+        "{name}: sha256 {} is not in the store, the cache or the seed, and the image has no recipe",
+        wanted.sha256
+    ))
+}
+
 fn image<'a>(manifest: &'a Manifest, name: &str) -> Result<(Wanted, Option<&'a Recipe>), String> {
     let i = manifest
         .images

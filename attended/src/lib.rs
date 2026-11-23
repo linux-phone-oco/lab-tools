@@ -177,6 +177,8 @@ struct Config {
     /// the same file as the tables it says, for the keys a procedure reads by name
     raw: toml::Value,
     devlab: String,
+    /// the lpoco-bringup program that ensures an image a recipe makes
+    bringup: String,
     sysfs_usb: String,
     /// the longest one call to the phone may take; none unless asked for
     call_limit: Option<std::time::Duration>,
@@ -364,6 +366,9 @@ pub fn procedure(name: &str, device: &str) -> Run {
     let devlab = cli::Contract::DEVLAB
         .get_from(&r)
         .unwrap_or_else(|| "devlab".into());
+    let bringup = cli::Contract::BRINGUP
+        .get_from(&r)
+        .unwrap_or_else(|| "lpoco-bringup".into());
     let sysfs_usb = cli::Contract::SYSFS_USB
         .get_from(&r)
         .unwrap_or_else(|| "/sys/bus/usb/devices".into());
@@ -394,6 +399,7 @@ pub fn procedure(name: &str, device: &str) -> Run {
         manifest,
         raw,
         devlab,
+        bringup,
         sysfs_usb,
         call_limit,
         prompt_files,
@@ -932,6 +938,39 @@ fn call_devlab(args: &[&str], stdin: &str, reached: &str, failed: &str) -> Resul
 /// output named when it does not. A dry run reaches nothing.
 pub(crate) fn devlab(args: &[&str]) -> Result<String, String> {
     call_devlab(args, "", "devlab", &format!("devlab {}", args.join(" ")))
+}
+
+/// `lpoco-bringup image ensure NAME` for the device of this run (`--dry-run`: only where it would come from, which
+/// reads and changes nothing, so a dry run asks it too): what it said on standard output, trimmed, when it exits 0.
+/// A build takes minutes, so no limit is put on it.
+pub(crate) fn ensure_image(name: &str, dry_run: bool) -> Result<String, String> {
+    let mut cmd = Command::new(&config().bringup);
+    cmd.args(["image", "ensure", name]);
+    if dry_run {
+        cmd.arg("--dry-run");
+    }
+    cmd.arg("--device").arg(&config().device);
+    let failed = format!("lpoco-bringup image ensure {name}");
+    let o = call::run_limited(cmd, "", None).map_err(|e| format!("{failed}: {e}"))?;
+    let (out, err) = (
+        String::from_utf8_lossy(&o.stdout).trim().to_string(),
+        String::from_utf8_lossy(&o.stderr).trim().to_string(),
+    );
+    if o.status.success() {
+        if !err.is_empty() {
+            note_out(&format!("{err}\n"));
+            eprintln!("{err}");
+        }
+        // the answer is the last line: one store path (absolute, and there), or one `NAME: ORIGIN (PATH)` line
+        let line = out.lines().last().unwrap_or("").trim().to_string();
+        let absolute = dry_run || std::path::Path::new(&line).is_absolute();
+        if line.is_empty() || !absolute || (!dry_run && !std::path::Path::new(&line).exists()) {
+            return Err(format!("{failed} gave no path to an image: {out:?}"));
+        }
+        Ok(line)
+    } else {
+        Err(format!("{failed} exited {}: {err}", o.status))
+    }
 }
 
 /// The phone, reached through devlab.

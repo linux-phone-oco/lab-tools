@@ -11,8 +11,9 @@
 //!   lpoco-bringup image swap CONTROL --out IMG [--ramdisk R] [--kernel K] [--dtb DTB] [--cmdline TEXT]
 //!                                                the control with those parts replaced, its AVB hash footer rebuilt (avbtool),
 //!                                                and what differs said
-//!   lpoco-bringup image ensure NAME [--device device.toml] [--cache DIR] [--seed DIR] [--source DIR]
-//!                                                the image [images.NAME] by its sha256: its Nix store path, from the store, else the file:// cache, else the seed, else built from its [images.NAME.recipe] in Nix's sandbox (the build is held to the declared sha256 by Nix)
+//!   lpoco-bringup image ensure NAME [--device device.toml] [--cache DIR] [--seed DIR] [--source DIR] [--dry-run]
+//!                                                (--dry-run: only say which of these it would be, changing nothing)
+//!                                                the image [images.NAME] by its sha256:its Nix store path, from the store, else the file:// cache, else the seed, else built from its [images.NAME.recipe] in Nix's sandbox (the build is held to the declared sha256 by Nix)
 //!   lpoco-bringup image bisect SERIES --out DIR
 //!                                                the images a series file declares (control = "...", [[image]] name, kernel, dtb, ramdisk,
 //!                                                cmdline, lz4, footer), each the control with exactly those parts swapped, counted
@@ -434,6 +435,16 @@ contract! {
         arg: Some(Arg { value_name: "DIR", ..Arg::long("source") }),
         env: Some(Env::new("LPOCO_SOURCE")),
         summary: "ensure: the lab-tools source the sandbox builds lpoco-bringup from (this version's release tag from GitHub when none is given).",
+        ..Input::EMPTY
+    };
+
+    DRY_RUN: bool, Command = Input {
+        key: "dry_run",
+        ty: Type::Bool,
+        default: Some(false),
+        subcommands: &[Command::Image],
+        arg: Some(Arg::long("dry-run")),
+        summary: "ensure: say where the image would come from (the store, the cache, the seed or a build of its recipe) and change nothing.",
         ..Input::EMPTY
     };
 
