@@ -1356,3 +1356,20 @@ fn without_a_follow_table_there_is_no_every_and_so_no_rate_limit() {
         assert!(text(&o).contains("check failed"), "{}", text(&o));
     }
 }
+
+#[test]
+fn a_release_without_its_binaries_is_built_with_cargo_and_still_checked_and_pinned() {
+    let l = lab("noasset", "");
+    releases(&l, &["0.2.1", "0.2.0"]);
+    install_old(&l);
+    // the release is listed but carries no asset: every download is a 404
+    fs::remove_dir_all(l.dir.join("release")).unwrap();
+    let o = follow(&l, &["now"]);
+    let c = calls(&l);
+    assert!(
+        c.lines()
+            .any(|x| x.contains("cargo") && x.contains("install")),
+        "no cargo build for a release without assets: {c}\n{}",
+        text(&o)
+    );
+}
