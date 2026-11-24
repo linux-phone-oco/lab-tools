@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.50.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-layer-v0.49.4...lpoco-layer-v0.50.0) - 2026-11-24
+
+### Added
+
+- *(layer)* the apk carries its own firmware rule, an OpenRC service and links ([#429](https://github.com/linux-phone-oco/lab-tools/pull/429))
+
 ## [0.49.4](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-layer-v0.49.3...lpoco-layer-v0.49.4) - 2026-11-24
 
 ### Added
