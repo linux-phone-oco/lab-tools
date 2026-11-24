@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.48.12](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-host-v0.48.11...lpoco-host-v0.48.12) - 2026-11-24
+
+### Added
+
+- *(health)* suspend cycle --trace switches the manifest's trace sites on across the suspend ([#406](https://github.com/linux-phone-oco/lab-tools/pull/406))
+
+### Fixed
+
+- *(host)* a watcher whose state cannot be read is said not measured, not taken for running ([#408](https://github.com/linux-phone-oco/lab-tools/pull/408))
+
+### Other
+
+- update Cargo.lock dependencies
+- release ([#407](https://github.com/linux-phone-oco/lab-tools/pull/407))
+
 ## [0.48.11](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-host-v0.48.10...lpoco-host-v0.48.11) - 2026-11-24
 
 ### Other
