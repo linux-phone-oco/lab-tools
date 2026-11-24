@@ -1329,22 +1329,25 @@ fn gh_token(url: &str) -> Option<String> {
         .stderr(std::process::Stdio::null())
         .spawn()
         .ok()?;
-    let out = std::thread::scope(|s| {
-        let mut stdout = gh.stdout.take()?;
-        let reader = s.spawn(move || {
-            use std::io::Read;
-            let mut text = String::new();
-            stdout.read_to_string(&mut text).ok().map(|_| text)
-        });
-        let ok = wait_or_kill(&mut gh, GH_TOKEN_SECONDS);
-        // killed, the pipe closes and the reader ends
-        let text = reader.join().ok().flatten();
-        if ok {
-            text
-        } else {
-            None
-        }
-    })?;
+    let Some(mut stdout) = gh.stdout.take() else {
+        let _ = gh.kill();
+        let _ = gh.wait();
+        return None;
+    };
+    // the reader is not joined: a helper gh started may hold the pipe open after gh is gone
+    let (sent, received) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        use std::io::Read;
+        let mut text = String::new();
+        let _ = stdout.read_to_string(&mut text);
+        let _ = sent.send(text);
+    });
+    if !wait_or_kill(&mut gh, GH_TOKEN_SECONDS) {
+        return None;
+    }
+    let out = received
+        .recv_timeout(std::time::Duration::from_secs(1))
+        .ok()?;
     token_of(Some(out)).ok().flatten()
 }
 
