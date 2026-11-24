@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.48.8](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-host-v0.48.7...lpoco-host-v0.48.8) - 2026-11-24
+
+### Added
+
+- *(layer)* lpoco-layer is released as an asset and installed by the host like the family ([#398](https://github.com/linux-phone-oco/lab-tools/pull/398))
+
 ## [0.48.7](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-host-v0.48.6...lpoco-host-v0.48.7) - 2026-11-24
 
 ### Fixed
