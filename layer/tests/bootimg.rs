@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! The boot trigger of an `android-bootimg` layer (proof: bootimg-trigger-per-base): one script rewrites the phone's
 //! boot.img when a kernel is installed, and each base gets the trigger it has - a kernel-install plugin (deb, rpm),
-//! a libalpm hook (archlinux), none on Alpine, whose boot-deploy reads /etc/deviceinfo.
+//! a libalpm hook (archlinux), a kernel-hooks.d script on Alpine (plain Alpine: no boot-deploy).
 
 use lpoco_layer::{add_boot_trigger, bootimg_script, materialize, packages, Format};
 use lpoco_manifest::Manifest;
@@ -93,12 +93,37 @@ fn archlinux_gets_the_script_and_a_libalpm_hook() {
 }
 
 #[test]
-fn alpine_gets_no_trigger_boot_deploy_reads_the_deviceinfo() {
-    let all: Vec<String> = dests(Format::Apk).into_iter().flat_map(|p| p.1).collect();
+fn alpine_gets_the_script_and_a_kernel_hooks_hook_not_an_apk_trigger() {
+    // decision 2026-11-24-plain-alpine-not-nura: plain Alpine, no boot-deploy and no /etc/deviceinfo; its own
+    // kernel-hooks package runs /etc/kernel-hooks.d after every kernel install (nfpm cannot write an apk trigger)
+    let got = boot_files(Format::Apk);
+    for want in [
+        "/usr/libexec/google-walleye-bootimg",
+        "/etc/kernel-hooks.d/95-google-walleye-bootimg",
+    ] {
+        assert!(got.contains(&want.to_string()), "{want} in {got:?}");
+    }
+    let hook = body_of(Format::Apk, "/etc/kernel-hooks.d/95-google-walleye-bootimg");
     assert!(
-        !all.iter().any(|d| d.contains("bootimg")),
-        "no trigger on apk: {all:?}"
+        !hook.contains("deviceinfo"),
+        "the hook reads no deviceinfo:\n{hook}"
     );
+}
+
+#[test]
+fn the_kernel_hooks_hook_indexes_the_modules_and_makes_its_own_initramfs_before_the_triggers_do() {
+    let h = body_of(Format::Apk, "/etc/kernel-hooks.d/95-google-walleye-bootimg");
+    for want in [
+        "/boot/vmlinuz-$flavor",
+        "depmod \"$kver\"",
+        "mkinitfs -o \"$tmp/initramfs\" \"$kver\"",
+        "--dtbs boot/dtbs-$flavor",
+        "--out /boot/google-walleye-$flavor.img",
+        "[ -n \"${2:-}\" ] || exit 0",
+        "--initrd \"$tmp/initramfs\"",
+    ] {
+        assert!(h.contains(want), "{want:?} missing from:\n{h}");
+    }
 }
 
 #[test]
@@ -126,6 +151,9 @@ fn the_trigger_package_needs_the_tool_that_writes_the_image() {
         (Format::Deb, "mkbootimg"),
         (Format::Rpm, "android-tools"),
         (Format::Archlinux, "python"),
+        (Format::Apk, "android-tools-mkbootimg"),
+        (Format::Apk, "kernel-hooks"),
+        (Format::Apk, "mkinitfs"),
     ] {
         let mut pkgs = packages(m.layer.as_ref().unwrap(), f);
         add_boot_trigger(
@@ -171,7 +199,11 @@ fn stand_in(dir: &Path) -> PathBuf {
     bin
 }
 
-fn run_script(tag: &str, dtb_where: Option<&str>) -> (PathBuf, std::process::Output) {
+fn run_script(
+    tag: &str,
+    dtb_where: Option<&str>,
+    extra: &[&str],
+) -> (PathBuf, std::process::Output) {
     let dir = std::env::temp_dir().join(format!("lpoco-bootimg-run-{tag}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
@@ -197,6 +229,7 @@ fn run_script(tag: &str, dtb_where: Option<&str>) -> (PathBuf, std::process::Out
         .arg(dir.join("initrd"))
         .arg("--out")
         .arg(dir.join("boot.img"))
+        .args(extra)
         .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
         .env("LPOCO_DTB_ROOT", &root)
         .output()
@@ -206,7 +239,7 @@ fn run_script(tag: &str, dtb_where: Option<&str>) -> (PathBuf, std::process::Out
 
 #[test]
 fn the_script_appends_the_dtb_to_the_kernel_and_packs_with_the_manifests_header() {
-    let (dir, o) = run_script("ok", Some("usr/lib/modules/6.1.0-walleye/dtb"));
+    let (dir, o) = run_script("ok", Some("usr/lib/modules/6.1.0-walleye/dtb"), &[]);
     assert_eq!(
         o.status.code(),
         Some(0),
@@ -232,7 +265,7 @@ fn the_script_appends_the_dtb_to_the_kernel_and_packs_with_the_manifests_header(
 
 #[test]
 fn the_script_names_the_places_it_looked_when_the_dtb_is_not_there_and_leaves_no_image() {
-    let (dir, o) = run_script("nodtb", None);
+    let (dir, o) = run_script("nodtb", None, &[]);
     assert_ne!(o.status.code(), Some(0));
     let err = String::from_utf8_lossy(&o.stderr);
     assert!(err.contains("msm8998-google-walleye.dtb"), "{err}");
@@ -303,4 +336,31 @@ fn an_empty_or_dashed_value_is_refused_before_it_can_swallow_a_flag() {
             "{to:?}"
         );
     }
+}
+
+#[test]
+fn a_dtbs_folder_is_looked_in_first_and_named_when_it_lacks_the_tree() {
+    // Alpine's kernel packages put the trees in /boot/dtbs-FLAVOR; the hook says so with --dtbs
+    let (dir, o) = run_script(
+        "dtbs",
+        Some("boot/dtbs-walleye"),
+        &["--dtbs", "boot/dtbs-walleye"],
+    );
+    assert_eq!(
+        o.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+    assert!(fs::read_to_string(dir.join("boot.img"))
+        .unwrap()
+        .contains("KERNEL=KERNELDTB"));
+    let (_, o) = run_script("dtbs-lacking", None, &["--dtbs", "boot/dtbs-walleye"]);
+    assert_ne!(o.status.code(), Some(0));
+    assert!(
+        String::from_utf8_lossy(&o.stderr)
+            .contains("boot/dtbs-walleye/qcom/msm8998-google-walleye.dtb"),
+        "{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
 }
