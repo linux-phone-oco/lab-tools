@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.51.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.50.0...lpoco-bringup-v0.51.0) - 2026-11-24
+
+### Added
+
+- *(layer)* the apk drops /etc/deviceinfo and the cmdline file, nothing on plain Alpine reads them ([#430](https://github.com/linux-phone-oco/lab-tools/pull/430))
+
 ## [0.50.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.49.4...lpoco-bringup-v0.50.0) - 2026-11-24
 
 ### Added
