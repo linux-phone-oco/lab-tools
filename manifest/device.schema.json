@@ -1191,6 +1191,21 @@
       "properties": {
         "method": {
           "$ref": "#/definitions/FirmwareMethod"
+        },
+        "compatible": {
+          "description": "The device tree `compatible` string the extractor (droid-juicer) names its per-device config after\n(`xiaomi,surya`); needed with sources.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "source": {
+          "description": "What is read from which partition of the phone: the extractor copies these files into the firmware folder.\nOnly names: no vendor file is ever in a repository or a package.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/FirmwareSource"
+          }
         }
       },
       "additionalProperties": false,
@@ -1204,6 +1219,57 @@
       "enum": [
         "extract-from-partitions",
         "files"
+      ]
+    },
+    "FirmwareSource": {
+      "description": "`[[layer.firmware.source]]`: files of one folder of one vendor partition.",
+      "type": "object",
+      "properties": {
+        "partition": {
+          "description": "the partition's name under /dev/disk/by-partlabel",
+          "type": "string"
+        },
+        "origin": {
+          "description": "the folder on it, relative",
+          "type": "string"
+        },
+        "destination": {
+          "description": "the folder under the firmware directory the files are copied to, relative",
+          "type": "string"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/FirmwareFile"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "partition",
+        "origin",
+        "destination",
+        "files"
+      ]
+    },
+    "FirmwareFile": {
+      "description": "One file to extract: its name on the partition, and the name it is given when that differs.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "rename": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name"
       ]
     },
     "LayerInitramfs": {

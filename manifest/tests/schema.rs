@@ -391,3 +391,68 @@ fn a_kernel_build_refuses_what_git_or_make_would_misread_and_a_name_or_sha_that_
     let e = Manifest::parse(&twice).unwrap_err();
     assert!(e.contains("same sha256"), "{e}");
 }
+
+// source of the shape: droid-juicer's README (gitlab.com/mobian1/droid-juicer): a config named after the device's DT
+// `compatible`, one `[juicer]` section whose `firmware` entries name a partition, an origin folder on it, a destination
+// under the extraction folder and files (name, rename optional)
+const FIRMWARE: &str = r#"
+[layer]
+name = "xiaomi-surya"
+
+[layer.firmware]
+method = "extract-from-partitions"
+compatible = "xiaomi,surya"
+
+[[layer.firmware.source]]
+partition = "vendor"
+origin = "firmware"
+destination = "qcom/sm7150/xiaomi/surya"
+files = [{ name = "a615_zap.mdt" }, { name = "wlanmdsp.mbn", rename = "wlanmdsp.otaupdate" }]
+"#;
+
+#[test]
+fn the_firmware_extraction_is_declared_by_partition_folder_and_file() {
+    let m = Manifest::parse(&format!("{HEAD}{FIRMWARE}")).unwrap();
+    let f = m.layer.unwrap().firmware.unwrap();
+    assert_eq!(f.compatible.as_deref(), Some("xiaomi,surya"));
+    assert_eq!(f.source.len(), 1);
+    assert_eq!(f.source[0].partition, "vendor");
+    assert_eq!(
+        f.source[0].files[1].rename.as_deref(),
+        Some("wlanmdsp.otaupdate")
+    );
+}
+
+#[test]
+fn a_firmware_declaration_that_would_break_the_extractors_toml_or_leave_its_folder_is_refused() {
+    for (from, to) in [
+        ("partition = \"vendor\"", "partition = \"ven\\\"dor\""),
+        ("origin = \"firmware\"", "origin = \"../firmware\""),
+        ("origin = \"firmware\"", "origin = \"/firmware\""),
+        (
+            "destination = \"qcom/sm7150/xiaomi/surya\"",
+            "destination = \"/lib/firmware\"",
+        ),
+        ("{ name = \"a615_zap.mdt\" }", "{ name = \"a/b.mdt\" }"),
+        ("{ name = \"a615_zap.mdt\" }", "{ name = \"\" }"),
+        (
+            "compatible = \"xiaomi,surya\"",
+            "compatible = \"xiaomi surya\"",
+        ),
+        ("compatible = \"xiaomi,surya\"", "compatible = \"../x\""),
+    ] {
+        let t = format!("{HEAD}{}", FIRMWARE.replace(from, to));
+        assert!(Manifest::parse(&t).is_err(), "{to} was accepted");
+    }
+    // sources without a compatible: the extractor's config has no name
+    let t = format!(
+        "{HEAD}{}",
+        FIRMWARE.replace("compatible = \"xiaomi,surya\"\n", "")
+    );
+    assert!(Manifest::parse(&t).unwrap_err().contains("compatible"));
+    // a vendor blob is never a layer file: a destination under /usr/lib/firmware is refused
+    let t = format!(
+        "{HEAD}{FIRMWARE}\n[[layer.file]]\nfrom = \"fw/a.mbn\"\nto = \"/usr/lib/firmware/qcom/a.mbn\"\nkind = \"data\"\n"
+    );
+    assert!(Manifest::parse(&t).unwrap_err().contains("firmware"));
+}

@@ -652,6 +652,7 @@ dependencies = [
  "argenv-resolve",
  "lpoco-manifest 0.48.0",
  "serde",
+ "toml",
 ]
 
 [[package]]
