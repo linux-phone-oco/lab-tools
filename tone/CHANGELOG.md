@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.48.14](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-tone-v0.48.13...lpoco-tone-v0.48.14) - 2026-11-24
+
+### Added
+
+- *(host)* follow reads the newest family tag with git ls-remote, the API only as a fallback ([#413](https://github.com/linux-phone-oco/lab-tools/pull/413))
+
 ## [0.48.13](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-tone-v0.48.12...lpoco-tone-v0.48.13) - 2026-11-24
 
 ### Added
