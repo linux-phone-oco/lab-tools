@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.49.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.49.0...lpoco-bringup-v0.49.1) - 2026-11-24
+
+### Added
+
+- *(layer)* the extractor's entry for the phone's firmware, never the vendor blobs ([#417](https://github.com/linux-phone-oco/lab-tools/pull/417))
+
 ## [0.49.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.48.14...lpoco-bringup-v0.49.0) - 2026-11-24
 
 ### Added
