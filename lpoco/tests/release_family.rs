@@ -118,6 +118,8 @@ fn the_commit_kind_pattern_accepts_kinds_and_refuses_the_rest() {
         "refactor!: x",
         "perf: x",
         "test: x",
+        "chore(deps): bump lpoco-manifest to v0.47.0",
+        "chore(deps)!: x",
         "ci: x",
         "build: x",
         "feat(Host): x",
@@ -172,6 +174,11 @@ fn release_plz_ignores_its_own_release_commits() {
         "chore: release v0.3.6 (#117)",
         "chore: release v0.3.7",
         "chore(release): v0.3.7",
+        "chore: release v0.48.5 (#393)",
+        "chore(lpoco): release v0.3.7",
+        "chore(lpoco-attended): release v0.45.3",
+        "chore(deps-dev): x",
+        "chore: x",
     ] {
         assert!(
             !re.is_match(refused),
@@ -187,6 +194,8 @@ fn release_plz_ignores_its_own_release_commits() {
         "build: x",
         "ci: x",
         "test: x",
+        "chore(deps): bump lpoco-manifest to v0.47.0",
+        "chore(deps)!: x",
     ] {
         assert!(re.is_match(released), "a change must release: {released}");
     }
