@@ -254,6 +254,7 @@ impl LayerFirmware {
     fn validate(&self) -> Result<(), String> {
         let word = |what: &str, w: &str| -> Result<(), String> {
             if w.is_empty()
+                || matches!(w, "." | "..")
                 || !w
                     .chars()
                     .all(|c| c.is_ascii_alphanumeric() || "_.-+".contains(c))

@@ -62,6 +62,8 @@ impl Format {
 pub enum Source {
     Tree(String),
     Text(String),
+    /// A symbolic link to this target (nothing is written on disk).
+    Link(String),
     /// A whole directory, packed as a tree.
     Dir(String),
 }
@@ -94,6 +96,8 @@ pub struct Entry {
     pub mode: u32,
     pub config: bool,
     pub tree: bool,
+    /// a symbolic link: `src` is its target
+    pub link: bool,
 }
 
 /// A dependency token with its name in this format's repositories, its version bound kept.
@@ -146,7 +150,7 @@ pub fn packages(layer: &Layer, format: Format) -> Vec<Package> {
         }
     }
     // the OEM's firmware is read from the phone's own partitions by the extractor, which this entry tells what to copy;
-    // apk has none (the extractor there is Nura's msm-firmware-loader: that waits on the author's word)
+    // apk has no extractor entry: plain Alpine links the declared files with its own service (firmware_service)
     let mut needs: Vec<String> = layer.needs.clone();
     if format != Format::Apk {
         if let Some(entry) = firmware_entry(layer) {
@@ -187,6 +191,7 @@ pub fn packages(layer: &Layer, format: Format) -> Vec<Package> {
                 )),
             });
         }
+        out.extend(firmware_service(layer));
         return out;
     }
     let mut boot = Vec::new();
@@ -283,6 +288,7 @@ pub fn materialize(pkg: &Package, manifest_dir: &Path, stage: &Path) -> Result<V
                 }
                 p
             }
+            Source::Link(target) => PathBuf::from(target),
             Source::Dir(rel) => {
                 let p = manifest_dir.join(rel);
                 if !p.is_dir() {
@@ -308,6 +314,7 @@ pub fn materialize(pkg: &Package, manifest_dir: &Path, stage: &Path) -> Result<V
             mode: it.mode,
             config: it.config,
             tree: matches!(it.source, Source::Dir(_)),
+            link: matches!(it.source, Source::Link(_)),
         });
     }
     Ok(out)
@@ -380,7 +387,9 @@ pub fn nfpm_yaml(
             quote(&e.src.to_string_lossy()),
             quote(&e.dst)
         ));
-        if e.tree {
+        if e.link {
+            y.push_str("  type: symlink\n");
+        } else if e.tree {
             // a tree keeps each file's own mode: nfpm would otherwise stamp one mode on every file in it
             y.push_str("  type: tree\n");
         } else {
@@ -454,7 +463,7 @@ pub fn stale(
         made.push(format!("linux-{}", layer.name));
     }
     let arm = |n: &str| (n.starts_with("linux-").then_some("arm64"), n.to_string());
-    ["config", "boot"]
+    ["config", "boot", "firmware"]
         .iter()
         .map(|s| format!("{}-{s}", layer.name))
         .chain([format!("linux-{}", layer.name)])
@@ -1065,4 +1074,103 @@ pub fn export_tree(layer: &Layer, manifest_dir: &Path, root: &Path) -> Result<()
     }
     let _ = std::fs::remove_dir_all(&stage);
     std::fs::write(root.join("Makefile"), make).map_err(|e| format!("Makefile: {e}"))
+}
+
+/// The apk's own firmware rule (decision 2026-11-24-plain-alpine-not-nura): `NAME-firmware` holds an OpenRC service
+/// that mounts each declared vendor partition read-only under /run, and the links `/lib/firmware/DESTINATION/LINK` to
+/// the declared files on it (links, because the root is still read-only when the service runs), so the kernel's
+/// loader finds them. No vendor file is ever in a package. None when the layer declares no source.
+pub fn firmware_service(layer: &Layer) -> Option<Package> {
+    let fw = layer.firmware.as_ref().filter(|f| !f.source.is_empty())?;
+    let name = &layer.name;
+    let mut table = String::new();
+    let mut links = Vec::new();
+    for s in &fw.source {
+        for f in &s.files {
+            table.push_str(&format!(
+                "{} {} {} {} {}\n",
+                s.partition,
+                s.origin,
+                s.destination,
+                f.name,
+                f.rename.as_deref().unwrap_or(&f.name)
+            ));
+            links.push(Item {
+                source: Source::Link(format!(
+                    "/run/{name}-firmware/{}/{}/{}",
+                    s.partition, s.origin, f.name
+                )),
+                dst: format!(
+                    "/lib/firmware/{}/{}",
+                    s.destination,
+                    f.rename.as_deref().unwrap_or(&f.name)
+                ),
+                mode: 0o777,
+                config: false,
+            });
+        }
+    }
+    let text = |dst: String, body: String, mode: u32| Item {
+        source: Source::Text(body),
+        dst,
+        mode,
+        config: false,
+    };
+    let script = format!("/usr/libexec/{name}-firmware");
+    Some(Package {
+        arch: None,
+        name: format!("{name}-firmware"),
+        description: format!("{name}: the phone's vendor firmware, linked from its partitions"),
+        depends: vec!["openrc".to_string()],
+        items: [
+            text(script.clone(), firmware_script(name), 0o755),
+            text(format!("/etc/{name}-firmware/sources"), table, 0o644),
+            text(
+                format!("/etc/init.d/{name}-firmware"),
+                format!(
+                    "#!/sbin/openrc-run\n# generated by lpoco layer pack\ndescription=\"{name}: link the phone's vendor firmware for the kernel's loader\"\n\ndepend() {{\n    need dev\n    before modules hwdrivers\n}}\n\nstart() {{\n    ebegin \"Linking the vendor firmware\"\n    {script}\n    eend $?\n}}\n"
+                ),
+                0o755,
+            ),
+        ]
+        .into_iter()
+        .chain(links)
+        .collect(),
+        post_install: Some(format!(
+            "#!/bin/sh\n# the firmware is wanted when the drivers load: sysinit, on first install (an upgrade keeps the runlevel the user chose)\nif command -v rc-update >/dev/null 2>&1 && ! rc-update show sysinit 2>/dev/null | grep -q '^ *{name}-firmware '; then\n    rc-update add {name}-firmware sysinit || echo \"{name}: rc-update failed; add the service to sysinit by hand\" >&2\nfi\n"
+        )),
+    })
+}
+
+/// The script behind the service: each line of `/etc/NAME-firmware/sources` is `PARTITION ORIGIN DESTINATION FILE LINK`;
+/// the partition (by its partlabel) is mounted read-only once under /run/NAME-firmware, and each declared file is
+/// checked to be on it. The links themselves are in the package (`/lib/firmware/DESTINATION/LINK` to the file under
+/// /run), because the root is still read-only when the service runs. A partition that does not mount, or a file it
+/// lacks, is named and ends the run (exit 1) after every other partition is mounted. `LPOCO_FW_ROOT` is a prefix for the tests.
+fn firmware_script(name: &str) -> String {
+    format!(
+        r#"#!/bin/sh
+# {name}: mounts the phone's vendor partitions read-only for the firmware links of its package (generated by lpoco layer pack)
+# Nothing is copied: the links in /lib/firmware point into these mounts.
+set -eu
+root=${{LPOCO_FW_ROOT:-}}
+mnt=$root/run/{name}-firmware
+failed=0
+while read -r part origin dest file link; do
+    if ! mountpoint -q "$mnt/$part"; then
+        mkdir -p "$mnt/$part"
+        if ! mount -o ro "$root/dev/disk/by-partlabel/$part" "$mnt/$part"; then
+            echo "{name}: cannot mount partition $part" >&2
+            failed=1
+            continue
+        fi
+    fi
+    if [ ! -f "$mnt/$part/$origin/$file" ]; then
+        echo "{name}: $part/$origin/$file is not on the partition" >&2
+        failed=1
+    fi
+done < "$root/etc/{name}-firmware/sources"
+[ "$failed" = 0 ]
+"#
+    )
 }

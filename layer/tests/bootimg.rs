@@ -400,7 +400,8 @@ fn run_hook(tag: &str, args: &[&str]) -> (String, std::process::Output) {
     let path = dir.join("hook");
     fs::write(&path, hook).unwrap();
     fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
-    let o = Command::new(&path)
+    let o = Command::new("sh")
+        .arg(&path)
         .args(args)
         .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
         .output()

@@ -919,7 +919,8 @@ fn deb_rpm_and_archlinux_get_the_extractors_entry_and_the_extractor_as_a_depende
 
 #[test]
 fn no_package_holds_an_oem_firmware_file() {
-    for format in [Format::Apk, Format::Deb, Format::Rpm, Format::Archlinux] {
+    // the apk has links under /lib/firmware (into the mounted partitions), no file: layer/tests/firmware_service.rs
+    for format in [Format::Deb, Format::Rpm, Format::Archlinux] {
         for (dst, _) in items_of(format) {
             assert!(
                 !dst.contains("/lib/firmware") && !dst.ends_with(".mbn") && !dst.ends_with(".mdt"),
@@ -930,8 +931,8 @@ fn no_package_holds_an_oem_firmware_file() {
 }
 
 #[test]
-fn apk_gets_no_extractor_entry_that_part_waits_on_the_authors_word() {
-    // msm-firmware-loader is Nura's (postmarketOS); nothing is prepared aimed at Nura until the author says
+fn apk_gets_no_extractor_entry_its_firmware_is_its_own_service() {
+    // plain Alpine (decision 2026-11-24-plain-alpine-not-nura): no droid-juicer entry; layer/tests/firmware_service.rs holds its rule
     let items = items_of(Format::Apk);
     assert!(
         items.iter().all(|(d, _)| !d.contains("droid-juicer")),
