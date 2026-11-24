@@ -16,6 +16,7 @@ const FAMILY: &[&str] = &[
     "lpoco-health",
     "lpoco-host",
     "lpoco-tone",
+    "lpoco-layer",
 ];
 const SUFFIX: &str = "x86_64-unknown-linux-gnu";
 

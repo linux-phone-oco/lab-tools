@@ -17,6 +17,7 @@ const FAMILY: &[&str] = &[
     "lpoco-health",
     "lpoco-host",
     "lpoco-tone",
+    "lpoco-layer",
 ];
 const SUFFIX: &str = "x86_64-unknown-linux-gnu";
 const NO_ROOT: &str = "root commands, through `sudo`:\n    none\n";
@@ -1924,4 +1925,20 @@ fn a_skipped_member_that_the_new_check_names_off_its_pin_does_not_step_the_insta
     assert!(o.status.success(), "{s}");
     assert!(installed(&l, "lpoco").contains("0.2.1"), "{s}");
     assert_eq!(landed_pin(&l).0, "lpoco = \"0.2.1\"", "{s}");
+}
+
+#[test]
+fn follow_installs_lpoco_layer_with_the_rest_of_the_family() {
+    // source: the dispatcher runs `lpoco layer` as the program lpoco-layer found on the host (README, the layer/ row),
+    // so the host carries it at the family version like the other lab-side programs
+    let l = lab("layerfamily", "");
+    releases(&l, &["0.2.1", "0.2.0"]);
+    install_old(&l);
+    assert!(installed(&l, "lpoco-layer").contains("0.2.0"));
+    let o = follow(&l, &["now"]);
+    assert!(
+        installed(&l, "lpoco-layer").contains("0.2.1"),
+        "lpoco-layer was not followed: {}",
+        text(&o)
+    );
 }
