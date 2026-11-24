@@ -959,3 +959,92 @@ pub fn firmware_entry(layer: &Layer) -> Option<Item> {
         config: false,
     })
 }
+
+/// The distribution targets of an export: the Makefile's name, the folder of its extra files, the package format
+/// whose file list it reproduces.
+pub const EXPORT_TARGETS: [(&str, &str, Format); 4] = [
+    ("debian", "debian", Format::Deb),
+    ("fedora", "fedora", Format::Rpm),
+    ("arch", "arch", Format::Archlinux),
+    ("alpine", "alpine", Format::Apk),
+];
+
+/// Writes the layer's source tree into `root`: `files/common/PATH` for what every format installs, `files/TARGET/PATH`
+/// for what that distribution's package holds besides, and a `Makefile` whose `install` and `install-TARGET` targets
+/// put them under `$(DESTDIR)` with the modes the packages carry (Asahi's contract: asahi-alarm's `make install-arch`,
+/// Fedora's `%make_install install-fedora`). Nothing is exported that only Nura reads (/etc/deviceinfo): the files are
+/// those of `packages`, which add_deviceinfo is not part of. A destination a Makefile would misread is refused.
+pub fn export_tree(layer: &Layer, manifest_dir: &Path, root: &Path) -> Result<(), String> {
+    let stage = root.join(".stage");
+    // the files every format shares: the declared and generated files of the config package (the same in each format)
+    let entries_of = |format: Format| -> Result<Vec<(String, Entry)>, String> {
+        let mut v = Vec::new();
+        for p in packages(layer, format) {
+            for e in materialize(&p, manifest_dir, &stage.join(format.token()))? {
+                if e.tree {
+                    return Err(format!(
+                        "{}: {} is a whole folder; an export holds files",
+                        p.name, e.dst
+                    ));
+                }
+                v.push((p.name.clone(), e));
+            }
+        }
+        Ok(v)
+    };
+    let common: Vec<Entry> = entries_of(Format::Deb)?
+        .into_iter()
+        .filter(|(n, _)| *n == format!("{}-config", layer.name))
+        .map(|(_, e)| e)
+        .collect();
+    let mut make = String::from(
+        "# Written by `lpoco layer export`: the device layer's files, installed under $(DESTDIR).\n\
+         # `install` puts the files every distribution gets; `install-debian|fedora|arch|alpine` add that\n\
+         # distribution's own (the boot glue). A package's post-install (systemctl preset, initramfs rebuild) is\n\
+         # the distribution's packager's to run.\n\
+         DESTDIR ?=\n\n.PHONY: install install-debian install-fedora install-arch install-alpine\n\n",
+    );
+    let place = |dir: &str, e: &Entry| -> Result<String, String> {
+        let at = root
+            .join("files")
+            .join(dir)
+            .join(e.dst.trim_start_matches('/'));
+        std::fs::create_dir_all(at.parent().unwrap())
+            .map_err(|er| format!("{}: {er}", at.display()))?;
+        std::fs::copy(&e.src, &at).map_err(|er| format!("{}: {er}", e.src.display()))?;
+        if !e
+            .dst
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "/_.,+@:-".contains(c))
+        {
+            return Err(format!(
+                "{} is not a destination a Makefile can carry (letters, digits and / _ . , + @ : -)",
+                e.dst
+            ));
+        }
+        Ok(format!(
+            "\tinstall -Dm{:04o} files/{dir}/{p} $(DESTDIR){}\n",
+            e.mode,
+            e.dst,
+            p = e.dst.trim_start_matches('/')
+        ))
+    };
+    make.push_str("install:\n");
+    for e in &common {
+        make.push_str(&place("common", e)?);
+    }
+    make.push_str("\t@true\n\n");
+    for (target, dir, format) in EXPORT_TARGETS {
+        let have: std::collections::HashSet<&str> = common.iter().map(|e| e.dst.as_str()).collect();
+        make.push_str(&format!("install-{target}: install\n"));
+        for (_, e) in entries_of(format)? {
+            if have.contains(e.dst.as_str()) {
+                continue;
+            }
+            make.push_str(&place(dir, &e)?);
+        }
+        make.push_str("\t@true\n\n");
+    }
+    let _ = std::fs::remove_dir_all(&stage);
+    std::fs::write(root.join("Makefile"), make).map_err(|e| format!("Makefile: {e}"))
+}
