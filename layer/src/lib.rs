@@ -886,3 +886,33 @@ pub fn refuse_overlaps(pkgs: &[Package]) -> Result<(), String> {
     }
     Ok(())
 }
+
+/// The time nfpm stamps into a package, in seconds: the one given (SOURCE_DATE_EPOCH), else the commit time of the git
+/// repository the layer's folder is in, of the last commit that touched that folder (a later commit elsewhere in the repository does not move the bytes), else none. A given value that is not whole seconds is refused.
+pub fn source_date_epoch(
+    given: Option<String>,
+    layer_dir: &Path,
+) -> Result<Option<String>, String> {
+    if let Some(g) = given
+        .map(|g| g.trim().to_string())
+        .filter(|g| !g.is_empty())
+    {
+        // nfpm reads it as a signed 64-bit number and stamps the time now for a larger one
+        return match g.parse::<i64>() {
+            Ok(n) if n >= 0 && g.bytes().all(|b| b.is_ascii_digit()) => Ok(Some(g)),
+            _ => Err(format!(
+                "SOURCE_DATE_EPOCH is {g:?}: whole seconds since the epoch, as a number nfpm can hold, are needed"
+            )),
+        };
+    }
+    let committed = std::process::Command::new("git")
+        .arg("-C")
+        .arg(layer_dir)
+        .args(["log", "-1", "--format=%ct", "--", "."])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .filter(|t| !t.is_empty() && t.bytes().all(|b| b.is_ascii_digit()));
+    Ok(committed)
+}

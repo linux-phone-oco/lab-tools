@@ -88,6 +88,14 @@ contract! {
         ..Input::EMPTY
     };
 
+    SOURCE_DATE_EPOCH: String = Input {
+        key: "source_date_epoch",
+        ty: Type::String,
+        env: Some(Env::new("SOURCE_DATE_EPOCH")),
+        summary: "The time nfpm stamps into the packages, in seconds since the epoch (the time of the last commit that touched the layer's folder when none is given, so the same committed layer gives the same bytes; uncommitted changes are packed under that same time).",
+        ..Input::EMPTY
+    };
+
     HELP: bool = Input {
         key: "help",
         ty: Type::Bool,
