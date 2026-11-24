@@ -1628,8 +1628,13 @@ fn gh_lab(name: &str, gh_body: &str) -> Lab {
 }
 
 fn follow_with(l: &Lab, url: &str, token: Option<&str>) -> String {
+    follow_args(l, &[], url, token)
+}
+
+fn follow_args(l: &Lab, args: &[&str], url: &str, token: Option<&str>) -> String {
     let mut c = Command::new(env!("CARGO_BIN_EXE_lpoco-host"));
-    c.args(["follow"])
+    c.arg("follow")
+        .args(args)
         .env_clear()
         .env("HOME", l.dir.join("home"))
         .env(
@@ -1751,4 +1756,172 @@ fn a_gh_that_hangs_is_given_up_on_and_follow_goes_on_anonymous() {
     let cfg = fs::read_to_string(l.dir.join("curl-config")).unwrap_or_default();
     assert!(l.dir.join("gh-ran").exists(), "gh was asked");
     assert!(!cfg.contains("Bearer"), "{cfg} {said}");
+}
+
+/// Where a request for `url` went and what its stdin config carried: one line `URL<TAB>carried-a-token`.
+fn token_log_curl(l: &Lab) {
+    exe(
+        &l.dir.join("stubs/curl"),
+        &format!(
+            "cfg=$(cat)\nwhile [ $# -gt 0 ]; do case \"$1\" in --output) out=\"$2\"; shift;; http*|file:*) url=\"$1\";; esac; shift; done\ncase \"$cfg\" in *Bearer*) t=token;; *) t=none;; esac\nprintf '%s\\t%s\\n' \"$url\" \"$t\" >> {log}\ncase \"$url\" in\n  *api.github.com/repos/*) cp {rel} \"$out\"; printf 200;;\n  */releases/download/*) src={dir}/release/${{url##*/download/}}; [ -f \"$src\" ] || {{ printf 404; exit 22; }}; cp \"$src\" \"$out\"; printf 200;;\n  file://*) src=${{url#file://}}; [ -f \"$src\" ] || {{ printf 404; exit 22; }}; cp \"$src\" \"$out\"; printf 200;;\n  *) printf 404; exit 22;;\nesac",
+            log = l.dir.join("curl-log").display(),
+            rel = l.dir.join("releases.json").display(),
+            dir = l.dir.display()
+        ),
+    );
+}
+
+#[test]
+fn a_token_goes_to_the_releases_list_and_never_to_an_asset_fetch() {
+    // source: the asset urls follow builds are github.com/.../releases/download/TAG/FILE (host/src/lib.rs
+    // family_tag, ASSET_TARGET); only api.github.com carries the token (fetch_with)
+    let l = gh_lab("assetnotoken", "echo ghp_FROMGH");
+    releases(&l, &["0.2.1", "0.2.0"]);
+    token_log_curl(&l);
+    let said = follow_args(&l, &["now"], API, Some("ghp_GIVEN"));
+    let log = fs::read_to_string(l.dir.join("curl-log")).unwrap_or_default();
+    assert!(
+        log.lines()
+            .any(|x| x.starts_with("https://api.github.com/") && x.ends_with("\ttoken")),
+        "the releases list carries the token: {log}\n{said}"
+    );
+    let assets: Vec<&str> = log
+        .lines()
+        .filter(|x| x.contains("/releases/download/"))
+        .collect();
+    assert!(!assets.is_empty(), "no asset was fetched: {log}\n{said}");
+    assert!(
+        assets.iter().all(|x| x.ends_with("\tnone")),
+        "an asset fetch carried a token: {assets:?}"
+    );
+}
+
+#[test]
+fn an_asset_fetch_with_no_token_given_does_not_ask_gh() {
+    let l = gh_lab("assetnogh", "echo ghp_FROMGH");
+    token_log_curl(&l);
+    // the list comes from a url that is not the API: gh is never asked, and every fetch is anonymous
+    follow_with(
+        &l,
+        "https://github.com/linux-phone-oco/lab-tools/releases.json",
+        None,
+    );
+    let log = fs::read_to_string(l.dir.join("curl-log")).unwrap_or_default();
+    assert!(log.contains("\tnone"), "a request was made: {log}");
+    assert!(!log.contains("\ttoken"), "{log}");
+    assert!(!l.dir.join("gh-ran").exists());
+}
+
+#[test]
+fn a_url_that_only_looks_like_githubs_api_gets_no_token_and_no_gh() {
+    for (n, url) in [
+        (
+            "dots",
+            "https://api.github.com.evil.example/repos/linux-phone-oco/lab-tools/releases",
+        ),
+        (
+            "userinfo",
+            "https://api.github.com@evil.example/repos/linux-phone-oco/lab-tools/releases",
+        ),
+        (
+            "plain",
+            "http://api.github.com/repos/linux-phone-oco/lab-tools/releases",
+        ),
+        (
+            "nosep",
+            "https://api.github.comevil.example/repos/linux-phone-oco/lab-tools/releases",
+        ),
+    ] {
+        let l = gh_lab(&format!("look-{n}"), "echo ghp_FROMGH");
+        token_log_curl(&l);
+        follow_with(&l, url, Some("ghp_GIVEN"));
+        let log = fs::read_to_string(l.dir.join("curl-log")).unwrap_or_default();
+        assert!(
+            log.lines()
+                .any(|x| x.starts_with(url) && x.ends_with("\tnone")),
+            "{n}: the request was made without a token: {log}"
+        );
+        assert!(!log.contains("\ttoken"), "{n}: {log}");
+        let l = gh_lab(&format!("lookgh-{n}"), "echo ghp_FROMGH");
+        token_log_curl(&l);
+        follow_with(&l, url, None);
+        assert!(!l.dir.join("gh-ran").exists(), "{n}: gh was asked");
+    }
+}
+
+#[test]
+fn a_family_member_whose_release_is_gone_is_reported_and_skipped_and_the_rest_installs() {
+    // lpoco-bringup-v0.2.1 is gone from the releases (no asset) and the build from its tag fails too
+    let l = gh_lab("gonemember", "exit 1");
+    releases(&l, &["0.2.1", "0.2.0"]);
+    token_log_curl(&l);
+    exe(
+        &l.dir.join("stubs/cargo"),
+        &format!(
+            "echo \"$0 $@\" >> {}; exit 101",
+            l.dir.join("calls").display()
+        ),
+    );
+    fs::remove_dir_all(l.dir.join("release/lpoco-bringup-v0.2.1")).unwrap();
+    let o = follow(&l, &["now"]);
+    let s = text(&o);
+    assert!(
+        installed(&l, "lpoco").contains("0.2.1"),
+        "the dispatcher is installed: {s}"
+    );
+    assert!(
+        installed(&l, "lpoco-tone").contains("0.2.1"),
+        "a member after the gone one is installed: {s}"
+    );
+    assert!(
+        installed(&l, "lpoco-bringup").contains("0.2.0"),
+        "the gone one stays as it was: {s}"
+    );
+    assert!(
+        s.contains("lpoco-bringup") && s.contains("skipped") && s.contains("another version"),
+        "the skip and the mixed versions are said: {s}"
+    );
+}
+
+#[test]
+fn a_skipped_member_that_the_new_check_names_off_its_pin_does_not_step_the_install_back() {
+    // source: the line the real check prints for a family member behind (host/src/main.rs
+    // `tool {}: FAIL, pinned {} found {}`); the skipped member is named by follow itself, so that line is not a failure
+    let l = gh_lab("gonecheck", "exit 1");
+    releases(&l, &["0.2.1", "0.2.0"]);
+    // only the new lpoco-host prints the line: the old one, which judges before the install, is clean
+    let asset = l
+        .dir
+        .join(format!("release/lpoco-host-v0.2.1/lpoco-host-{SUFFIX}"));
+    fs::write(
+        &asset,
+        format!("#!/bin/sh\ncase \"$1\" in check) echo \"tool lpoco-bringup: FAIL, pinned 0.2.1 found 0.2.0\"; exit 1;; plan) printf '%s\\n' '{NO_ROOT}';; esac\n"),
+    ).unwrap();
+    let sum = Command::new("sha256sum").arg(&asset).output().unwrap();
+    fs::write(
+        asset.with_file_name(format!("lpoco-host-{SUFFIX}.sha256")),
+        format!(
+            "{}  lpoco-host-{SUFFIX}\n",
+            String::from_utf8(sum.stdout)
+                .unwrap()
+                .split_whitespace()
+                .next()
+                .unwrap()
+        ),
+    )
+    .unwrap();
+    token_log_curl(&l);
+    exe(
+        &l.dir.join("stubs/cargo"),
+        &format!(
+            "echo \"$0 $@\" >> {}; exit 101",
+            l.dir.join("calls").display()
+        ),
+    );
+    fs::remove_dir_all(l.dir.join("release/lpoco-bringup-v0.2.1")).unwrap();
+    let o = follow(&l, &["now"]);
+    let s = text(&o);
+    assert!(o.status.success(), "{s}");
+    assert!(installed(&l, "lpoco").contains("0.2.1"), "{s}");
+    assert_eq!(landed_pin(&l).0, "lpoco = \"0.2.1\"", "{s}");
 }

@@ -747,54 +747,58 @@ fn prepare(st: &State) -> Result<i32, String> {
 /// Installs each tool that is off its pin, by the steps its plan names.
 fn install_tools(st: &State, tools: Vec<ToolPlan>) -> Result<(), String> {
     for t in tools.into_iter().filter(|t| !t.ok()) {
-        println!("tool {}: pinned {}", t.name, t.pinned);
-        for s in &t.steps {
-            match s {
-                Step::Run(a) => {
-                    if a.first().is_some_and(|x| x == "git")
-                        && a.get(1).is_some_and(|x| x == "clone")
-                    {
-                        // a clone into a folder left by an earlier run: start it again
-                        let _ = fs::remove_dir_all(a.last().unwrap());
-                    }
-                    let status = Proc::new(&a[0])
-                        .args(&a[1..])
-                        .status()
-                        .map_err(|e| format!("cannot run {}: {e}", a[0]))?;
-                    if !status.success() {
-                        return Err(format!("{} failed ({status})", s.show()));
-                    }
+        install_tool(st, &t).map_err(|e| e.why)?;
+    }
+    Ok(())
+}
+
+/// Installs one tool by the steps its plan names.
+fn install_tool(st: &State, t: &ToolPlan) -> Result<(), ReleaseError> {
+    println!("tool {}: pinned {}", t.name, t.pinned);
+    for s in &t.steps {
+        match s {
+            Step::Run(a) => {
+                if a.first().is_some_and(|x| x == "git") && a.get(1).is_some_and(|x| x == "clone") {
+                    // a clone into a folder left by an earlier run: start it again
+                    let _ = fs::remove_dir_all(a.last().unwrap());
                 }
-                Step::Release {
-                    url,
-                    sha_url,
-                    to,
-                    also,
-                    fallback,
-                } => install_release(st, url, sha_url, to, also, fallback)?,
-                Step::ReleaseArchive {
-                    url,
-                    sums_url,
-                    member,
-                    to,
-                } => install_release_archive(st, url, sums_url, member, to)?,
-                Step::Stamp { to, rev } => {
-                    if let Some(d) = Path::new(to).parent() {
-                        fs::create_dir_all(d)
-                            .map_err(|e| format!("cannot make {}: {e}", d.display()))?;
-                    }
-                    replace_file(to, format!("{rev}\n").as_bytes(), 0o644)
-                        .map_err(|e| format!("cannot write {to}: {e}"))?;
+                let status = Proc::new(&a[0])
+                    .args(&a[1..])
+                    .status()
+                    .map_err(|e| format!("cannot run {}: {e}", a[0]))?;
+                if !status.success() {
+                    return Err(format!("{} failed ({status})", s.show()).into());
                 }
-                Step::Copy { from, to } => {
-                    if let Some(d) = Path::new(to).parent() {
-                        fs::create_dir_all(d)
-                            .map_err(|e| format!("cannot make {}: {e}", d.display()))?;
-                    }
-                    let bytes = fs::read(from).map_err(|e| format!("cannot read {from}: {e}"))?;
-                    replace_file(to, &bytes, 0o755)
-                        .map_err(|e| format!("cannot copy {from} to {to}: {e}"))?;
+            }
+            Step::Release {
+                url,
+                sha_url,
+                to,
+                also,
+                fallback,
+            } => install_release(st, url, sha_url, to, also, fallback)?,
+            Step::ReleaseArchive {
+                url,
+                sums_url,
+                member,
+                to,
+            } => install_release_archive(st, url, sums_url, member, to)?,
+            Step::Stamp { to, rev } => {
+                if let Some(d) = Path::new(to).parent() {
+                    fs::create_dir_all(d)
+                        .map_err(|e| format!("cannot make {}: {e}", d.display()))?;
                 }
+                replace_file(to, format!("{rev}\n").as_bytes(), 0o644)
+                    .map_err(|e| format!("cannot write {to}: {e}"))?;
+            }
+            Step::Copy { from, to } => {
+                if let Some(d) = Path::new(to).parent() {
+                    fs::create_dir_all(d)
+                        .map_err(|e| format!("cannot make {}: {e}", d.display()))?;
+                }
+                let bytes = fs::read(from).map_err(|e| format!("cannot read {from}: {e}"))?;
+                replace_file(to, &bytes, 0o755)
+                    .map_err(|e| format!("cannot copy {from} to {to}: {e}"))?;
             }
         }
     }
@@ -1260,7 +1264,7 @@ fn fetch(url: &str, to_file: &Path) -> Result<bool, String> {
 /// `fetch`, and a `token` sent as a bearer header to GitHub's API only (never to another host, never on the command
 /// line: curl reads it as a config from its stdin).
 fn fetch_with(url: &str, to_file: &Path, token: Option<&str>) -> Result<bool, String> {
-    let token = token.filter(|_| url.starts_with("https://api.github.com/"));
+    let token = token.filter(|_| is_github_api(url));
     let mut curl = Proc::new("curl");
     curl.args([
         "--fail",
@@ -1414,9 +1418,20 @@ fn hex_sha256(bytes: &[u8]) -> String {
         .collect()
 }
 
-/// Installs a program from its release asset after the hash matches (`to`, and `also` under the old names). A
-/// release without the asset or its hash runs `fallback` (cargo); a hash that does not match, or one that cannot be
-/// read, installs nothing and fails, and never falls back: the next run asks again.
+/// Why a release was not installed, and whether its asset was not there (and the build from its tag, when one is
+/// declared, failed too: cargo cannot tell a missing tag from another failed build, so both count). A hash that does
+/// not match and an outage are never that.
+struct ReleaseError {
+    gone: bool,
+    why: String,
+}
+
+impl From<String> for ReleaseError {
+    fn from(why: String) -> Self {
+        ReleaseError { gone: false, why }
+    }
+}
+
 fn install_release(
     st: &State,
     url: &str,
@@ -1424,6 +1439,23 @@ fn install_release(
     to: &str,
     also: &[String],
     fallback: &[String],
+) -> Result<(), ReleaseError> {
+    let mut gone = false;
+    fetch_and_install_release(st, url, sha_url, to, also, fallback, &mut gone)
+        .map_err(|why| ReleaseError { gone, why })
+}
+
+/// Installs a program from its release asset after the hash matches (`to`, and `also` under the old names). A
+/// release without the asset or its hash runs `fallback` (cargo); a hash that does not match, or one that cannot be
+/// read, installs nothing and fails, and never falls back: the next run asks again.
+fn fetch_and_install_release(
+    st: &State,
+    url: &str,
+    sha_url: &str,
+    to: &str,
+    also: &[String],
+    fallback: &[String],
+    gone: &mut bool,
 ) -> Result<(), String> {
     let work = format!("{}/.cache/lpoco-host/asset-{}", st.home, std::process::id());
     let _ = fs::remove_dir_all(&work);
@@ -1475,8 +1507,10 @@ fn install_release(
     } else if let Err(e) = got {
         Err(e)
     } else if fallback.is_empty() {
+        *gone = true;
         Err(format!("no release asset at {url}: not installed"))
     } else {
+        *gone = true;
         println!("no release asset at {url}: building with cargo");
         let status = Proc::new(&fallback[0])
             .args(&fallback[1..])
@@ -1686,13 +1720,16 @@ fn follow(st: &State, now: bool) -> Result<i32, String> {
             "{why}; the programs of {was} are back and the pin stays"
         ))
     };
-    if let Err(why) = install_family(st, &newest) {
-        return stepped_back(why);
-    }
+    let skipped = match install_family(st, &newest) {
+        Ok(skipped) => skipped,
+        Err(why) => return stepped_back(why),
+    };
+    // a member follow skipped is off its pin by its own account: the new check naming it is no failure
+    let off_pin: Vec<String> = moved.iter().cloned().chain(skipped).collect();
     let after = match Judged::before_tools(
         &format!("{}/.local/bin/lpoco-host", st.home),
         &staged,
-        &moved,
+        &off_pin,
     ) {
         Ok(a) => a,
         Err(why) => return stepped_back(why),
@@ -2257,7 +2294,7 @@ fn step_back_a_killed_follow(home: &str, pinned: &str) -> Result<(), String> {
 }
 
 /// Installs the family's programs at release `newest`, each from its asset after the hash matches.
-fn install_family(st: &State, newest: &str) -> Result<(), String> {
+fn install_family(st: &State, newest: &str) -> Result<Vec<String>, String> {
     let mut lab = st.lab.clone();
     lab.tools
         .insert("lpoco".into(), ToolPin::Version(newest.to_string()));
@@ -2273,7 +2310,25 @@ fn install_family(st: &State, newest: &str) -> Result<(), String> {
     .into_iter()
     .filter(|t| FAMILY.contains(&t.name.as_str()))
     .collect();
-    install_tools(st, tools)
+    let mut skipped = Vec::new();
+    for t in tools.iter().filter(|t| !t.ok()) {
+        match install_tool(st, t) {
+            Ok(()) => {}
+            // a member whose release is gone does not hold back the others: it is named, and stays as it is
+            Err(e) if e.gone => {
+                println!("{}: skipped, {}", t.name, e.why);
+                skipped.push(t.name.as_str());
+            }
+            Err(e) => return Err(e.why),
+        }
+    }
+    if !skipped.is_empty() {
+        println!(
+            "lpoco {newest} runs next to {} of another version: `lpoco NAME` refuses a program that is not its own version",
+            skipped.join(", ")
+        );
+    }
+    Ok(skipped.into_iter().map(String::from).collect())
 }
 
 /// lab.toml as origin's main has it when it is in a clone, else as the file lies.

@@ -660,9 +660,12 @@ mod lease_tests {
 pub fn judge_check_without(exit: Option<i32>, stdout: &str, tools: &[String]) -> (bool, String) {
     let ignored = |l: &str| {
         l.starts_with("follow: FAIL, ")
-            || tools
-                .iter()
-                .any(|t| l.starts_with(&format!("tool {t}: FAIL, ")))
+            || tools.iter().any(|t| {
+                // only a copy found off its pin: one not found at all is prepare's to bring in
+                l.strip_prefix(&format!("tool {t}: FAIL, pinned "))
+                    .and_then(|rest| rest.split_once(" found "))
+                    .is_some_and(|(_, found)| found != "not found")
+            })
     };
     let dropped = stdout.lines().any(ignored);
     let kept: Vec<&str> = stdout.lines().filter(|l| !ignored(l)).collect();
@@ -687,6 +690,25 @@ mod without_tests {
         let two = format!("{out}tool lpoco: FAIL, pinned 2 found 1\n");
         assert!(!judge_check_without(Some(1), &two, &t).0);
         assert!(!judge_check_without(Some(2), out, &t).0);
+    }
+
+    #[test]
+    fn only_a_tool_found_off_its_pin_is_ignored_not_one_that_is_not_there_or_fails_otherwise() {
+        // source: the lines host/src/main.rs prints: `tool {}: FAIL, pinned {} found {}` where found is the
+        // installed version or ToolPlan::found_text's "not found" (host/src/lib.rs); a tool never installed
+        // is prepare's to bring in (moved_tools), so follow cannot clear it
+        let t = ["rhizoid".to_string()];
+        for out in [
+            "tool rhizoid: FAIL, pinned v2 found not found\n",
+            "tool rhizoid: FAIL, missing\n",
+            "tool rhizoid: FAIL, anything else\n",
+        ] {
+            assert!(!judge_check_without(Some(1), out, &t).0, "{out}");
+        }
+        let behind = "tool rhizoid: FAIL, pinned v2 found v1\n";
+        assert!(judge_check_without(Some(1), behind, &t).0);
+        let unstamped = "tool rhizoid: FAIL, pinned v2 found on PATH, rev not known (no stamp)\n";
+        assert!(judge_check_without(Some(1), unstamped, &t).0);
     }
 }
 
