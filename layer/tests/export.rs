@@ -5,7 +5,7 @@
 //! `make install DESTDIR=x` puts the files every format shares; `install-debian|fedora|arch|alpine` add that
 //! format's own files (the boot glue). Each lists exactly what the format's package holds.
 //!
-//! Nothing aimed at Nura: no /etc/deviceinfo (the apk's Nura-only file) is exported; that waits on the author's word.
+//! Plain Alpine (decision 2026-11-24-plain-alpine-not-nura): there is no /etc/deviceinfo to export.
 
 use lpoco_layer::{packages, Format};
 use lpoco_manifest::Manifest;
