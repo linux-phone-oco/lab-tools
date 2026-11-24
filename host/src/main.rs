@@ -1321,17 +1321,55 @@ fn gh_token(url: &str) -> Option<String> {
     if !is_github_api(url) {
         return None;
     }
-    let o = Proc::new("gh")
+    let mut gh = Proc::new("gh")
         .args(["auth", "token", "--hostname", "github.com", "--no-refresh"])
         .env("GH_PROMPT_DISABLED", "1")
-        .output()
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
         .ok()?;
-    if !o.status.success() {
+    let Some(mut stdout) = gh.stdout.take() else {
+        let _ = gh.kill();
+        let _ = gh.wait();
+        return None;
+    };
+    // the reader is not joined: a helper gh started may hold the pipe open after gh is gone
+    let (sent, received) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        use std::io::Read;
+        let mut text = String::new();
+        let _ = stdout.read_to_string(&mut text);
+        let _ = sent.send(text);
+    });
+    if !wait_or_kill(&mut gh, GH_TOKEN_SECONDS) {
         return None;
     }
-    token_of(Some(String::from_utf8_lossy(&o.stdout).to_string()))
-        .ok()
-        .flatten()
+    let out = received
+        .recv_timeout(std::time::Duration::from_secs(1))
+        .ok()?;
+    token_of(Some(out)).ok().flatten()
+}
+
+/// How long `gh auth token` may take: it reads a local file, a keyring or a credential helper that can wait for a person.
+const GH_TOKEN_SECONDS: u64 = 10;
+
+/// Waits for the child up to `seconds`; true when it ended with success, false when it failed or was killed for taking longer.
+fn wait_or_kill(child: &mut std::process::Child, seconds: u64) -> bool {
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(seconds);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return status.success(),
+            Ok(None) if std::time::Instant::now() < until => {
+                std::thread::sleep(std::time::Duration::from_millis(50))
+            }
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return false;
+            }
+        }
+    }
 }
 
 /// Runs curl; a token goes to it as a config on its stdin (`header = "Authorization: Bearer ..."`), never as an argument.
