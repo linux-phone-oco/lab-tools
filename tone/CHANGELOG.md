@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.48.9](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-tone-v0.48.8...lpoco-tone-v0.48.9) - 2026-11-24
+
+### Added
+
+- *(host)* follow installs what the new host's family adds before it is judged ([#400](https://github.com/linux-phone-oco/lab-tools/pull/400))
+
 ## [0.48.8](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-tone-v0.48.7...lpoco-tone-v0.48.8) - 2026-11-24
 
 ### Added
