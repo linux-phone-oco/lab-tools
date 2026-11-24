@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.48.10](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.48.9...lpoco-bringup-v0.48.10) - 2026-11-24
+
+### Added
+
+- *(layer)* lpoco layer pack gives nfpm SOURCE_DATE_EPOCH so the same layer packs to the same bytes ([#402](https://github.com/linux-phone-oco/lab-tools/pull/402))
+
 ## [0.48.9](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.48.8...lpoco-bringup-v0.48.9) - 2026-11-24
 
 ### Added
