@@ -6,6 +6,11 @@
 # Uses the host's iproute2 copied to /opt/ip (busybox's ip cannot move an interface between namespaces).
 IP=/opt/ip/ip
 fail() { echo "SELFTEST FAIL: $*"; exit 1; }
+# The console the phone raises: the kernel's ttyGS0 for ACM, the FunctionFS function's module for FunctionFS (init.sh loads
+# the modules named in /modules.list). `lpoco-bringup initramfs files` writes the check of the device's console here.
+@CONSOLECHECK@
+# For the tests: with SELFTEST_CONSOLE_ONLY the script runs the console check alone and stops.
+if [ -n "${SELFTEST_CONSOLE_ONLY:-}" ]; then console_check; exit $?; fi
 sleep 3
 H=
 for p in /sys/class/net/*; do
@@ -30,5 +35,5 @@ echo "SELFTEST ping 172.16.42.1 answers"
 R=$( (echo "echo SELFTEST-telnet-says-\$((6*7))"; sleep 2; echo exit) | INNS nc -w 5 172.16.42.1 23 2>&1 | tr -d '\000-\010\013-\037\377' | grep -o 'SELFTEST-telnet-says-42' | tail -1)
 [ -n "$R" ] || fail "telnet gave no answer"
 echo "SELFTEST telnet answered: $R"
-[ -c /dev/ttyGS0 ] && echo "SELFTEST ttyGS0 exists (ACM console)" || fail "no /dev/ttyGS0"
+console_check
 echo "SELFTEST PASS"

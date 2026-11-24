@@ -1,2 +1,3 @@
 #!/bin/sh
+# shellcheck disable=SC2154 # ip and interface are set by busybox udhcpc in the script's environment
 case $1 in bound|renew) /opt/ip/ip addr add "$ip/24" dev "$interface" ;; esac

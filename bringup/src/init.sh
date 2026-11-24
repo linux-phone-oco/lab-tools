@@ -56,6 +56,7 @@ ln -s $G/functions/ecm.usb0 $G/configs/c.1/
 # the controller may probe late (clocks, regulators, the PHY): wait for it, up to 60 s
 n=0
 while [ -z "$(ls /sys/class/udc 2>/dev/null)" ] && [ $n -lt 60 ]; do sleep 1; n=$((n+1)); done
+# shellcheck disable=SC2034 # only the ACM bind reads it; the FunctionFS helper finds the controller itself
 UDC=$(ls /sys/class/udc 2>/dev/null | head -n1)
 @BIND@
 

@@ -222,7 +222,13 @@ fn run(r: &argenv_resolve::Resolution) -> Result<i32, String> {
         Verb::Files => {
             let out = need(Contract::OUT.get_from(r), "--out DIR")?;
             let net = net_of(r)?;
-            let names = lpoco_bringup::init::write_files(Path::new(&out), net)?;
+            // the self-test checks the device's console; without a manifest or a [boot.gadget] it is the ACM one
+            let console = Boot::read(Path::new(&device))
+                .ok()
+                .and_then(|b| b.gadget)
+                .map(|g| g.console)
+                .unwrap_or_default();
+            let names = lpoco_bringup::init::write_files(Path::new(&out), net, console)?;
             println!("{out}: {} (net {net})", names.join(", "));
             Ok(0)
         }
