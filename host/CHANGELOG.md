@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.48.6](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-host-v0.48.5...lpoco-host-v0.48.6) - 2026-11-24
+
+### Fixed
+
+- *(release)* a chore(deps) bump releases the crate it moves ([#394](https://github.com/linux-phone-oco/lab-tools/pull/394))
+
 ## [0.48.5](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-host-v0.48.4...lpoco-host-v0.48.5) - 2026-11-24
 
 ### Fixed
