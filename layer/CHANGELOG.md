@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.48.13](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-layer-v0.48.12...lpoco-layer-v0.48.13) - 2026-11-24
+
+### Added
+
+- *(host)* a default gadget group, and lpoco host targets for health/build.sh ([#411](https://github.com/linux-phone-oco/lab-tools/pull/411))
+
 ## [0.48.12](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-layer-v0.48.11...lpoco-layer-v0.48.12) - 2026-11-24
 
 ### Added
