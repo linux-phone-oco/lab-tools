@@ -21,6 +21,7 @@ pub const FAMILY: &[&str] = &[
     "lpoco-health",
     "lpoco-host",
     "lpoco-tone",
+    "lpoco-layer",
 ];
 /// The old names, second binaries of lpoco-lab and lpoco-tone: no step of their own, but a stale one first on PATH is off the pin.
 pub const OLD_NAMES: &[(&str, &str)] = &[("devlab", "lpoco-lab"), ("tone", "lpoco-tone")];

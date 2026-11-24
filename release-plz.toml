@@ -85,7 +85,7 @@ name = "lpoco-layer"
 changelog_include = ["lpoco", "lpoco-health", "lpoco-bringup", "lpoco-lab", "lpoco-tone", "lpoco-host", "lpoco-manifest", "lpoco-ffs-acm"]
 version_group = "lpoco"
 git_tag_name = "lpoco-layer-v{{ version }}"
-git_release_enable = false
+git_release_enable = true
 
 # lpoco-attended: a lane's attended procedure as a list of named steps (used from a rust-script by git tag).
 # Not in the family: no version_group, so it is tagged only when its own files change and the labs' pin

@@ -640,3 +640,48 @@ fn a_release_moves_lpoco_manifest_only_when_manifest_changed() {
     }
     let _ = fs::remove_dir_all(&dir);
 }
+
+/// The programs the lab host installs from release assets: host/src/lib.rs FAMILY.
+fn host_family() -> Vec<String> {
+    let lib = read("host/src/lib.rs");
+    lib.split("pub const FAMILY: &[&str] = &[")
+        .nth(1)
+        .and_then(|rest| rest.split("];").next())
+        .expect("host/src/lib.rs has no FAMILY")
+        .split(',')
+        .map(|s| s.trim().trim_matches('"').to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+/// What `lpoco-host` installs follows a release asset: its package is released (a GitHub release to hold the asset),
+/// and the Assets workflow builds it and attaches it. The dispatcher runs `lpoco layer` as the program lpoco-layer
+/// found on the host (README, the `layer/` row), so lpoco-layer is among them.
+#[test]
+fn every_program_the_host_installs_is_released_and_its_asset_attached() {
+    let family = host_family();
+    assert!(
+        family.contains(&"lpoco-layer".to_string()),
+        "lpoco layer cannot run on a host that lacks lpoco-layer: {family:?}"
+    );
+    let plz = read("release-plz.toml");
+    let assets = read(".github/workflows/assets.yml");
+    for name in &family {
+        let block = plz
+            .split("[[package]]")
+            .find(|b| b.contains(&format!("name = \"{name}\"")))
+            .unwrap_or_else(|| panic!("release-plz.toml has no package {name}"));
+        assert!(
+            block.contains("git_release_enable = true"),
+            "{name} has no GitHub release for its asset"
+        );
+        assert!(
+            assets.contains(&format!("-p {name}")),
+            "assets.yml does not build {name}"
+        );
+        assert!(
+            assets.contains(&format!(" {name} ")) || assets.contains(&format!(" {name};")),
+            "assets.yml does not attach {name}"
+        );
+    }
+}
