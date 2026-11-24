@@ -5,7 +5,7 @@
 //! `NAME-boot` (for apk only the mkinitfs module list and the scriptlet that enables it). Each package is an nfpm
 //! config; nfpm packs it. The dependency token map is `[layer.names.FORMAT]`; the kernel package (`linux-NAME`) is not here yet.
 
-use lpoco_manifest::{Boot, BootMethod, FileKind, Layer, Manifest};
+use lpoco_manifest::{Boot, BootMethod, FileKind, Layer};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -160,7 +160,8 @@ pub fn packages(layer: &Layer, format: Format) -> Vec<Package> {
             }
         }
     }
-    if !config.is_empty() {
+    // the config package also carries the layer's dependencies, so a layer of dependencies only still has one
+    if !config.is_empty() || !needs.is_empty() {
         out.push(Package {
             arch: None,
             name: format!("{name}-config"),
@@ -634,86 +635,6 @@ fn outside_links(build: &Path, root: &Path, dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Nura's (postmarketOS's) `/etc/deviceinfo`, which overrides the device package's `/usr/share/deviceinfo/deviceinfo` (so it has no format_version, name or manufacturer): the shell-sourced file mkinitfs and boot-deploy read the phone's
-/// boot facts from, written from the manifest's `[boot]` and `[device]`; none when the manifest has no `[boot]`.
-/// Only what the manifest declares is written. Its values are sourced by shell, so a cmdline holding a quote,
-/// `$`, a backtick or a backslash is refused.
-pub fn deviceinfo(m: &Manifest) -> Result<Option<String>, String> {
-    let Some(b) = &m.boot else {
-        return Ok(None);
-    };
-    if let Some(c) = b.cmdline.chars().find(|c| "\"$`\\\n".contains(*c)) {
-        return Err(format!(
-            "[boot] cmdline holds {c:?}: deviceinfo is read by shell scripts, which would run or mangle it"
-        ));
-    }
-    let mut s = String::new();
-    if let Some(d) = &m.device {
-        if !d
-            .codename
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || "_-.".contains(c))
-            || d.codename.is_empty()
-        {
-            return Err(format!("[device] codename {:?} is not one word of letters, digits and _ - .: deviceinfo is read by shell scripts", d.codename));
-        }
-        s += &format!("deviceinfo_codename=\"{}\"\n", d.codename);
-    }
-    s += "deviceinfo_arch=\"aarch64\"\n";
-    s += &format!("deviceinfo_header_version=\"{}\"\n", b.header_version);
-    s += "deviceinfo_generate_bootimg=\"true\"\n";
-    s += &format!("deviceinfo_flash_pagesize=\"{}\"\n", b.pagesize);
-    for (k, v) in [
-        ("base", b.base),
-        ("kernel", b.kernel_offset),
-        ("ramdisk", b.ramdisk_offset),
-        ("second", b.second_offset),
-        ("tags", b.tags_offset),
-    ] {
-        s += &format!("deviceinfo_flash_offset_{k}=\"0x{v:08x}\"\n");
-    }
-    s += &format!("deviceinfo_kernel_cmdline=\"{}\"\n", b.cmdline);
-    Ok(Some(s))
-}
-
-/// Puts `/etc/deviceinfo` into `NAME-config` (made when the layer declares no file).
-pub fn add_deviceinfo(pkgs: &mut Vec<Package>, layer: &Layer, body: &str, cmdline: &str) {
-    let name = &layer.name;
-    let item = Item {
-        source: Source::Text(body.to_string()),
-        dst: "/etc/deviceinfo".into(),
-        mode: 0o644,
-        config: false,
-    };
-    // the same cmdline in the file boot-deploy and kernel-install read now (pmaports marks the deviceinfo key obsolete);
-    // `cmdline` has passed `deviceinfo`'s refusal of what a shell would run, which also keeps it to one line
-    let cmdline_d = Item {
-        source: Source::Text(format!("{cmdline}\n")),
-        dst: format!("/usr/lib/kernel-cmdline.d/50-{name}.conf"),
-        mode: 0o644,
-        config: false,
-    };
-    let want = format!("{name}-config");
-    match pkgs.iter_mut().find(|p| p.name == want) {
-        Some(p) => p.items.extend([item, cmdline_d]),
-        None => pkgs.insert(
-            0,
-            Package {
-                arch: None,
-                name: want,
-                description: format!("{name}: device configuration"),
-                depends: layer
-                    .needs
-                    .iter()
-                    .map(|n| named(layer, Format::Apk, n))
-                    .collect(),
-                items: vec![item, cmdline_d],
-                post_install: None,
-            },
-        ),
-    }
-}
-
 /// The one script that writes the phone's boot image when a kernel is installed (`/usr/libexec/NAME-bootimg`),
 /// made from `[boot]` and the layer's first device tree. The base's trigger only calls it:
 ///
@@ -999,8 +920,8 @@ pub const EXPORT_TARGETS: [(&str, &str, Format); 4] = [
 /// Writes the layer's source tree into `root`: `files/common/PATH` for what every format installs, `files/TARGET/PATH`
 /// for what that distribution's package holds besides, and a `Makefile` whose `install` and `install-TARGET` targets
 /// put them under `$(DESTDIR)` with the modes the packages carry (Asahi's contract: asahi-alarm's `make install-arch`,
-/// Fedora's `%make_install install-fedora`). Nothing is exported that only Nura reads (/etc/deviceinfo): the files are
-/// those of `packages`, which add_deviceinfo is not part of. A destination a Makefile would misread is refused.
+/// Fedora's `%make_install install-fedora`). The files are
+/// those of `packages`. A destination a Makefile would misread is refused.
 pub fn export_tree(layer: &Layer, manifest_dir: &Path, root: &Path) -> Result<(), String> {
     let stage = root.join(".stage");
     // the files every format shares: the declared and generated files of the config package (the same in each format)

@@ -150,7 +150,7 @@ fn alpine_installs_the_apk_packages() {
         &dir,
         "apk add --allow-untrusted /w/out/*.apk >/dev/null\n\
          test -f /usr/share/alsa/ucm2/Test/phone/HiFi.conf\n\
-         test -f /etc/deviceinfo\n",
+         test ! -e /etc/deviceinfo\n",
     );
 }
 
