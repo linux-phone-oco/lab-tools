@@ -427,6 +427,11 @@ fn the_firmware_extraction_is_declared_by_partition_folder_and_file() {
 fn a_firmware_declaration_that_would_break_the_extractors_toml_or_leave_its_folder_is_refused() {
     for (from, to) in [
         ("partition = \"vendor\"", "partition = \"ven\\\"dor\""),
+        ("partition = \"vendor\"", "partition = \"..\""),
+        (
+            "{ name = \"a615_zap.mdt\" }",
+            "{ name = \"a615_zap.mdt\", rename = \".\" }",
+        ),
         ("origin = \"firmware\"", "origin = \"../firmware\""),
         ("origin = \"firmware\"", "origin = \"/firmware\""),
         (

@@ -90,14 +90,6 @@ fn pack(r: &argenv_resolve::Resolution) -> Result<(), String> {
         pkgs.push(kernel_package(layer, &b).map_err(|e| format!("{}: {e}", manifest.display()))?);
     }
     refuse_overlaps(&pkgs).map_err(|e| format!("{}: {e}", manifest.display()))?;
-    if format == Format::Apk
-        && layer
-            .firmware
-            .as_ref()
-            .is_some_and(|f| !f.source.is_empty())
-    {
-        eprintln!("lpoco-layer: firmware: apk packs no extractor entry (msm-firmware-loader is Nura's; it waits on the author's word)");
-    }
     if pkgs.is_empty() {
         return Err("the layer holds no file to pack".into());
     }
