@@ -14,6 +14,8 @@
 //!
 //! The packages are the real ones: nfpm builds them and apt, dnf and pacman install them (nfpm on PATH is needed too).
 //!
+//! Alpine installs the real linux-lts, so mkinitfs's and kernel-hooks' triggers run (the layer's hook is a kernel-hooks.d script: nfpm writes no apk trigger).
+//!
 //! Not covered: a real kernel package's scriptlets.
 
 use lpoco_layer::{add_boot_trigger, materialize, packages, Format};
@@ -189,6 +191,25 @@ fn arch_pacman_hook_leaves_a_boot_img_with_the_dtb_appended() {
          bsdtar -cf /fakekernel.pkg.tar --no-recursion -- .PKGINFO usr/lib/modules/6.1.0-walleye/pkgbase usr/lib/modules/6.1.0-walleye/vmlinuz usr/lib/modules/6.1.0-walleye/dtb/qcom/msm8998-google-walleye.dtb\n\
          pacman -U --noconfirm /fakekernel.pkg.tar\n\
          cp /boot/google-walleye-walleye.img /w/boot.img",
+    );
+    counted(&dir, "boot.img");
+}
+
+#[test]
+#[ignore = "needs docker, the network and LPOCO_BRINGUP"]
+fn alpine_apk_add_of_a_kernel_leaves_a_boot_img_with_the_dtb_appended() {
+    let dir = work(Format::Apk, "alpine");
+    // plain Alpine (decision 2026-11-24-plain-alpine-not-nura): the layer's apks first, then Alpine's own linux-lts,
+    // whose install runs mkinitfs's and kernel-hooks' triggers; the device tree is where Alpine's kernels put theirs
+    // (/boot/dtbs-FLAVOR; an x86 linux-lts has none, so it is put there beforehand). No boot-deploy: the hook reads no deviceinfo.
+    in_container(
+        "alpine:3.24",
+        &dir,
+        "mkdir -p /boot/dtbs-lts/qcom\n\
+         cp /w/w.dtb /boot/dtbs-lts/qcom/msm8998-google-walleye.dtb\n\
+         apk add -q --allow-untrusted /w/out/*.apk\n\
+         apk add -q linux-lts\n\
+         cp /boot/google-walleye-lts.img /w/boot.img",
     );
     counted(&dir, "boot.img");
 }
