@@ -141,6 +141,16 @@ contract! {
         ..Input::EMPTY
     };
 
+    TRACE: bool, Command = Input {
+        key: "trace",
+        ty: Type::Bool,
+        default: Some(false),
+        subcommands: &[Command::Suspend],
+        arg: Some(Arg::long("trace")),
+        summary: "suspend cycle: switch on the manifest's trace for this cycle ([health] suspend_trace_dyndbg: dynamic_debug sites; suspend_trace_irq: irq handler entries) before the suspend, collect what they said after the wake into the report and var/lib/lpoco-health/suspend/cycle.trace and cycle.dmesg, and switch them off again. Without it nothing is changed.",
+        ..Input::EMPTY
+    };
+
     ONCE: bool, Command = Input {
         key: "once",
         ty: Type::Bool,
