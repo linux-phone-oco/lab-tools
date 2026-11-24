@@ -457,7 +457,7 @@ fn tool_plans(st: &State) -> Vec<ToolPlan> {
     )
 }
 
-fn watchers(st: &State, tools: &[ToolPlan]) -> (FileChange, Vec<Vec<String>>) {
+fn watchers(st: &State, tools: &[ToolPlan]) -> (FileChange, Vec<Vec<String>>, Vec<String>) {
     let replaced = tools.iter().any(|t| t.name == WATCH_TOOL && !t.ok());
     let wants = format!("{}/.config/systemd/user/default.target.wants", st.home);
     watch_plan(
@@ -470,9 +470,13 @@ fn watchers(st: &State, tools: &[ToolPlan]) -> (FileChange, Vec<Vec<String>>) {
                 .args(["--user", "is-active", "--quiet"])
                 .arg(format!("devlab-watch@{i}.service"))
                 .status()
-                // is-active exits 3 for a unit that is not running; any other answer (or no systemctl) proposes nothing
-                .map(|s| s.code() != Some(3))
-                .unwrap_or(true)
+                // is-active exits 0 for a running unit and 3 for one that is not; any other answer (or no systemctl) tells nothing
+                .ok()
+                .and_then(|s| match s.code() {
+                    Some(0) => Some(true),
+                    Some(3) => Some(false),
+                    _ => None,
+                })
         },
         replaced,
     )
@@ -562,15 +566,18 @@ fn plan(st: &State) {
     let _ = print_targets(st, false);
     print_foreign_rules(st);
     let tools = tool_plans(st);
-    let (unit, ucmds) = watchers(st, &tools);
+    let (unit, ucmds, unknown) = watchers(st, &tools);
     println!("\nwatchers (user units, no root; replaces lab-machine setup/devlab-watch.sh):");
     println!("    {} ({})", unit.dst, unit.state());
     let unasked = unasked_watchers(&st.home, &st.found, &enabled_watchers(st));
-    if ucmds.is_empty() && unasked.is_empty() {
+    if ucmds.is_empty() && unasked.is_empty() && unknown.is_empty() {
         println!("    nothing to do");
     }
     for i in &unasked {
         println!("    devlab-watch@{i}.service is enabled but no device that asks to be watched ([host] watch = true) maps to it; it is left as it is - prepare never stops it");
+    }
+    for i in &unknown {
+        println!("    devlab-watch@{i}.service: not measured, `systemctl --user is-active` could not tell (no systemctl or no user bus): not started, not taken for running");
     }
     for c in &ucmds {
         println!("    {}", c.join(" "));
@@ -699,7 +706,10 @@ fn prepare(st: &State) -> Result<i32, String> {
     let _ = fs::remove_dir_all(&stage);
     // worked out before the tools change: a replaced binary restarts the watchers that run it
     let tools = tool_plans(st);
-    let (unit, mut ucmds) = watchers(st, &tools);
+    let (unit, mut ucmds, unknown) = watchers(st, &tools);
+    for i in &unknown {
+        println!("devlab-watch@{i}.service: not measured, `systemctl --user is-active` could not tell: left as it is");
+    }
     install_tools(st, tools)?;
     if unit.changed() {
         if let Some(d) = Path::new(&unit.dst).parent() {
