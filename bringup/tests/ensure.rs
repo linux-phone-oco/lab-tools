@@ -498,3 +498,24 @@ fn rebuild_is_refused_with_dry_run_and_by_every_verb_but_ensure() {
         text(&o.stderr)
     );
 }
+
+/// A kernel build name given to `--rebuild` is refused in its own words (`--rebuild` itself runs the builder again with `--check`).
+#[test]
+fn a_rebuild_names_a_kernel_build_as_not_its_kind() {
+    let dir = tmp("rebuild-kernel");
+    let t = format!(
+        "{}\n[kernel_builds.k]\ntag = \"int/x\"\nrev = \"{}\"\nepoch = 1\nsha256 = \"{}\"\ndefconfig = \"d\"\ntargets = [\"Image\"]\noutput = \"o\"\nconfigs = []\npatches = []\n",
+        fs::read_to_string(fixture("device.toml")).unwrap(),
+        "a".repeat(40),
+        "b".repeat(64)
+    );
+    let device = dir.join("device.toml");
+    fs::write(&device, t).unwrap();
+    let o = bringup(&["image", "ensure", "k", "--rebuild", "--device", s(&device)]);
+    assert!(!o.status.success());
+    assert!(
+        text(&o.stderr).contains("is a kernel build"),
+        "{}",
+        text(&o.stderr)
+    );
+}

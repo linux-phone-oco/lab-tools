@@ -87,6 +87,16 @@ pub fn rebuild(
     sources: &Sources,
     say: &mut dyn FnMut(String),
 ) -> Result<PathBuf, String> {
+    if !manifest
+        .images
+        .as_ref()
+        .is_some_and(|i| i.named.contains_key(name))
+        && manifest.kernel_builds.contains_key(name)
+    {
+        return Err(format!(
+            "{name}: --rebuild is for an image with a recipe; {name} is a kernel build"
+        ));
+    }
     let (wanted, recipe) = image(manifest, name)?;
     let recipe = recipe.ok_or_else(|| format!("{name}: no recipe to rebuild it from"))?;
     let path = build(manifest, name, &wanted, recipe, sources, say, true)?;
@@ -327,12 +337,21 @@ fn nix_build(
     write(file, derivation)?;
     let expr = scratch.join(file);
     let mut cmd = vec![expr.to_str().unwrap().to_string(), "--no-out-link".into()];
+    let rebuild = args.iter().any(|(k, _)| *k == "rebuild");
+    if rebuild {
+        cmd.extend(["--option".into(), "substitute".into(), "false".into()]);
+    }
     for (k, v) in args {
         // paths and text alike go in as strings; the derivation turns a store path into one
         cmd.extend(["--argstr".into(), k.to_string(), v.clone()]);
     }
-    let cmd: Vec<&str> = cmd.iter().map(String::as_str).collect();
-    let out = run("nix-build", &cmd)?;
+    let mut cmd: Vec<&str> = cmd.iter().map(String::as_str).collect();
+    let mut out = run("nix-build", &cmd)?;
+    if rebuild {
+        // the output may already be in the store (an earlier build): --check runs the builder again and compares
+        cmd.push("--check");
+        out = run("nix-build", &cmd)?;
+    }
     out.lines()
         .last()
         .map(str::to_string)
