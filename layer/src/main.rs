@@ -7,7 +7,7 @@ use argenv_resolve::{InputResolveExt, OnProblems};
 use cli::Contract;
 use lpoco_layer::{
     add_boot_trigger, add_deviceinfo, check, deviceinfo, kernel_package, materialize, nfpm_yaml,
-    packages, post_install, refuse_overlaps, stale, Format,
+    packages, post_install, refuse_overlaps, source_date_epoch, stale, Format,
 };
 use lpoco_manifest::Manifest;
 use std::fs;
@@ -91,6 +91,10 @@ fn pack(r: &argenv_resolve::Resolution) -> Result<(), String> {
         return Err("the layer holds no file to pack".into());
     }
     fs::create_dir_all(&out).map_err(|e| format!("{}: {e}", out.display()))?;
+    let epoch = source_date_epoch(Contract::SOURCE_DATE_EPOCH.get_from(r), &dir)?;
+    if epoch.is_none() {
+        eprintln!("lpoco-layer: not reproducible: no SOURCE_DATE_EPOCH and no commit time of the layer could be read, so nfpm stamps the time now");
+    }
     for old in stale(layer, format, &version, &out, kernel_build.is_some()) {
         fs::remove_file(&old).map_err(|e| format!("{}: {e}", old.display()))?;
         eprintln!("lpoco-layer: removed the stale {}", old.display());
@@ -106,11 +110,16 @@ fn pack(r: &argenv_resolve::Resolution) -> Result<(), String> {
         )
         .map_err(|e| format!("{}: {e}", conf.display()))?;
         let target = out.join(format.file_name_for(&p.name, &version, p.arch));
-        let status = Command::new(&nfpm)
-            .args(["package", "--packager", format.token(), "--config"])
+        let mut run = Command::new(&nfpm);
+        run.args(["package", "--packager", format.token(), "--config"])
             .arg(&conf)
             .arg("--target")
-            .arg(&target)
+            .arg(&target);
+        match &epoch {
+            Some(e) => run.env("SOURCE_DATE_EPOCH", e),
+            None => run.env_remove("SOURCE_DATE_EPOCH"),
+        };
+        let status = run
             .status()
             .map_err(|e| format!("{nfpm}: {e} (the config is written: {})", conf.display()))?;
         if !status.success() {
