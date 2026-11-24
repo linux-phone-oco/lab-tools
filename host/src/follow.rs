@@ -44,6 +44,17 @@ pub fn newest_family_version(releases_json: &str) -> Result<Option<String>, Stri
         .map(|(_, v)| v))
 }
 
+/// The newest family release among the tags `git ls-remote --tags --refs` printed (`OBJECT<TAB>refs/tags/NAME` a
+/// line): the highest `lpoco-vX.Y.Z` by number, whatever other programs' tags stand among them.
+pub fn newest_family_tag(ls_remote: &str) -> Option<String> {
+    ls_remote
+        .lines()
+        .filter_map(|l| l.split('\t').nth(1)?.strip_prefix("refs/tags/lpoco-v"))
+        .filter_map(|v| version_key(v).map(|k| (k, v.to_string())))
+        .max()
+        .map(|(_, v)| v)
+}
+
 /// Whether `newest` is a later release than `pinned`.
 pub fn is_newer(newest: &str, pinned: &str) -> bool {
     matches!((version_key(newest), version_key(pinned)), (Some(n), Some(p)) if n > p)
@@ -727,5 +738,23 @@ mod last_success {
         let (fails, line) = judge_last_success("15min", None, 5).unwrap();
         assert!(!fails && line.contains("not measured"));
         assert_eq!(judge_last_success("soon", Some(1), 2), None);
+    }
+}
+
+#[cfg(test)]
+mod tags_tests {
+    use super::*;
+
+    // source: `git ls-remote --tags --refs URL` prints `OBJECT<TAB>refs/tags/NAME` a line (git-ls-remote(1))
+    const OUT: &str = "1111111111111111111111111111111111111111\trefs/tags/lpoco-bringup-v0.9.0\n2222222222222222222222222222222222222222\trefs/tags/lpoco-v0.2.0\n3333333333333333333333333333333333333333\trefs/tags/lpoco-v0.10.1\n4444444444444444444444444444444444444444\trefs/tags/lpoco-manifest-v9.0.0\n5555555555555555555555555555555555555555\trefs/tags/lpoco-v0.10.1-rc1\n";
+
+    #[test]
+    fn the_newest_family_tag_is_the_highest_lpoco_v_by_number_not_by_text() {
+        assert_eq!(newest_family_tag(OUT).as_deref(), Some("0.10.1"));
+        assert_eq!(newest_family_tag(""), None);
+        assert_eq!(
+            newest_family_tag("aaaa\trefs/tags/lpoco-health-v1.0.0\n"),
+            None
+        );
     }
 }

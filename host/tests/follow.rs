@@ -2093,3 +2093,119 @@ fn a_member_the_new_host_added_is_taken_away_again_when_the_install_steps_back()
     );
     assert!(installed(&l, "lpoco").contains("0.2.0"), "{s}");
 }
+
+/// follow with the family's tags read from git (LPOCO_TAGS) and no releases list given: the default is the API.
+fn follow_by_tags(l: &Lab, tags: &str, releases: Option<&str>) -> Output {
+    let mut c = Command::new(env!("CARGO_BIN_EXE_lpoco-host"));
+    c.arg("follow")
+        .arg("now")
+        .env_clear()
+        .env("HOME", l.dir.join("home"))
+        .env(
+            "PATH",
+            format!(
+                "{}:{}",
+                l.dir.join("stubs").display(),
+                l.dir.join("home/.local/bin").display()
+            ),
+        )
+        .env(
+            "LPOCO_LAB",
+            l.dir.join("home/Projects/lab-machine/lab.toml"),
+        )
+        .env("LPOCO_ROOT", l.dir.join("stubs/root"))
+        .env("LPOCO_FS_ROOT", l.dir.join("fs"))
+        .env(
+            "LPOCO_RELEASE_BASE",
+            format!("file://{}/release", l.dir.display()),
+        )
+        .env("LPOCO_TAGS", tags);
+    if let Some(r) = releases {
+        c.env("LPOCO_RELEASES", r);
+    }
+    c.output().unwrap()
+}
+
+/// A git that answers `ls-remote` with what `git ls-remote --tags --refs URL` prints (git-ls-remote(1): the object name,
+/// a tab, the ref) from the file `tags` beside the lab, or fails when there is none, and is the real git otherwise.
+fn git_with_tags(l: &Lab) {
+    let real = which("git");
+    // stubs/git is a link to the real one: write a new file, not through the link
+    let _ = fs::remove_file(l.dir.join("stubs/git"));
+    exe(
+        &l.dir.join("stubs/git"),
+        &format!(
+            "echo \"git $@\" >> {calls}\ncase \"$1\" in ls-remote) [ -f {tags} ] || exit 128; cat {tags};; *) exec {real} \"$@\";; esac",
+            calls = l.dir.join("calls").display(),
+            tags = l.dir.join("tags").display(),
+            real = real.display()
+        ),
+    );
+}
+
+const TAGS_0_2_1: &str = "1111111111111111111111111111111111111111\trefs/tags/lpoco-bringup-v0.2.1\n2222222222222222222222222222222222222222\trefs/tags/lpoco-v0.2.0\n3333333333333333333333333333333333333333\trefs/tags/lpoco-v0.2.1\n4444444444444444444444444444444444444444\trefs/tags/lpoco-manifest-v0.9.0\n";
+
+#[test]
+fn a_newer_tag_from_git_installs_with_no_api_call() {
+    let l = lab("tags-install", "");
+    install_old(&l);
+    git_with_tags(&l);
+    fs::write(l.dir.join("tags"), TAGS_0_2_1).unwrap();
+    token_log_curl(&l);
+    let o = follow_by_tags(&l, "https://example.test/lab-tools.git", None);
+    let s = text(&o);
+    assert!(o.status.success(), "{s}");
+    assert!(installed(&l, "lpoco").contains("0.2.1"), "{s}");
+    let curl = fs::read_to_string(l.dir.join("curl-log")).unwrap_or_default();
+    assert!(
+        !curl.contains("api.github.com"),
+        "the API was asked: {curl}"
+    );
+    let git = calls(&l);
+    assert!(
+        git.contains("git ls-remote --tags --refs https://example.test/lab-tools.git"),
+        "{git}"
+    );
+    assert_eq!(landed_pin(&l).0, "lpoco = \"0.2.1\"", "{s}");
+}
+
+#[test]
+fn a_tag_whose_asset_sum_is_wrong_is_refused_and_the_old_programs_stay() {
+    let l = lab("tags-badsum", "");
+    install_old(&l);
+    git_with_tags(&l);
+    fs::write(l.dir.join("tags"), TAGS_0_2_1).unwrap();
+    token_log_curl(&l);
+    fs::write(
+        l.dir
+            .join(format!("release/lpoco-v0.2.1/lpoco-{SUFFIX}.sha256")),
+        format!("{}  lpoco-{SUFFIX}\n", "0".repeat(64)),
+    )
+    .unwrap();
+    let o = follow_by_tags(&l, "https://example.test/lab-tools.git", None);
+    let s = text(&o);
+    assert!(s.contains("not installed"), "{s}");
+    assert!(installed(&l, "lpoco").contains("0.2.0"), "{s}");
+    assert_ne!(landed_pin(&l).0, "lpoco = \"0.2.1\"", "{s}");
+}
+
+#[test]
+fn when_git_cannot_say_the_releases_list_is_the_fallback_and_is_said() {
+    let l = lab("tags-fallback", "");
+    releases(&l, &["0.2.1", "0.2.0"]);
+    install_old(&l);
+    git_with_tags(&l); // no tags file: ls-remote fails
+    token_log_curl(&l);
+    let o = follow_by_tags(
+        &l,
+        "https://example.test/lab-tools.git",
+        Some(&format!("file://{}/releases.json", l.dir.display())),
+    );
+    let s = text(&o);
+    assert!(o.status.success(), "{s}");
+    assert!(
+        s.contains("git ls-remote") && s.contains("releases list"),
+        "{s}"
+    );
+    assert!(installed(&l, "lpoco").contains("0.2.1"), "{s}");
+}
