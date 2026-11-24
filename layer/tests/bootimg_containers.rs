@@ -12,8 +12,9 @@
 //! Ignored by CI: run by hand. The entry lands under /boot/MACHINE-ID here (no ESP; a phone layout may differ). On Debian the plugin runs twice per install
 //! (initramfs-tools' post-update hook passes the initrd, zz-systemd-boot does not): the second finds it in the entry.
 //!
-//! Not covered: nfpm's own packages (the files come from the same item list, copied in, not installed by dpkg,
-//! rpm or pacman), and a real kernel package's scriptlets.
+//! The packages are the real ones: nfpm builds them and apt, dnf and pacman install them (nfpm on PATH is needed too).
+//!
+//! Not covered: a real kernel package's scriptlets.
 
 use lpoco_layer::{add_boot_trigger, materialize, packages, Format};
 use lpoco_manifest::Manifest;
@@ -85,6 +86,13 @@ fn work(format: Format, tag: &str) -> PathBuf {
         }
     }
     fs::write(dir.join("device.toml"), DEVICE).unwrap();
+    // the packages are the real ones: nfpm builds them, and the container's own package manager installs them
+    run(Command::new(env!("CARGO_BIN_EXE_lpoco-layer"))
+        .args(["pack", "--format", format.token(), "--manifest"])
+        .arg(dir.join("device.toml"))
+        .arg("--out")
+        .arg(dir.join("out"))
+        .env("SOURCE_DATE_EPOCH", "1700000000"));
     fs::write(dir.join("t.dts"), DTS).unwrap();
     run(Command::new("dtc")
         .args(["-I", "dts", "-O", "dtb", "-o"])
@@ -122,8 +130,7 @@ fn fedora_kernel_install_leaves_a_boot_img_with_the_dtb_appended() {
     in_container(
         "fedora:latest",
         &dir,
-        "dnf install -y -q android-tools systemd-udev >/dev/null\n\
-         cp -a /w/files/. /\n\
+        "dnf install -y -q systemd-udev /w/out/*.rpm >/dev/null\n\
          mkdir -p /usr/lib/modules/6.1.0-walleye/dtb/qcom /boot /etc/kernel\n\
          cp /w/w.dtb /usr/lib/modules/6.1.0-walleye/dtb/qcom/msm8998-google-walleye.dtb\n\
          systemd-id128 new > /etc/machine-id\n\
@@ -143,9 +150,9 @@ fn debian_linux_image_install_leaves_a_boot_img_with_the_dtb_appended() {
     in_container(
         "debian:trixie",
         &dir,
-        "apt-get update -qq >/dev/null && apt-get install -y -qq mkbootimg systemd-boot initramfs-tools >/dev/null\n\
+        "apt-get update -qq >/dev/null && apt-get install -y -qq systemd-boot initramfs-tools >/dev/null\n\
          printf '#!/bin/sh\\nexit 0\\n' > /usr/bin/bootctl && chmod +x /usr/bin/bootctl\n\
-         cp -a /w/files/. /\n\
+         apt-get install -y -qq /w/out/*.deb >/dev/null\n\
          systemd-id128 new > /etc/machine-id\n\
          echo layout=bls > /etc/kernel/install.conf\n\
          V=6.1.0-walleye\n\
@@ -171,7 +178,7 @@ fn arch_pacman_hook_leaves_a_boot_img_with_the_dtb_appended() {
         "archlinux:latest",
         &dir,
         "pacman -Syu --noconfirm android-tools python >/dev/null\n\
-         cp -a /w/files/. /\n\
+         pacman -U --noconfirm /w/out/*.pkg.tar.zst >/dev/null\n\
          mkdir -p /pkg/usr/lib/modules/6.1.0-walleye/dtb/qcom /boot\n\
          cd /pkg\n\
          echo walleye > usr/lib/modules/6.1.0-walleye/pkgbase\n\
