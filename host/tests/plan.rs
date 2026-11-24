@@ -1554,3 +1554,44 @@ fn check_says_follow_is_not_measured_before_its_first_success_and_says_nothing_w
     let s = out(&host_as(&l, "mll", &["check"]));
     assert!(!s.contains("follow:"), "{s}");
 }
+
+/// An enabled watcher instance of walleye's lab, the template as prepare would write it.
+fn enabled_watcher(l: &Lab) {
+    let user = l.dir.join("home/.config/systemd/user");
+    fs::create_dir_all(user.join("default.target.wants")).unwrap();
+    fs::write(
+        user.join("devlab-watch@.service"),
+        lpoco_host::watch_unit_text(),
+    )
+    .unwrap();
+    fs::write(
+        user.join("default.target.wants/devlab-watch@google-walleye-lab.service"),
+        "",
+    )
+    .unwrap();
+}
+
+#[test]
+fn a_watcher_whose_state_cannot_be_read_is_said_not_measured_not_taken_for_running() {
+    // source: `systemctl --user is-active` exits 3 for an inactive unit (systemctl(1)); any other failure - no user
+    // bus, no systemctl - tells nothing (practice 12: not known yet, never silently fine)
+    let l = lab("watch-unknown", "");
+    enabled_watcher(&l);
+    exe(
+        &l.dir.join("stubs/systemctl"),
+        "case \"$*\" in *is-active*) echo 'Failed to connect to user scope bus' >&2; exit 1;; esac",
+    );
+    let s = out(&host(&l, &["plan"]));
+    assert!(
+        s.contains("devlab-watch@google-walleye-lab.service: not measured"),
+        "{s}"
+    );
+    assert!(!s.contains("systemctl --user start"), "{s}");
+    // no systemctl at all
+    fs::remove_file(l.dir.join("stubs/systemctl")).unwrap();
+    let s = out(&host(&l, &["plan"]));
+    assert!(
+        s.contains("devlab-watch@google-walleye-lab.service: not measured"),
+        "{s}"
+    );
+}

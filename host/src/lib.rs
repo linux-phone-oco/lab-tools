@@ -1556,9 +1556,9 @@ pub fn watch_plan(
     devices: &[Device],
     read: &dyn Fn(&str) -> Option<String>,
     enabled: &dyn Fn(&str) -> bool,
-    active: &dyn Fn(&str) -> bool,
+    active: &dyn Fn(&str) -> Option<bool>,
     binary_replaced: bool,
-) -> (FileChange, Vec<Vec<String>>) {
+) -> (FileChange, Vec<Vec<String>>, Vec<String>) {
     let dst = format!("{home}/.config/systemd/user/{WATCH_UNIT}");
     let template = FileChange {
         seen: read(&dst).into(),
@@ -1567,6 +1567,7 @@ pub fn watch_plan(
         dst,
     };
     let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+    let mut unknown = Vec::new();
     let mut cmds = Vec::new();
     let instances = watch_instances(home, devices);
     if template.changed() && !instances.is_empty() {
@@ -1578,12 +1579,17 @@ pub fn watch_plan(
             cmds.push(s(&["systemctl", "--user", "enable", "--now", &unit]));
         } else if binary_replaced || template.changed() {
             cmds.push(s(&["systemctl", "--user", "restart", &unit]));
-        } else if !active(i) {
-            // linked but stopped (failed, or stopped by hand): enabled alone would leave it down until the next login
-            cmds.push(s(&["systemctl", "--user", "start", &unit]));
+        } else {
+            match active(i) {
+                Some(true) => {}
+                // linked but stopped (failed, or stopped by hand): enabled alone would leave it down until the next login
+                Some(false) => cmds.push(s(&["systemctl", "--user", "start", &unit])),
+                // the probe could not tell (no systemctl, no user bus): said, never taken for running
+                None => unknown.push(i.clone()),
+            }
         }
     }
-    (template, cmds)
+    (template, cmds, unknown)
 }
 
 /// The watcher instances already enabled that no device asks for: named in the plan, never stopped by prepare - a
