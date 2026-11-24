@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.48.7](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-ffs-acm-v0.48.6...lpoco-ffs-acm-v0.48.7) - 2026-11-24
+
+### Fixed
+
+- *(host)* follow skips a gone family member and ignores only a tool found off its pin ([#396](https://github.com/linux-phone-oco/lab-tools/pull/396))
+
 ## [0.48.6](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-ffs-acm-v0.48.5...lpoco-ffs-acm-v0.48.6) - 2026-11-24
 
 ### Fixed
