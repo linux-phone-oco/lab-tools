@@ -6,6 +6,18 @@
 use crate::initramfs::{rewrite_net, DEFAULT_NET};
 use lpoco_manifest::{BootGadget, Console};
 
+/// The self-test's check of the console function, by console (`console_check` in files/selftest.sh).
+const CONSOLE_CHECK_ACM: &str = "console_check() {
+    [ -c /dev/ttyGS0 ] && echo \"SELFTEST ttyGS0 exists (ACM console)\" || fail \"no /dev/ttyGS0\"
+}
+";
+const CONSOLE_CHECK_FFS: &str = "console_check() {
+    grep -q usb_f_fs \"${SELFTEST_MODULES:-/modules.list}\" 2>/dev/null \\
+        && echo \"SELFTEST ffs function: usb_f_fs is in modules.list\" \\
+        || fail \"usb_f_fs is not in /modules.list: the FunctionFS console cannot work\"
+}
+";
+
 const TEMPLATE: &str = include_str!("init.sh");
 
 const FILES: &[(&str, &str, u32)] = &[
@@ -100,11 +112,23 @@ pub fn make(g: &BootGadget, net: u8) -> Result<String, String> {
 
 /// The files the init reads beside itself: the DHCP server's one lease, the client script and the self-test,
 /// each at 172.16.`net`.x. Written into `dir` (made when missing); the scripts are executable.
-pub fn write_files(dir: &std::path::Path, net: u8) -> Result<Vec<&'static str>, String> {
+pub fn write_files(
+    dir: &std::path::Path,
+    net: u8,
+    console: Console,
+) -> Result<Vec<&'static str>, String> {
     use std::os::unix::fs::PermissionsExt;
     std::fs::create_dir_all(dir).map_err(|e| format!("cannot make {}: {e}", dir.display()))?;
     let mut names = Vec::new();
     for (name, text, mode) in FILES {
+        let text = text.replace(
+            "@CONSOLECHECK@\n",
+            if console == Console::Ffs {
+                CONSOLE_CHECK_FFS
+            } else {
+                CONSOLE_CHECK_ACM
+            },
+        );
         let bytes = if net == DEFAULT_NET {
             text.as_bytes().to_vec()
         } else {

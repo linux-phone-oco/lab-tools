@@ -335,3 +335,67 @@ fn the_default_console_is_the_kernel_acm_and_an_unknown_one_is_refused() {
     assert!(!o.status.success());
     assert!(text(&o.stderr).contains("console"), "{}", text(&o.stderr));
 }
+
+/// `initramfs files` for a manifest whose [boot.gadget] says `console`, into a fresh folder; the folder.
+fn files_for(console: &str) -> PathBuf {
+    let d = tmp(&format!("files-{console}"));
+    let gadget = format!("{GADGET}console = \"{console}\"\n");
+    let m = manifest(&d, &gadget);
+    let o = Command::new(env!("CARGO_BIN_EXE_lpoco-bringup"))
+        .args(["initramfs", "files", "--device", &m, "--out"])
+        .arg(d.join("out"))
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{}", text(&o.stderr));
+    d.join("out")
+}
+
+/// The self-test's console check alone (SELFTEST_CONSOLE_ONLY: after the check, stop), against a made-up /modules.list.
+fn console_check(files: &std::path::Path, modules: Option<&str>) -> Output {
+    let list = files.join("modules.list");
+    let _ = fs::remove_file(&list);
+    if let Some(m) = modules {
+        fs::write(&list, m).unwrap();
+    }
+    Command::new("sh")
+        .arg(files.join("selftest.sh"))
+        .env("SELFTEST_CONSOLE_ONLY", "1")
+        .env("SELFTEST_MODULES", &list)
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn the_selftest_of_an_ffs_console_checks_the_ffs_function_and_fails_without_it() {
+    // source: the FunctionFS function is the usb_f_fs module (drivers/usb/gadget/function/f_fs.c); the init loads
+    // the modules named in /modules.list (init.sh), so a console = "ffs" phone without it cannot raise its console
+    let f = files_for("ffs");
+    let o = console_check(
+        &f,
+        Some("/lib/modules/6.1/kernel/drivers/usb/gadget/function/usb_f_fs.ko\n"),
+    );
+    assert!(o.status.success(), "{}{}", text(&o.stdout), text(&o.stderr));
+    assert!(
+        text(&o.stdout).contains("usb_f_fs is in modules.list"),
+        "{}",
+        text(&o.stdout)
+    );
+    for without in [Some("/lib/modules/6.1/usb_f_acm.ko\n"), None] {
+        let o = console_check(&f, without);
+        assert_eq!(o.status.code(), Some(1), "{}", text(&o.stdout));
+        assert!(
+            text(&o.stdout).contains("SELFTEST FAIL: usb_f_fs is not in /modules.list"),
+            "{}",
+            text(&o.stdout)
+        );
+    }
+}
+
+#[test]
+fn the_selftest_of_an_acm_console_keeps_its_ttygs0_check_and_asks_nothing_of_ffs() {
+    let f = files_for("acm");
+    let s = fs::read_to_string(f.join("selftest.sh")).unwrap();
+    assert!(s.contains("/dev/ttyGS0"), "{s}");
+    assert!(!s.contains("usb_f_fs"), "{s}");
+    assert!(!s.contains("@CONSOLECHECK@"), "a marker is left: {s}");
+}
