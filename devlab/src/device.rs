@@ -335,6 +335,17 @@ mod tests {
             .env("p")
             .contains("SUSPEND_STOP='sensorspd hexagonrpcd'\n"));
         assert!(e.contains("SUSPEND_STOP=''\n"));
+        assert!(e.contains("SUSPEND_TRACE_DYNDBG=''\n") && e.contains("SUSPEND_TRACE_IRQ=''\n"));
+        let tr: Health = toml::from_str(
+            "suspend_trace_dyndbg = [\"file a.c\", \"module b\"]\nsuspend_trace_irq = [157, 12]",
+        )
+        .unwrap();
+        let te = tr.env("p");
+        assert!(
+            te.contains("SUSPEND_TRACE_DYNDBG='file a.c;module b'\n"),
+            "{te}"
+        );
+        assert!(te.contains("SUSPEND_TRACE_IRQ='157 12'\n"), "{te}");
         assert!(e.contains("AWAKE_GATES=''\n"), "no gate unless named");
         let ag: Health = toml::from_str("awake_gates = [\"bluetooth-not-up\"]").unwrap();
         assert!(ag.env("p").contains("AWAKE_GATES='bluetooth-not-up'\n"));

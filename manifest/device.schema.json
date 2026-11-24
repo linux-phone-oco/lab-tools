@@ -600,6 +600,24 @@
           },
           "default": []
         },
+        "suspend_trace_dyndbg": {
+          "description": "dynamic_debug queries (a `file drivers/x.c`, a `module x`: the tool adds `+p` and takes it away again) switched on\nfor a controlled suspend cycle run with `--trace` (lpoco-health suspend cycle): the kernel's own messages of the\ndrivers under suspicion, collected after the wake. Nothing is changed without `--trace`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "suspend_trace_irq": {
+          "description": "Interrupt numbers whose handler entries (irq:irq_handler_entry) are traced across the same `--trace` cycle",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "default": []
+        },
         "awake_gates": {
           "description": "Gates that hold the keep-awake lock (lpoco-health awake) while autosleep is allowed, named by token:\nbluetooth-not-up (hci0 not UP, or an rfkill stuck in D state). The package knows the tokens; an unknown one is refused",
           "type": "array",

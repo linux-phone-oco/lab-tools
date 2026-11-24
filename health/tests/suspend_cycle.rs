@@ -62,6 +62,31 @@ impl Rig {
             "sys/bus/platform/devices/88c000.serial/power/wakeup",
             "enabled\n",
         );
+        // tracefs, dynamic_debug and dmesg of the made-up phone (what a trace hook turns on and reads)
+        put(&root, "sys/kernel/tracing/tracing_on", "0\n");
+        put(&root, "sys/kernel/tracing/trace", "");
+        put(
+            &root,
+            "sys/kernel/tracing/events/irq/irq_handler_entry/enable",
+            "0\n",
+        );
+        put(
+            &root,
+            "sys/kernel/tracing/events/irq/irq_handler_entry/filter",
+            "none\n",
+        );
+        put(&root, "sys/kernel/debug/dynamic_debug/control", "");
+        put(
+            &root,
+            "bin/dmesg",
+            "#!/bin/sh\necho \"[ 1.0] hci_qca: probe ok\"\necho \"[ 2.0] qcom_geni_serial: rx\"\n",
+        );
+        assert!(Command::new("chmod")
+            .arg("+x")
+            .arg(root.join("bin/dmesg"))
+            .status()
+            .unwrap()
+            .success());
         put(&root, "armed", "");
         put(&root, "bin/systemctl", FAKE_SYSTEMCTL);
         assert!(Command::new("chmod")
@@ -101,6 +126,9 @@ cat "$1/sys/power/state" > "$1/seen_state"
 echo "$(cat "$1/sys/class/wakeup/wakeup1/event_count" | tr -d '\n')" > "$1/serial_before"
 cat "$1/sys/bus/platform/devices/88c000.serial/power/wakeup" > "$1/wakeup_during"
 cat "$1/systemctl.log" > "$1/systemctl_during" 2>/dev/null
+for f in tracing_on events/irq/irq_handler_entry/enable events/irq/irq_handler_entry/filter; do cat "$1/sys/kernel/tracing/$f" > "$1/during_$(echo $f | tr / _)" 2>/dev/null; done
+cat "$1/sys/kernel/debug/dynamic_debug/control" > "$1/dyndbg_during" 2>/dev/null
+printf 'irq_handler_entry: irq=157 name=uart\nirq_handler_entry: irq=157 name=uart\n' >> "$1/sys/kernel/tracing/trace"
 cat "$1/hook.log" > "$1/hook_during" 2>/dev/null
 cp "$1/after/cxsd" "$1/sys/kernel/debug/qcom_stats/cxsd"
 cp "$1/after/aosd" "$1/sys/kernel/debug/qcom_stats/aosd"
@@ -539,4 +567,235 @@ fn a_hook_that_prints_leaves_the_report_alone_and_a_failing_after_hook_is_report
         serde_json::from_slice(&o.stdout).expect("stdout is one JSON report");
     assert_eq!(v["hooks"]["after"]["ok"], false, "{v}");
     assert!(text(&o.stderr).contains("noise"));
+}
+
+const TRACED: &str = "SUSPEND_GUARD='test -e $LPOCO_HEALTH_ROOT/armed'\nSUSPEND_TRACE_DYNDBG='file drivers/bluetooth/hci_qca.c;file drivers/tty/serial/qcom_geni_serial.c'\nSUSPEND_TRACE_IRQ='157'\n";
+
+// source of the interfaces: the kernel's tracing documentation (Documentation/trace/events.rst: events/SUBSYS/EVENT/
+// enable and filter, tracing_on, trace) and dynamic-debug-howto.rst (`echo 'file x.c +p' > .../control`); the sites
+// and irq 157 (qcom_geni_serial_uart0) are the ones surya's sleep/bt-trace.sh used.
+
+#[test]
+fn a_traced_cycle_turns_the_sites_on_before_the_suspend_collects_them_after_and_puts_everything_back(
+) {
+    let rig = Rig::new("trace", TRACED);
+    let o = rig.run(
+        &[
+            "suspend",
+            "cycle",
+            "--seconds",
+            "5",
+            "--settle",
+            "1",
+            "--trace",
+        ],
+        true,
+    );
+    assert_eq!(
+        o.status.code(),
+        Some(0),
+        "{} {}",
+        text(&o.stdout),
+        text(&o.stderr)
+    );
+    // during the suspend: tracing on, the event on, filtered to the irq, the dynamic-debug sites on
+    assert_eq!(rig.read("during_tracing_on").trim(), "1");
+    assert_eq!(
+        rig.read("during_events_irq_irq_handler_entry_enable")
+            .trim(),
+        "1"
+    );
+    assert_eq!(
+        rig.read("during_events_irq_irq_handler_entry_filter")
+            .trim(),
+        "irq == 157"
+    );
+    let during = rig.read("dyndbg_during");
+    assert!(
+        during.contains("file drivers/bluetooth/hci_qca.c +p")
+            && during.contains("file drivers/tty/serial/qcom_geni_serial.c +p"),
+        "{during}"
+    );
+    // after: everything off, the filter cleared, the sites switched off again
+    assert_eq!(rig.read("sys/kernel/tracing/tracing_on").trim(), "0");
+    assert_eq!(
+        rig.read("sys/kernel/tracing/events/irq/irq_handler_entry/enable")
+            .trim(),
+        "0"
+    );
+    assert_eq!(
+        rig.read("sys/kernel/tracing/events/irq/irq_handler_entry/filter")
+            .trim(),
+        "0",
+        "the filter is cleared the way the kernel documents (echo 0)"
+    );
+    let after = rig.read("sys/kernel/debug/dynamic_debug/control");
+    assert!(
+        after.contains("file drivers/bluetooth/hci_qca.c -p")
+            && after.contains("file drivers/tty/serial/qcom_geni_serial.c -p"),
+        "{after}"
+    );
+    // collected into the run's report and kept beside it
+    let v: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap();
+    assert_eq!(v["trace"]["irq_events"], 2, "{v}");
+    assert_eq!(v["trace"]["irq"][0], 157);
+    assert_eq!(v["trace"]["dyndbg"][0], "file drivers/bluetooth/hci_qca.c");
+    let kept = rig.read("var/lib/lpoco-health/suspend/cycle.trace");
+    assert!(kept.contains("irq=157"), "{kept}");
+    let dmesg = rig.read("var/lib/lpoco-health/suspend/cycle.dmesg");
+    assert!(dmesg.contains("hci_qca: probe ok"), "{dmesg}");
+}
+
+#[test]
+fn without_trace_nothing_of_the_trace_is_touched() {
+    let rig = Rig::new("notrace", TRACED);
+    let o = rig.run(
+        &["suspend", "cycle", "--seconds", "5", "--settle", "1"],
+        true,
+    );
+    assert_eq!(
+        o.status.code(),
+        Some(0),
+        "{} {}",
+        text(&o.stdout),
+        text(&o.stderr)
+    );
+    assert_eq!(rig.read("during_tracing_on").trim(), "0");
+    assert_eq!(rig.read("sys/kernel/debug/dynamic_debug/control"), "");
+    let v: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap();
+    assert!(v["trace"].is_null(), "{v}");
+    assert!(!rig.p("var/lib/lpoco-health/suspend/cycle.trace").exists());
+}
+
+#[test]
+fn trace_asked_with_nothing_declared_is_refused_and_nothing_suspends() {
+    let rig = Rig::new("notdeclared", ARMED);
+    let o = rig.run(&["suspend", "cycle", "--trace"], false);
+    assert_eq!(o.status.code(), Some(2), "{}", text(&o.stdout));
+    assert!(text(&o.stderr).contains("trace"), "{}", text(&o.stderr));
+    assert!(rig.read("seen_state").is_empty(), "nothing suspended");
+}
+
+#[test]
+fn a_cut_off_traced_cycle_is_put_right_by_the_next_cycle() {
+    // left on by a cycle that was killed: the next cycle (traced or not) switches them off first
+    let rig = Rig::new("stale-trace", TRACED);
+    fs::write(rig.p("sys/kernel/tracing/tracing_on"), "1\n").unwrap();
+    fs::write(
+        rig.p("sys/kernel/tracing/events/irq/irq_handler_entry/enable"),
+        "1\n",
+    )
+    .unwrap();
+    fs::create_dir_all(rig.p("var/lib/lpoco-health/suspend")).unwrap();
+    fs::write(
+        rig.p("var/lib/lpoco-health/suspend/trace.json"),
+        r#"{"dyndbg":["file drivers/bluetooth/hci_qca.c"],"irq":[157]}"#, // as Tracing::start writes it
+    )
+    .unwrap();
+    let o = rig.run(
+        &["suspend", "cycle", "--seconds", "5", "--settle", "1"],
+        true,
+    );
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o.stderr));
+    assert_eq!(rig.read("sys/kernel/tracing/tracing_on").trim(), "0");
+    assert_eq!(
+        rig.read("sys/kernel/tracing/events/irq/irq_handler_entry/enable")
+            .trim(),
+        "0"
+    );
+    assert!(rig
+        .read("sys/kernel/debug/dynamic_debug/control")
+        .contains("file drivers/bluetooth/hci_qca.c -p"));
+}
+
+#[test]
+fn a_traced_cycle_puts_tracefs_back_as_it_found_it() {
+    // the kernel's default is tracing on; an event may be on with a filter already: they are written back, not cleared
+    let rig = Rig::new("trace-held", TRACED);
+    fs::write(rig.p("sys/kernel/tracing/tracing_on"), "1\n").unwrap();
+    fs::write(
+        rig.p("sys/kernel/tracing/events/irq/irq_handler_entry/enable"),
+        "1\n",
+    )
+    .unwrap();
+    fs::write(
+        rig.p("sys/kernel/tracing/events/irq/irq_handler_entry/filter"),
+        "irq == 3\n",
+    )
+    .unwrap();
+    let o = rig.run(
+        &[
+            "suspend",
+            "cycle",
+            "--seconds",
+            "5",
+            "--settle",
+            "1",
+            "--trace",
+        ],
+        true,
+    );
+    assert_eq!(
+        o.status.code(),
+        Some(0),
+        "{} {}",
+        text(&o.stdout),
+        text(&o.stderr)
+    );
+    assert_eq!(rig.read("sys/kernel/tracing/tracing_on").trim(), "1");
+    assert_eq!(
+        rig.read("sys/kernel/tracing/events/irq/irq_handler_entry/enable")
+            .trim(),
+        "1"
+    );
+    assert_eq!(
+        rig.read("sys/kernel/tracing/events/irq/irq_handler_entry/filter")
+            .trim(),
+        "irq == 3"
+    );
+    assert!(
+        !rig.p("var/lib/lpoco-health/suspend/trace.json").exists(),
+        "the record of what was on is gone once it is all back"
+    );
+}
+
+#[test]
+fn a_trace_that_cannot_be_switched_on_refuses_the_cycle_and_nothing_suspends() {
+    let rig = Rig::new("trace-no-tracefs", TRACED);
+    fs::remove_dir_all(rig.p("sys/kernel/tracing")).unwrap();
+    let o = rig.run(&["suspend", "cycle", "--trace"], false);
+    assert_eq!(o.status.code(), Some(2), "{}", text(&o.stdout));
+    assert!(
+        text(&o.stderr).contains("trace could not be switched on"),
+        "{}",
+        text(&o.stderr)
+    );
+    assert!(rig.read("seen_state").is_empty(), "nothing suspended");
+}
+
+#[test]
+fn a_query_that_carries_its_own_flag_is_refused_before_anything_is_written() {
+    let env =
+        "SUSPEND_GUARD='test -e $LPOCO_HEALTH_ROOT/armed'\nSUSPEND_TRACE_DYNDBG='file a.c +p'\n";
+    let rig = Rig::new("trace-flag", env);
+    let o = rig.run(&["suspend", "cycle", "--trace"], false);
+    assert_eq!(o.status.code(), Some(2), "{}", text(&o.stdout));
+    assert!(
+        text(&o.stderr).contains("without a flag"),
+        "{}",
+        text(&o.stderr)
+    );
+    assert_eq!(rig.read("sys/kernel/debug/dynamic_debug/control"), "");
+}
+
+#[test]
+fn plan_names_the_trace_the_manifest_declares() {
+    let rig = Rig::new("trace-plan", TRACED);
+    let o = rig.run(&["suspend", "plan", "--seconds", "5"], false);
+    let v: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap();
+    assert_eq!(v["trace"]["irq"][0], 157, "{v}");
+    assert_eq!(
+        v["trace"]["dyndbg"][1],
+        "file drivers/tty/serial/qcom_geni_serial.c"
+    );
 }

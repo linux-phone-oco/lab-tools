@@ -12,6 +12,7 @@
 //! Every path lies under LPOCO_HEALTH_ROOT (empty on the phone), so the tests run it on a made-up phone.
 //! `plan` changes nothing: it says what a cycle would do, or why it would refuse.
 
+use crate::trace;
 use serde_json::{json, Map, Value};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -33,6 +34,8 @@ pub struct Ask {
     /// the counters are read - a probe's tracing on and off, with no wrapper around the verb
     pub before: String,
     pub after: String,
+    /// switch on the manifest's trace sites for this cycle (`--trace`)
+    pub trace: bool,
 }
 
 /// What the manifest declares for the cycle.
@@ -42,6 +45,8 @@ struct Declared {
     quiet: Vec<String>,
     /// services stopped before the suspend and started after it (systemd units, in the order named)
     stop: Vec<String>,
+    /// the dynamic_debug queries and irq numbers a `--trace` cycle switches on
+    trace: trace::Sites,
 }
 
 /// The value of a line `KEY='...'` as devlab writes it (`'` inside is `'\''`): one pair of quotes off, the
@@ -64,6 +69,19 @@ fn declared(env_text: &str) -> Declared {
             "SUSPEND_GUARD" => d.guard = unquote(v),
             "SUSPEND_QUIET" => d.quiet = unquote(v).split_whitespace().map(String::from).collect(),
             "SUSPEND_STOP" => d.stop = unquote(v).split_whitespace().map(String::from).collect(),
+            "SUSPEND_TRACE_DYNDBG" => {
+                d.trace.dyndbg = unquote(v)
+                    .split(';')
+                    .map(|q| q.trim().to_string())
+                    .filter(|q| !q.is_empty())
+                    .collect()
+            }
+            "SUSPEND_TRACE_IRQ" => {
+                d.trace.irq = unquote(v)
+                    .split_whitespace()
+                    .filter_map(|n| n.parse().ok())
+                    .collect()
+            }
             _ => {}
         }
     }
@@ -169,8 +187,15 @@ fn snapshot(c: &Counters) -> Value {
 }
 
 /// Why a cycle would be refused, in plain words; empty when none.
-fn refusals(root: &Path, d: &Declared, seconds: u64) -> Vec<String> {
+fn refusals(root: &Path, d: &Declared, ask: &Ask) -> Vec<String> {
+    let seconds = ask.seconds;
     let mut r = Vec::new();
+    if ask.trace {
+        if d.trace.is_empty() {
+            r.push("--trace asked, but the manifest's [health] declares no suspend_trace_dyndbg or suspend_trace_irq to trace".into());
+        }
+        r.extend(d.trace.problems());
+    }
     if seconds < MIN_SECONDS {
         r.push(format!("--seconds {seconds} is too short: at least {MIN_SECONDS} (the RTC counts whole seconds; a sleep over before the phone is down is never woken)"));
     }
@@ -378,24 +403,28 @@ fn hook_json(cmd: &str, r: &Option<Result<(), String>>) -> Value {
 /// What a cycle would do, or why it would refuse; changes nothing.
 pub fn plan(ask: &Ask) -> (i32, Value) {
     let d = load_declared(ask);
-    let why = refusals(&ask.root, &d, ask.seconds);
+    let why = refusals(&ask.root, &d, ask);
     let c = read_counters(&ask.root);
     (
         0,
         json!({"verb": "plan", "would_cycle": why.is_empty(), "refusals": why,
-               "seconds": ask.seconds, "quiet": d.quiet, "stop": d.stop, "way_back": d.guard, "before": snapshot(&c)}),
+               "seconds": ask.seconds, "quiet": d.quiet, "stop": d.stop, "way_back": d.guard, "before": snapshot(&c),
+               "trace": {"dyndbg": d.trace.dyndbg, "irq": d.trace.irq}}),
     )
 }
 
 /// The cycle: exit 0 when the SoC slept, 1 when it did not (said, not hidden), 2 when refused.
 pub fn cycle(ask: &Ask) -> (i32, Value) {
     let d = load_declared(ask);
-    let why = refusals(&ask.root, &d, ask.seconds);
+    let why = refusals(&ask.root, &d, ask);
     if !why.is_empty() {
         return (2, json!({"verb": "cycle", "refused": why}));
     }
     let root = &ask.root;
     let alarm = root.join("sys/class/rtc/rtc0/wakealarm");
+    let out = root.join(OUT);
+    // a cycle cut off while tracing left its sites on: off first, whether this one traces or not
+    trace::Tracing::put_right_what_a_cut_off_cycle_left(root, &out);
     let quieted = Quieted::quiet(root, &d.quiet);
     let not_quieted = quieted.not_quieted.clone();
     // stopped before the alarm is armed: a slow stop must not eat the sleep
@@ -410,11 +439,27 @@ pub fn cycle(ask: &Ask) -> (i32, Value) {
                    "hooks": hooks_json(ask, &before_hook, &after_hook)}),
         );
     }
+    let tracing = if ask.trace {
+        match trace::Tracing::start(root, &out, d.trace.clone()) {
+            Ok(t) => Some(t),
+            Err(e) => {
+                let after_hook = hook(&ask.after);
+                return (
+                    2,
+                    json!({"verb": "cycle", "refused": [format!("the trace could not be switched on: {e}")],
+                           "hooks": hooks_json(ask, &before_hook, &after_hook)}),
+                );
+            }
+        }
+    } else {
+        None
+    };
     let before = read_counters(root);
     let target = before.rtc.unwrap_or(0) + ask.seconds;
     let _ = std::fs::write(&alarm, "0");
     let armed = std::fs::write(&alarm, target.to_string()).is_ok();
     if !armed || text(&alarm) != target.to_string() {
+        drop(tracing);
         let _ = std::fs::write(&alarm, "0");
         let after_hook = hook(&ask.after);
         return (
@@ -427,6 +472,7 @@ pub fn cycle(ask: &Ask) -> (i32, Value) {
     std::thread::sleep(Duration::from_secs(ask.settle));
     let after = read_counters(root);
     let _ = std::fs::write(&alarm, "0");
+    let traced = tracing.map(|t| t.stop());
     let after_hook = hook(&ask.after);
     let not_started = stopped.start_back();
     drop(quieted);
@@ -497,10 +543,14 @@ pub fn cycle(ask: &Ask) -> (i32, Value) {
         "way_back": d.guard,
         "hooks": hooks_json(ask, &before_hook, &after_hook),
     });
+    if let Some(c) = &traced {
+        report["trace"] = json!({"dyndbg": d.trace.dyndbg, "irq": d.trace.irq, "irq_events": c.irq_events,
+            "trace_file": c.trace_file, "dmesg_file": c.dmesg_file,
+            "problems": c.problems});
+    }
     if let Err(e) = wrote {
         report["state_write"] = json!(format!("{e}"));
     }
-    let out = root.join(OUT);
     let kept = std::fs::create_dir_all(&out)
         .and_then(|_| std::fs::write(out.join("cycle.json"), format!("{report}\n")));
     if let Err(e) = kept {

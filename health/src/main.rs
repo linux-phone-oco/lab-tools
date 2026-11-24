@@ -24,6 +24,7 @@ mod data;
 mod suspend;
 mod switches;
 mod tone;
+mod trace;
 
 use argenv_resolve::{InputResolveExt, OnProblems};
 use serde_json::{json, Value};
@@ -543,6 +544,7 @@ fn main() {
                 settle: cli::Contract::SETTLE.get_from(&r).unwrap_or(2),
                 before: cli::Contract::BEFORE.get_from(&r).unwrap_or_default(),
                 after: cli::Contract::AFTER.get_from(&r).unwrap_or_default(),
+                trace: cli::Contract::TRACE.get_from(&r).unwrap_or(false),
             };
             let (code, report) = match cli::Contract::VERB.get_from(&r).as_deref() {
                 Some("plan") => suspend::plan(&ask),
