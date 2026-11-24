@@ -154,6 +154,7 @@ fn the_trigger_package_needs_the_tool_that_writes_the_image() {
         (Format::Apk, "android-tools-mkbootimg"),
         (Format::Apk, "kernel-hooks"),
         (Format::Apk, "mkinitfs"),
+        (Format::Apk, "kmod"),
     ] {
         let mut pkgs = packages(m.layer.as_ref().unwrap(), f);
         add_boot_trigger(
@@ -283,7 +284,14 @@ fn body_of(format: Format, dst: &str) -> String {
         format,
     )
     .unwrap();
-    let dir = std::env::temp_dir().join(format!("lpoco-bootimg-body-{}", std::process::id()));
+    // one folder per call: tests run in parallel and a shared one is written by two at once
+    let dir = std::env::temp_dir().join(format!(
+        "lpoco-bootimg-body-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos())
+    ));
     for p in &pkgs {
         for e in materialize(p, &dir, &dir.join("stage")).unwrap() {
             if e.dst == dst {
@@ -363,4 +371,79 @@ fn a_dtbs_folder_is_looked_in_first_and_named_when_it_lacks_the_tree() {
         "{}",
         String::from_utf8_lossy(&o.stderr)
     );
+}
+
+/// The apk hook run for real, with stand-ins for what it calls (depmod, mkinitfs, the layer's script), which write
+/// their arguments to a log: kernel-hooks' README gives the arguments (`<flavor> <new-version> [<old-version>]`,
+/// the new version empty when the kernel is removed), and the container proof gave the version's shape (6.18.65-0).
+fn run_hook(tag: &str, args: &[&str]) -> (String, std::process::Output) {
+    let dir = std::env::temp_dir().join(format!("lpoco-bootimg-hook-{tag}-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    let bin = dir.join("bin");
+    fs::create_dir_all(&bin).unwrap();
+    let log = dir.join("log");
+    let say = |p: &Path, name: &str| {
+        fs::write(
+            p,
+            format!("#!/bin/sh\necho \"{name} $*\" >> {}\n", log.display()),
+        )
+        .unwrap();
+        fs::set_permissions(p, fs::Permissions::from_mode(0o755)).unwrap();
+    };
+    say(&bin.join("depmod"), "depmod");
+    say(&bin.join("mkinitfs"), "mkinitfs");
+    say(&dir.join("bootimg"), "bootimg");
+    let hook = body_of(Format::Apk, "/etc/kernel-hooks.d/95-google-walleye-bootimg").replace(
+        "/usr/libexec/google-walleye-bootimg",
+        dir.join("bootimg").to_str().unwrap(),
+    );
+    let path = dir.join("hook");
+    fs::write(&path, hook).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+    let o = Command::new(&path)
+        .args(args)
+        .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
+        .output()
+        .unwrap();
+    (fs::read_to_string(&log).unwrap_or_default(), o)
+}
+
+#[test]
+fn the_apk_hook_indexes_makes_the_initramfs_and_calls_the_script_with_alpines_names() {
+    let (log, o) = run_hook("add", &["lts", "6.18.65-0", ""]);
+    assert_eq!(
+        o.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+    let lines: Vec<&str> = log.lines().collect();
+    assert_eq!(lines[0], "depmod 6.18.65-0-lts", "{log}");
+    assert!(
+        lines[1].starts_with("mkinitfs -o ") && lines[1].ends_with(" 6.18.65-0-lts"),
+        "{log}"
+    );
+    let tmp = lines[1].split_whitespace().nth(2).unwrap();
+    assert!(
+        lines[2].ends_with(&format!(
+            "bootimg 6.18.65-0-lts --kernel /boot/vmlinuz-lts --initrd {tmp} --dtbs boot/dtbs-lts --out /boot/google-walleye-lts.img"
+        )),
+        "{log}"
+    );
+    assert!(
+        !Path::new(tmp).exists(),
+        "the temporary initramfs is left: {tmp}"
+    );
+}
+
+#[test]
+fn the_apk_hook_does_nothing_when_a_kernel_is_removed() {
+    let (log, o) = run_hook("remove", &["lts", "", "6.18.65-0"]);
+    assert_eq!(
+        o.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+    assert_eq!(log, "", "something ran on a removal");
 }
