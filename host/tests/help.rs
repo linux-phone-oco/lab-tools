@@ -29,3 +29,26 @@ fn help_prints_the_usage_and_exits_0() {
         assert!(out.contains("LPOCO_LAB"), "{flag}: {out}");
     }
 }
+
+#[test]
+fn family_names_the_programs_one_a_line_without_reading_a_lab() {
+    // the answer a follow asks the host it just installed (host/src/main.rs run); no lab.toml is given or needed
+    let o = std::process::Command::new(env!("CARGO_BIN_EXE_lpoco-host"))
+        .arg("family")
+        .env_clear()
+        .env("LPOCO_LAB", "/nonexistent/lab.toml")
+        .output()
+        .unwrap();
+    let out = String::from_utf8_lossy(&o.stdout);
+    assert!(
+        o.status.success(),
+        "{out}{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+    let names: Vec<&str> = out.lines().collect();
+    assert!(
+        names.contains(&"lpoco") && names.contains(&"lpoco-layer"),
+        "{names:?}"
+    );
+    assert!(names.iter().all(|n| !n.contains(' ')), "{names:?}");
+}

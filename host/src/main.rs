@@ -342,6 +342,13 @@ fn stage_dir(home: &str) -> String {
 fn run(r: &Resolution) -> Result<i32, String> {
     let command = Contract::COMMAND.get_from(r).unwrap_or(Command::Plan);
     let now = Contract::NOW.get_from(r).as_deref() == Some("now");
+    if matches!(command, Command::Family) {
+        // what a follow asks the host it just installed: the programs this release carries, one a line
+        for p in FAMILY {
+            println!("{p}");
+        }
+        return Ok(0);
+    }
     // a run that changes the host holds the lock before it reads anything the other run may be changing
     let _lock = if now && matches!(command, Command::Prepare | Command::Follow) {
         let home = Contract::HOME.get_from(r).ok_or("HOME is not set")?;
@@ -376,6 +383,7 @@ fn run(r: &Resolution) -> Result<i32, String> {
         Command::Check => check(&st),
         Command::Follow => follow(&st, Contract::NOW.get_from(r).as_deref() == Some("now")),
         Command::Clones => clones(&st, Contract::NOW.get_from(r).as_deref() == Some("now")),
+        Command::Family => unreachable!("answered before the lab is read"),
         Command::Revoke => {
             if Contract::NOW.get_from(r).as_deref() != Some("now") {
                 return Err("revoke removes the standing grant: say `lpoco host revoke now` (it refuses unless the check passes)".into());
@@ -1697,14 +1705,14 @@ fn follow(st: &State, now: bool) -> Result<i32, String> {
             ));
         }
     };
-    let previous = save_programs(&st.home)?;
+    let previous = std::cell::RefCell::new(save_programs(&st.home)?);
     // a drift install lands no pin, so its journal never names the pinned release (that means "the pin landed")
     let journal_target = if released.is_some() {
         newest.clone()
     } else {
         format!("{newest}-reinstall")
     };
-    write_journal(&st.home, &previous, &journal_target)?;
+    write_journal(&st.home, &previous.borrow(), &journal_target)?;
     // what is replaced: the programs of the pinned release, or, on a reinstall, the older ones installed
     let was = if released.is_some() {
         pinned.clone()
@@ -1713,14 +1721,14 @@ fn follow(st: &State, now: bool) -> Result<i32, String> {
     };
     println!("following: lpoco {was} -> {newest}");
     let stepped_back = |why: String| {
-        restore_programs(&previous).map_err(|e| format!("{why}; and the programs could not be put back ({e}): the journal is kept for the next run"))?;
+        restore_programs(&previous.borrow()).map_err(|e| format!("{why}; and the programs could not be put back ({e}): the journal is kept for the next run"))?;
         clear_journal(&st.home);
         remember_failed_try(&st.home, &newest, began);
         Err(format!(
             "{why}; the programs of {was} are back and the pin stays"
         ))
     };
-    let skipped = match install_family(st, &newest) {
+    let skipped = match install_family(st, &newest, &previous) {
         Ok(skipped) => skipped,
         Err(why) => return stepped_back(why),
     };
@@ -2294,7 +2302,11 @@ fn step_back_a_killed_follow(home: &str, pinned: &str) -> Result<(), String> {
 }
 
 /// Installs the family's programs at release `newest`, each from its asset after the hash matches.
-fn install_family(st: &State, newest: &str) -> Result<Vec<String>, String> {
+fn install_family(
+    st: &State,
+    newest: &str,
+    previous: &std::cell::RefCell<Saved>,
+) -> Result<Vec<String>, String> {
     let mut lab = st.lab.clone();
     lab.tools
         .insert("lpoco".into(), ToolPin::Version(newest.to_string()));
@@ -2311,24 +2323,80 @@ fn install_family(st: &State, newest: &str) -> Result<Vec<String>, String> {
     .filter(|t| FAMILY.contains(&t.name.as_str()))
     .collect();
     let mut skipped = Vec::new();
-    for t in tools.iter().filter(|t| !t.ok()) {
-        match install_tool(st, t) {
-            Ok(()) => {}
-            // a member whose release is gone does not hold back the others: it is named, and stays as it is
-            Err(e) if e.gone => {
-                println!("{}: skipped, {}", t.name, e.why);
-                skipped.push(t.name.as_str());
-            }
-            Err(e) => return Err(e.why),
-        }
-    }
+    install_listed(st, &tools, &mut skipped)?;
+    // the host just installed knows its own family: a program only it names is installed before it is judged
+    let added = new_members(st, newest, previous)?;
+    install_listed(st, &added, &mut skipped)?;
     if !skipped.is_empty() {
         println!(
             "lpoco {newest} runs next to {} of another version: `lpoco NAME` refuses a program that is not its own version",
             skipped.join(", ")
         );
     }
-    Ok(skipped.into_iter().map(String::from).collect())
+    Ok(skipped)
+}
+
+/// Installs each listed program that is off its pin; one whose release is gone is named and skipped, any other
+/// failure stops.
+fn install_listed(st: &State, tools: &[ToolPlan], skipped: &mut Vec<String>) -> Result<(), String> {
+    for t in tools.iter().filter(|t| !t.ok()) {
+        match install_tool(st, t) {
+            Ok(()) => {}
+            // a member whose release is gone does not hold back the others: it is named, and stays as it is
+            Err(e) if e.gone => {
+                println!("{}: skipped, {}", t.name, e.why);
+                skipped.push(t.name.clone());
+            }
+            Err(e) => return Err(e.why),
+        }
+    }
+    Ok(())
+}
+
+/// The programs the installed `lpoco-host family` names that this running follow does not know: their plans at
+/// `newest`, and what each held (or lacked) added to `previous`, so a step back puts it back. A name that is not a
+/// member name is said and left out; a host that does not answer `family` (an older release) names none.
+fn new_members(
+    st: &State,
+    newest: &str,
+    previous: &std::cell::RefCell<Saved>,
+) -> Result<Vec<ToolPlan>, String> {
+    let host = format!("{}/.local/bin/lpoco-host", st.home);
+    let out = Proc::new(&host).arg("family").output();
+    let Some(out) = out.ok().filter(|o| o.status.success()) else {
+        println!("lpoco-host family: not answered (a release before it, or a host that failed): no member added");
+        return Ok(vec![]);
+    };
+    let mut plans = Vec::new();
+    for name in String::from_utf8_lossy(&out.stdout).lines() {
+        let name = name.trim();
+        if name.is_empty()
+            || FAMILY.contains(&name)
+            || plans.iter().any(|p: &ToolPlan| p.name == name)
+        {
+            continue;
+        }
+        if !is_member_name(name) {
+            println!("lpoco-host family: {name:?} is not a member name: not installed");
+            continue;
+        }
+        let to = format!("{}/.local/bin/{name}", st.home);
+        let held = match fs::read(&to) {
+            Ok(b) => Some(b),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => return Err(format!("cannot keep {to} to step back to: {e}")),
+        };
+        // not in the on-disk journal: a follow killed right here leaves this one program behind, which the next follow reinstalls
+        previous.borrow_mut().push((to, held));
+        plans.push(family_plan(
+            name,
+            newest,
+            &st.home,
+            &|n| version_found(&st.path, &st.home, n),
+            st.release_base.as_deref(),
+        ));
+    }
+    Ok(plans)
 }
 
 /// lab.toml as origin's main has it when it is in a clone, else as the file lies.
