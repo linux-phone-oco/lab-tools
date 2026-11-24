@@ -145,16 +145,23 @@ pub fn packages(layer: &Layer, format: Format) -> Vec<Package> {
             }
         }
     }
+    // the OEM's firmware is read from the phone's own partitions by the extractor, which this entry tells what to copy;
+    // apk has none (the extractor there is Nura's msm-firmware-loader: that waits on the author's word)
+    let mut needs: Vec<String> = layer.needs.clone();
+    if format != Format::Apk {
+        if let Some(entry) = firmware_entry(layer) {
+            config.push(entry);
+            if !needs.iter().any(|n| n == "droid-juicer") {
+                needs.push("droid-juicer".into());
+            }
+        }
+    }
     if !config.is_empty() {
         out.push(Package {
             arch: None,
             name: format!("{name}-config"),
             description: format!("{name}: device configuration"),
-            depends: layer
-                .needs
-                .iter()
-                .map(|n| named(layer, format, n))
-                .collect(),
+            depends: needs.iter().map(|n| named(layer, format, n)).collect(),
             items: config,
             post_install: None,
         });
@@ -915,4 +922,40 @@ pub fn source_date_epoch(
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .filter(|t| !t.is_empty() && t.bytes().all(|b| b.is_ascii_digit()));
     Ok(committed)
+}
+
+/// The extractor's entry for the phone: droid-juicer reads `/usr/share/droid-juicer/configs/COMPATIBLE.toml`, one
+/// `[juicer]` section whose `firmware` array names, per vendor partition, the folder, the destination under the
+/// firmware directory and the files (README of gitlab.com/mobian1/droid-juicer). Only names go into it: no
+/// vendor file is ever in a package. None when the layer declares no source.
+pub fn firmware_entry(layer: &Layer) -> Option<Item> {
+    let fw = layer.firmware.as_ref()?;
+    let compatible = fw.compatible.as_ref().filter(|_| !fw.source.is_empty())?;
+    let mut t = String::from("[juicer]\nfirmware = [\n");
+    for s in &fw.source {
+        t.push_str(&format!(
+            "    {{ partition = {}, origin = {}, destination = {}, files = [\n",
+            quote(&s.partition),
+            quote(&s.origin),
+            quote(&s.destination)
+        ));
+        for f in &s.files {
+            match &f.rename {
+                Some(r) => t.push_str(&format!(
+                    "            {{ name = {}, rename = {} }},\n",
+                    quote(&f.name),
+                    quote(r)
+                )),
+                None => t.push_str(&format!("            {{ name = {} }},\n", quote(&f.name))),
+            }
+        }
+        t.push_str("        ] },\n");
+    }
+    t.push_str("]\n");
+    Some(Item {
+        source: Source::Text(t),
+        dst: format!("/usr/share/droid-juicer/configs/{compatible}.toml"),
+        mode: 0o644,
+        config: false,
+    })
 }

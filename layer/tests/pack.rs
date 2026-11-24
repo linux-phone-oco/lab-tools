@@ -833,3 +833,108 @@ fn a_path_two_packages_of_the_layer_both_own_is_refused() {
         "{e}"
     );
 }
+
+const FIRMWARE_LAYER: &str = r#"
+[layer]
+name = "xiaomi-surya"
+
+[layer.firmware]
+method = "extract-from-partitions"
+compatible = "xiaomi,surya"
+
+[[layer.firmware.source]]
+partition = "vendor"
+origin = "firmware"
+destination = "qcom/sm7150/xiaomi/surya"
+files = [{ name = "a615_zap.mdt" }, { name = "wlanmdsp.mbn", rename = "wlanmdsp.otaupdate" }]
+
+[[layer.firmware.source]]
+partition = "modem"
+origin = "image"
+destination = "qcom/sm7150/xiaomi/surya"
+files = [{ name = "modem.mdt" }]
+
+[[layer.file]]
+from = "ucm/HiFi.conf"
+to = "/usr/share/alsa/ucm2/Xiaomi/surya/HiFi.conf"
+kind = "data"
+"#;
+
+/// The destinations and bodies of every item of every package of `format`.
+fn items_of(format: Format) -> Vec<(String, String)> {
+    let m = Manifest::parse(FIRMWARE_LAYER).unwrap();
+    let layer = m.layer.as_ref().unwrap();
+    packages(layer, format)
+        .into_iter()
+        .flat_map(|p| p.items)
+        .map(|i| {
+            let body = match &i.source {
+                lpoco_layer::Source::Text(t) => t.clone(),
+                _ => String::new(),
+            };
+            (i.dst, body)
+        })
+        .collect()
+}
+
+#[test]
+fn deb_rpm_and_archlinux_get_the_extractors_entry_and_the_extractor_as_a_dependency() {
+    // source: droid-juicer reads /usr/share/droid-juicer/configs/<DT compatible>.toml (its README and the Fedora
+    // spec, which installs configs/*.toml there)
+    for format in [Format::Deb, Format::Rpm, Format::Archlinux] {
+        let items = items_of(format);
+        let entry = items
+            .iter()
+            .find(|(d, _)| d == "/usr/share/droid-juicer/configs/xiaomi,surya.toml")
+            .unwrap_or_else(|| panic!("{format:?}: no extractor entry in {items:?}"));
+        let v: toml::Value = entry
+            .1
+            .parse()
+            .unwrap_or_else(|e| panic!("{format:?}: {e}\n{}", entry.1));
+        let fw = v["juicer"]["firmware"].as_array().unwrap();
+        assert_eq!(fw.len(), 2, "{v}");
+        assert_eq!(fw[0]["partition"].as_str(), Some("vendor"));
+        assert_eq!(fw[0]["origin"].as_str(), Some("firmware"));
+        assert_eq!(
+            fw[0]["destination"].as_str(),
+            Some("qcom/sm7150/xiaomi/surya")
+        );
+        assert_eq!(
+            fw[0]["files"][1]["rename"].as_str(),
+            Some("wlanmdsp.otaupdate")
+        );
+        let m = Manifest::parse(FIRMWARE_LAYER).unwrap();
+        let pkgs = packages(m.layer.as_ref().unwrap(), format);
+        let config = pkgs
+            .iter()
+            .find(|p| p.name == "xiaomi-surya-config")
+            .unwrap();
+        assert!(
+            config.depends.iter().any(|d| d == "droid-juicer"),
+            "{:?}",
+            config.depends
+        );
+    }
+}
+
+#[test]
+fn no_package_holds_an_oem_firmware_file() {
+    for format in [Format::Apk, Format::Deb, Format::Rpm, Format::Archlinux] {
+        for (dst, _) in items_of(format) {
+            assert!(
+                !dst.contains("/lib/firmware") && !dst.ends_with(".mbn") && !dst.ends_with(".mdt"),
+                "{format:?} packs {dst}"
+            );
+        }
+    }
+}
+
+#[test]
+fn apk_gets_no_extractor_entry_that_part_waits_on_the_authors_word() {
+    // msm-firmware-loader is Nura's (postmarketOS); nothing is prepared aimed at Nura until the author says
+    let items = items_of(Format::Apk);
+    assert!(
+        items.iter().all(|(d, _)| !d.contains("droid-juicer")),
+        "{items:?}"
+    );
+}

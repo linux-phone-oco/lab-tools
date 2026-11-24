@@ -14,3 +14,6 @@ lpoco-manifest = { path = "../manifest" }
 # the command line is declared once (argenv), not parsed by hand
 argenv-resolve = "0.4"
 serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+toml = "0.8"

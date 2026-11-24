@@ -16,8 +16,8 @@ pub use boot::{Boot, BootGadget, Console, ShellWord, ToBootloader};
 pub use images::{Image, Images, ProcValue};
 pub use kernel_build::KernelBuild;
 pub use layer::{
-    BootMethod, FileKind, FirmwareMethod, Layer, LayerBoot, LayerFile, LayerFirmware,
-    LayerInitramfs, LayerKernel,
+    BootMethod, FileKind, FirmwareFile, FirmwareMethod, FirmwareSource, Layer, LayerBoot,
+    LayerFile, LayerFirmware, LayerInitramfs, LayerKernel,
 };
 
 /// The whole manifest. A program asks for the tables it needs; a table nobody declared is an error.
