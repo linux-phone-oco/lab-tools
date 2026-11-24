@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.49.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-v0.48.14...lpoco-v0.49.0) - 2026-11-24
+
+### Added
+
+- *(bringup)* init scripts pass shellcheck, selftest checks the console, ffs-acm builds in CI ([#415](https://github.com/linux-phone-oco/lab-tools/pull/415))
+
 ## [0.48.14](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-v0.48.13...lpoco-v0.48.14) - 2026-11-24
 
 ### Added
