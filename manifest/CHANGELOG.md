@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.48.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-manifest-v0.47.0...lpoco-manifest-v0.48.0) - 2026-11-24
+
+### Added
+
+- *(health)* suspend cycle --trace switches the manifest's trace sites on across the suspend ([#406](https://github.com/linux-phone-oco/lab-tools/pull/406))
+
 ## [0.47.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-manifest-v0.46.0...lpoco-manifest-v0.47.0) - 2026-11-23
 
 ### Added
