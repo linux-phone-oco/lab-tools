@@ -63,6 +63,16 @@ fn run(r: &argenv_resolve::Resolution) -> Result<i32, String> {
             "--dry-run is for image ensure: lpoco-bringup image ensure NAME --dry-run".into(),
         );
     }
+    if Contract::REBUILD.get_from(r).unwrap_or(false) {
+        if !matches!(verb, Verb::Ensure) {
+            return Err(
+                "--rebuild is for image ensure: lpoco-bringup image ensure NAME --rebuild".into(),
+            );
+        }
+        if Contract::DRY_RUN.get_from(r).unwrap_or(false) {
+            return Err("--rebuild builds; --dry-run changes nothing: give one".into());
+        }
+    }
     if matches!(verb, Verb::Capture | Verb::Diff) != (command == Some(Command::Reference)) {
         return Err("capture and diff are for the reference: lpoco-bringup reference capture --via COMMAND --out DIR | reference diff PART --live DIR --ours DIR".into());
     }
@@ -459,6 +469,11 @@ fn image_ensure(name: &str, device: &str, r: &argenv_resolve::Resolution) -> Res
     if Contract::DRY_RUN.get_from(r).unwrap_or(false) {
         let (origin, path) = ensure::plan(&manifest, name, &sources)?;
         println!("{name}: {origin} ({})", path.display());
+        return Ok(0);
+    }
+    if Contract::REBUILD.get_from(r).unwrap_or(false) {
+        let path = ensure::rebuild(&manifest, name, &sources, &mut |line| eprintln!("{line}"))?;
+        println!("{}", path.display());
         return Ok(0);
     }
     let path = ensure::ensure(&manifest, name, &sources, &mut |line| eprintln!("{line}"))?;

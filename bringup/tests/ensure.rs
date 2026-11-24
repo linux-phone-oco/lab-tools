@@ -381,3 +381,141 @@ fn dry_run_is_refused_by_every_verb_but_ensure() {
         text(&o.stderr)
     );
 }
+
+/// image-ensure-rebuild (decision 2026-11-24-a-recipe-sha-is-proved-by-a-rebuild): a declared sha256 that is in the
+/// store but is not what its recipe makes passes plain ensure (it serves by sha) and fails `--rebuild`, which
+/// builds the recipe ignoring store, cache and seed and names the image and both sha256s; the right sha256 passes.
+#[test]
+fn a_rebuild_fails_a_declared_sha256_the_recipe_does_not_make_though_plain_ensure_passes_it() {
+    if !have("nix-store", "--version") || !have("avbtool", "--help") {
+        eprintln!("not measured: no nix, or no avbtool (it makes the control)");
+        return;
+    }
+    let dir = tmp("rebuild");
+    let (seed, cache) = (dir.join("seed"), dir.join("cache"));
+    fs::create_dir_all(&seed).unwrap();
+    fs::rename(control(&dir), seed.join("control.img")).unwrap();
+    fs::write(seed.join("ramdisk.new"), vec![0x5Bu8; 5000]).unwrap();
+    // a file that is in the seed, so plain ensure serves it, and is not what the recipe makes
+    let body = format!("not the recipe's {}", std::process::id());
+    fs::write(seed.join("other.img"), body).unwrap();
+    let (control_sha, ramdisk_sha, other_sha) = (
+        sha256(&seed.join("control.img")),
+        sha256(&seed.join("ramdisk.new")),
+        sha256(&seed.join("other.img")),
+    );
+    let want = dir.join("want.img");
+    let o = bringup(&[
+        "image",
+        "swap",
+        s(&seed.join("control.img")),
+        "--ramdisk",
+        s(&seed.join("ramdisk.new")),
+        "--cmdline",
+        "console=ttyMSM0 ensure=1",
+        "--out",
+        s(&want),
+    ]);
+    assert!(o.status.success(), "swap: {}", text(&o.stderr));
+    let made_sha = sha256(&want);
+    let with_rebuild = |device: &Path| {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        bringup(&[
+            "image",
+            "ensure",
+            "out",
+            "--rebuild",
+            "--device",
+            s(device),
+            "--cache",
+            s(&cache),
+            "--seed",
+            s(&seed),
+            "--source",
+            s(&source),
+        ])
+    };
+
+    // declared: the other file's sha256 (held by the seed, not made by the recipe)
+    let device = manifest(&dir, &control_sha, &ramdisk_sha, &other_sha);
+    for sha in [&other_sha, &made_sha] {
+        forget(&fixed_path(sha, "out.img"));
+    }
+    let o = ensure(&device, &cache, &seed, "out");
+    assert!(
+        o.status.success(),
+        "plain ensure serves a sha256 the seed holds: {}",
+        text(&o.stderr)
+    );
+    let o = with_rebuild(&device);
+    let said = text(&o.stderr);
+    assert!(
+        !o.status.success(),
+        "--rebuild passed a sha256 its recipe does not make: {said}"
+    );
+    for want in ["out", other_sha.as_str(), made_sha.as_str()] {
+        assert!(said.contains(want), "{want} is not named: {said}");
+    }
+
+    // declared: what the recipe makes - held in the store or not, the rebuild proves it
+    let device = manifest(&dir, &control_sha, &ramdisk_sha, &made_sha);
+    let o = with_rebuild(&device);
+    assert!(
+        o.status.success(),
+        "--rebuild of the right sha256: {}{}",
+        text(&o.stdout),
+        text(&o.stderr)
+    );
+    assert!(
+        text(&o.stderr).contains("rebuilt from its recipe, equal to its declared sha256"),
+        "{}",
+        text(&o.stderr)
+    );
+}
+
+/// `--rebuild` is for an image with a recipe, and is not a dry run.
+#[test]
+fn rebuild_is_refused_with_dry_run_and_by_every_verb_but_ensure() {
+    let o = bringup(&["image", "ensure", "x", "--rebuild", "--dry-run"]);
+    assert_eq!(o.status.code(), Some(2), "{}", text(&o.stderr));
+    assert!(
+        text(&o.stderr).contains("--rebuild builds; --dry-run changes nothing"),
+        "{}",
+        text(&o.stderr)
+    );
+    let o = bringup(&[
+        "image",
+        "swap",
+        "x.img",
+        "--out",
+        "/nonexistent/o.img",
+        "--rebuild",
+    ]);
+    assert_eq!(o.status.code(), Some(2), "{}", text(&o.stderr));
+    assert!(
+        text(&o.stderr).contains("--rebuild is for image ensure"),
+        "{}",
+        text(&o.stderr)
+    );
+}
+
+/// A kernel build name given to `--rebuild` is refused in its own words (`--rebuild` itself runs the builder again with `--check`).
+#[test]
+fn a_rebuild_names_a_kernel_build_as_not_its_kind() {
+    let dir = tmp("rebuild-kernel");
+    let t = format!(
+        "{}\n[kernel_builds.k]\ntag = \"int/x\"\nrev = \"{}\"\nepoch = 1\nsha256 = \"{}\"\ndefconfig = \"d\"\ntargets = [\"Image\"]\noutput = \"o\"\nconfigs = []\npatches = []\n",
+        fs::read_to_string(fixture("device.toml")).unwrap(),
+        "a".repeat(40),
+        "b".repeat(64)
+    );
+    let device = dir.join("device.toml");
+    fs::write(&device, t).unwrap();
+    let o = bringup(&["image", "ensure", "k", "--rebuild", "--device", s(&device)]);
+    assert!(!o.status.success());
+    assert!(
+        text(&o.stderr).contains("is a kernel build"),
+        "{}",
+        text(&o.stderr)
+    );
+}

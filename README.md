@@ -278,7 +278,7 @@ is proven against mkbootimg by test (`bringup/tests/pack_v0.rs`; where android-t
 
 ### lpoco bringup image ensure: an image by its sha256, from a store or a recipe
 
-    lpoco bringup image ensure NAME [--device device.toml] [--cache DIR] [--seed DIR] [--source DIR]
+    lpoco bringup image ensure NAME [--device device.toml] [--cache DIR] [--seed DIR] [--source DIR] [--dry-run | --rebuild]
 
 Prints the Nix store path of `[images.NAME]` (its `sha256` and the file name of its `path` give it a fixed-output path:
 `nix-store --print-fixed-path`). In the store: done. Else `nix copy --from` the file:// cache `--cache` (or
@@ -299,6 +299,13 @@ from GitHub when none) with nixpkgs pinned in `nixpkgs.nix` (the pin `shell.nix`
 is `lpoco-bringup`'s own (`bringup/src/avb.rs`, held byte for byte to avbtool 1.4.0's by `bringup/tests/avb_native.rs`): the sandbox runs no avbtool
 and no Python. Proof: `bringup/tests/ensure.rs` (where nix or avbtool, which makes its control, is
 absent it says "not measured"); measured on the lab 2026-11-23 for walleye's z21 from z20 and its dtb.
+
+`--rebuild` proves a declared sha256 against its recipe (decision 2026-11-24-a-recipe-sha-is-proved-by-a-rebuild): it
+builds the recipe in the sandbox as a plain derivation, ignoring the store, the cache and the seed (the recipe's parts are
+still found by their sha256; `nix-build --check`, no substituters), and fails unless the result is the declared sha256, naming the image and both. It publishes
+no image and is refused with `--dry-run`; its control and parts are served as for ensure (not rebuilt), and a kernel build name is refused. A lab's CI calls it per image whose recipe or sha256 a change touches; plain
+`ensure` serves by sha256 and does not prove it. Proof: `bringup/tests/ensure.rs`
+`a_rebuild_fails_a_declared_sha256_the_recipe_does_not_make_though_plain_ensure_passes_it`.
 
 A recipe's `kernel` is a file by sha256; `[kernel_builds.NAME]` makes one from an `int/` tag, and `image ensure NAME` takes
 the same ways (store, cache, seed) before building it:

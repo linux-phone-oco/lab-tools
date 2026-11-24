@@ -70,10 +70,45 @@ pub fn ensure(
             wanted.sha256
         )
     })?;
-    let path = build(manifest, name, &wanted, recipe, sources, say)?;
+    let path = build(manifest, name, &wanted, recipe, sources, say, false)?;
     publish(&path, sources.cache)?;
     say(format!(
         "{name}: built from its recipe, equal to its declared sha256"
+    ));
+    Ok(path)
+}
+
+/// The image `name` proved against its recipe: the recipe built in the sandbox, ignoring the store, the cache and
+/// the seed (decision 2026-11-24-a-recipe-sha-is-proved-by-a-rebuild), and its sha256 compared to the declared
+/// one. A result that is not the declared one fails naming the image and both sha256s; nothing is published.
+pub fn rebuild(
+    manifest: &Manifest,
+    name: &str,
+    sources: &Sources,
+    say: &mut dyn FnMut(String),
+) -> Result<PathBuf, String> {
+    if !manifest
+        .images
+        .as_ref()
+        .is_some_and(|i| i.named.contains_key(name))
+        && manifest.kernel_builds.contains_key(name)
+    {
+        return Err(format!(
+            "{name}: --rebuild is for an image with a recipe; {name} is a kernel build"
+        ));
+    }
+    let (wanted, recipe) = image(manifest, name)?;
+    let recipe = recipe.ok_or_else(|| format!("{name}: no recipe to rebuild it from"))?;
+    let path = build(manifest, name, &wanted, recipe, sources, say, true)?;
+    let built = sum(&path)?;
+    if built != wanted.sha256 {
+        return Err(format!(
+            "{name}: its recipe makes sha256 {built}, not the declared {}",
+            wanted.sha256
+        ));
+    }
+    say(format!(
+        "{name}: rebuilt from its recipe, equal to its declared sha256"
     ));
     Ok(path)
 }
@@ -229,6 +264,7 @@ fn build(
     recipe: &Recipe,
     sources: &Sources,
     say: &mut dyn FnMut(String),
+    rebuild: bool,
 ) -> Result<PathBuf, String> {
     let mut args: Vec<(&str, String)> = vec![
         ("name", wanted.name.clone()),
@@ -266,6 +302,9 @@ fn build(
     // the missing parts are found before the control, which may take a build of its own
     let control = ensure(manifest, &recipe.control, sources, say)?;
     args.push(("control", control.display().to_string()));
+    if rebuild {
+        args.push(("rebuild", "1".to_string()));
+    }
     if let Some(c) = &recipe.cmdline {
         args.push(("cmdline", c.clone()));
     }
@@ -298,12 +337,21 @@ fn nix_build(
     write(file, derivation)?;
     let expr = scratch.join(file);
     let mut cmd = vec![expr.to_str().unwrap().to_string(), "--no-out-link".into()];
+    let rebuild = args.iter().any(|(k, _)| *k == "rebuild");
+    if rebuild {
+        cmd.extend(["--option".into(), "substitute".into(), "false".into()]);
+    }
     for (k, v) in args {
         // paths and text alike go in as strings; the derivation turns a store path into one
         cmd.extend(["--argstr".into(), k.to_string(), v.clone()]);
     }
-    let cmd: Vec<&str> = cmd.iter().map(String::as_str).collect();
-    let out = run("nix-build", &cmd)?;
+    let mut cmd: Vec<&str> = cmd.iter().map(String::as_str).collect();
+    let mut out = run("nix-build", &cmd)?;
+    if rebuild {
+        // the output may already be in the store (an earlier build): --check runs the builder again and compares
+        cmd.push("--check");
+        out = run("nix-build", &cmd)?;
+    }
     out.lines()
         .last()
         .map(str::to_string)
