@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.48.5](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-ffs-acm-v0.48.4...lpoco-ffs-acm-v0.48.5) - 2026-11-24
+
+### Fixed
+
+- *(host)* follow gives gh auth token 10 seconds, then asks anonymous ([#392](https://github.com/linux-phone-oco/lab-tools/pull/392))
+
 ## [0.48.4](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-ffs-acm-v0.48.3...lpoco-ffs-acm-v0.48.4) - 2026-11-23
 
 ### Fixed
