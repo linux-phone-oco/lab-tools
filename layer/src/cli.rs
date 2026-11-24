@@ -3,6 +3,7 @@
 //! variables it reads. Run as `lpoco layer ...`.
 //!
 //!   lpoco-layer pack --manifest FILE --format apk|deb|rpm|archlinux --out DIR [--kernel-build DIR]   one package per piece of the layer
+//!   lpoco-layer export --manifest FILE --out DIR [--pkg-version V]              NAME-V.tar.gz: the layer's tree and a Makefile of install targets
 //!   lpoco-layer --version                                                       this program's version (the family's)
 
 use argenv_resolve::*;
@@ -11,16 +12,18 @@ use argenv_resolve::*;
 #[serde(rename_all = "snake_case")]
 pub enum Command {
     Pack,
+    Export,
 }
 
 impl Command {
-    pub const TOKENS: &'static [&'static str] = &["pack"];
+    pub const TOKENS: &'static [&'static str] = &["pack", "export"];
 }
 
 impl FromRaw for Command {
     fn from_raw(s: &str) -> Option<Command> {
         Some(match s.trim() {
             "pack" => Command::Pack,
+            "export" => Command::Export,
             _ => return None,
         })
     }
@@ -32,7 +35,7 @@ contract! {
         ty: Type::Enum,
         allowed: Command::TOKENS,
         arg: Some(Arg::positional(0)),
-        summary: "What to do: pack the layer.",
+        summary: "What to do: pack the layer into packages, or export it as a source tarball with a Makefile of install targets (NAME-VERSION.tar.gz in --out).",
         ..Input::EMPTY
     };
 
@@ -50,7 +53,7 @@ contract! {
         ty: Type::Enum,
         allowed: &["apk", "deb", "rpm", "archlinux"],
         arg: Some(Arg { value_name: "FORMAT", ..Arg::long("format") }),
-        summary: "The package format.",
+        summary: "pack: the package format.",
         ..Input::EMPTY
     };
 
@@ -58,7 +61,7 @@ contract! {
         key: "out",
         ty: Type::String,
         arg: Some(Arg { value_name: "DIR", ..Arg::long("out") }),
-        summary: "Where the packages and their nfpm configs are written (the current folder when none is given).",
+        summary: "Where the packages and their nfpm configs (export: the tarball) are written (the current folder when none is given).",
         ..Input::EMPTY
     };
 
@@ -67,7 +70,7 @@ contract! {
         ty: Type::String,
         arg: Some(Arg { value_name: "VERSION", ..Arg::long("pkg-version") }),
         env: Some(Env::new("LPOCO_LAYER_VERSION")),
-        summary: "The packages' version (0.1.0 when none is given: the layer declares none yet).",
+        summary: "The packages' version (export: the tarball's) (0.1.0 when none is given: the layer declares none yet).",
         ..Input::EMPTY
     };
 

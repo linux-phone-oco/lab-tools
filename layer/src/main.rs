@@ -6,8 +6,8 @@ mod cli;
 use argenv_resolve::{InputResolveExt, OnProblems};
 use cli::Contract;
 use lpoco_layer::{
-    add_boot_trigger, add_deviceinfo, check, deviceinfo, kernel_package, materialize, nfpm_yaml,
-    packages, post_install, refuse_overlaps, source_date_epoch, stale, Format,
+    add_boot_trigger, add_deviceinfo, check, deviceinfo, export_tree, kernel_package, materialize,
+    nfpm_yaml, packages, post_install, refuse_overlaps, source_date_epoch, stale, Format,
 };
 use lpoco_manifest::Manifest;
 use std::fs;
@@ -33,9 +33,12 @@ fn main() {
 }
 
 fn pack(r: &argenv_resolve::Resolution) -> Result<(), String> {
-    Contract::COMMAND
+    let command = Contract::COMMAND
         .get_from(r)
-        .ok_or("no command: say `pack` (see --help)")?;
+        .ok_or("no command: say `pack` or `export` (see --help)")?;
+    if command == cli::Command::Export {
+        return export(r);
+    }
     let format = Contract::FORMAT
         .get_from(r)
         .and_then(|f| Format::parse(&f))
@@ -135,5 +138,65 @@ fn pack(r: &argenv_resolve::Resolution) -> Result<(), String> {
         }
         println!("{}", target.display());
     }
+    Ok(())
+}
+
+/// `export`: the layer's source tarball with its Makefile, `NAME-VERSION.tar.gz` in --out, the same bytes every time
+/// (sorted names, root owner, the time of SOURCE_DATE_EPOCH or the layer's last commit).
+fn export(r: &argenv_resolve::Resolution) -> Result<(), String> {
+    let manifest = PathBuf::from(
+        Contract::MANIFEST
+            .get_from(r)
+            .unwrap_or_else(|| "device.toml".into()),
+    );
+    let out = PathBuf::from(Contract::OUT.get_from(r).unwrap_or_else(|| ".".into()));
+    let version = Contract::PKG_VERSION
+        .get_from(r)
+        .unwrap_or_else(|| "0.1.0".into());
+    let text = fs::read_to_string(&manifest).map_err(|e| format!("{}: {e}", manifest.display()))?;
+    let m = Manifest::parse(&text).map_err(|e| format!("{}: {e}", manifest.display()))?;
+    let layer = m
+        .layer
+        .as_ref()
+        .ok_or_else(|| format!("{} declares no [layer]", manifest.display()))?;
+    let dir = manifest
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."))
+        .to_path_buf();
+    let dir = std::path::absolute(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let out = std::path::absolute(&out).map_err(|e| format!("{}: {e}", out.display()))?;
+    let epoch = source_date_epoch(Contract::SOURCE_DATE_EPOCH.get_from(r), &dir)?;
+    let stem = format!("{}-{version}", layer.name);
+    let work = out.join(".export");
+    let _ = fs::remove_dir_all(&work);
+    let root = work.join(&stem);
+    fs::create_dir_all(&root).map_err(|e| format!("{}: {e}", root.display()))?;
+    export_tree(layer, &dir, &root).map_err(|e| format!("{}: {e}", manifest.display()))?;
+    let tarball = out.join(format!("{stem}.tar.gz"));
+    let mut tar = Command::new("tar");
+    tar.args([
+        "--sort=name",
+        "--owner=0",
+        "--group=0",
+        "--numeric-owner",
+        "--use-compress-program=gzip -n",
+        "-cf",
+    ])
+    .arg(&tarball)
+    .arg("-C")
+    .arg(&work)
+    .arg(&stem);
+    if let Some(e) = &epoch {
+        tar.arg(format!("--mtime=@{e}"));
+    } else {
+        eprintln!("lpoco-layer: not reproducible: no SOURCE_DATE_EPOCH and no commit time of the layer could be read");
+    }
+    let status = tar.status().map_err(|e| format!("tar: {e}"))?;
+    let _ = fs::remove_dir_all(&work);
+    if !status.success() {
+        return Err(format!("tar failed ({status})"));
+    }
+    println!("{}", tarball.display());
     Ok(())
 }
