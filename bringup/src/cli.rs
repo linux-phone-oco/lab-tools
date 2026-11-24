@@ -11,8 +11,9 @@
 //!   lpoco-bringup image swap CONTROL --out IMG [--ramdisk R] [--kernel K] [--dtb DTB] [--cmdline TEXT]
 //!                                                the control with those parts replaced, its AVB hash footer rebuilt (by lpoco-bringup itself),
 //!                                                and what differs said
-//!   lpoco-bringup image ensure NAME [--device device.toml] [--cache DIR] [--seed DIR] [--source DIR] [--dry-run]
+//!   lpoco-bringup image ensure NAME [--device device.toml] [--cache DIR] [--seed DIR] [--source DIR] [--dry-run | --rebuild]
 //!                                                (--dry-run: only say which of these it would be, changing nothing)
+//!                                                (--rebuild: build the recipe ignoring those, and fail unless it equals the declared sha256, naming both)
 //!                                                the image [images.NAME] by its sha256:its Nix store path, from the store, else the file:// cache, else the seed, else built from its [images.NAME.recipe] in Nix's sandbox (the build is held to the declared sha256 by Nix)
 //!   lpoco-bringup image bisect SERIES --out DIR
 //!                                                the images a series file declares (control = "...", [[image]] name, kernel, dtb, ramdisk,
@@ -445,6 +446,16 @@ contract! {
         subcommands: &[Command::Image],
         arg: Some(Arg::long("dry-run")),
         summary: "ensure: say where the image would come from (the store, the cache, the seed or a build of its recipe) and change nothing.",
+        ..Input::EMPTY
+    };
+
+    REBUILD: bool, Command = Input {
+        key: "rebuild",
+        ty: Type::Bool,
+        default: Some(false),
+        subcommands: &[Command::Image],
+        arg: Some(Arg::long("rebuild")),
+        summary: "ensure: build the image from its recipe in the sandbox, ignoring the store, the cache and the seed, and fail unless the result is the declared sha256 (naming both).",
         ..Input::EMPTY
     };
 
