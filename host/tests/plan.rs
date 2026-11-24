@@ -1595,3 +1595,62 @@ fn a_watcher_whose_state_cannot_be_read_is_said_not_measured_not_taken_for_runni
         "{s}"
     );
 }
+
+#[test]
+fn without_a_gadget_group_the_lab_users_own_primary_group_is_the_default() {
+    // headless (no seat session, so no uaccess ACL): the node still reaches the lab user. Source of the lookup:
+    // /etc/passwd's fourth field is the primary gid, /etc/group names it (passwd(5), group(5)).
+    let l = lab("group-default", "");
+    fs::create_dir_all(l.dir.join("fs/etc")).unwrap();
+    fs::write(l.dir.join("fs/etc/group"), "users:x:982:\nlab:x:1001:\n").unwrap();
+    fs::write(
+        l.dir.join("fs/etc/passwd"),
+        "carol:x:1001:1001::/home/carol:/bin/sh\n",
+    )
+    .unwrap();
+    let s = out(&host_as(&l, "carol", &["plan"]));
+    assert!(
+        s.contains("TAG+=\"uaccess\", GROUP=\"lab\", MODE=\"0660\""),
+        "{s}"
+    );
+}
+
+#[test]
+fn a_declared_gadget_group_beats_the_primary_group_default() {
+    let l = lab("group-declared", "gadget_group = \"users\"\n");
+    fs::create_dir_all(l.dir.join("fs/etc")).unwrap();
+    fs::write(
+        l.dir.join("fs/etc/group"),
+        "users:x:982:carol\nlab:x:1001:\n",
+    )
+    .unwrap();
+    fs::write(
+        l.dir.join("fs/etc/passwd"),
+        "carol:x:1001:1001::/home/carol:/bin/sh\n",
+    )
+    .unwrap();
+    let s = out(&host_as(&l, "carol", &["plan"]));
+    assert!(s.contains("GROUP=\"users\", MODE=\"0660\""), "{s}");
+    assert!(!s.contains("GROUP=\"lab\""), "{s}");
+}
+
+#[test]
+fn a_user_whose_primary_group_is_not_known_gets_no_group_default_and_it_is_said() {
+    // not measured, not guessed: no passwd line, no group
+    let l = lab("group-unknown", "");
+    let s = out(&host_as(&l, "nobody-here", &["plan"]));
+    assert!(!s.contains("GROUP="), "{s}");
+    assert!(s.contains("gadget group: none declared"), "{s}");
+}
+
+#[test]
+fn targets_names_each_declared_cross_target_once_one_a_line_and_changes_nothing() {
+    // what health/build.sh asks for: the targets the declarations name, not a list kept in the script
+    let l = lab("targets-verb", "");
+    declare(&l, "a-lab", "[host]\ntargets = [\"t-musl\", \"u-musl\"]\n");
+    declare(&l, "b-lab", "[host]\ntargets = [\"t-musl\"]\n");
+    let o = host(&l, &["targets"]);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    assert_eq!(out(&o), "t-musl\nu-musl\n");
+    assert!(changes(&l).is_none());
+}
