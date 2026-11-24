@@ -115,6 +115,14 @@ contract! {
         ..Input::EMPTY
     };
 
+    TAGS: String = Input {
+        key: "tags",
+        ty: Type::String,
+        env: Some(Env::new("LPOCO_TAGS")),
+        summary: "The git remote whose tags name the family's releases (https://github.com/linux-phone-oco/lab-tools when none is given and no releases list is): follow asks it with `git ls-remote --tags --refs`, which is not the REST API and its rate limit, and falls back to the releases list when git cannot say.",
+        ..Input::EMPTY
+    };
+
     TOKEN: String = Input {
         key: "token",
         ty: Type::String,

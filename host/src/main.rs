@@ -52,6 +52,8 @@ struct State {
     lab_path: String,
     /// where follow reads the releases list
     releases_url: String,
+    /// the git remote follow reads the family's tags from (None: only the releases list)
+    tags_url: Option<String>,
     /// the token follow asks GitHub's API with (GITHUB_TOKEN); None: unauthenticated
     token: Option<String>,
     /// the time of day follow judges its window by, HH:MM; None: the system clock
@@ -117,6 +119,12 @@ fn load(r: &Resolution) -> Result<State, String> {
         lab_path: lab_path.clone(),
         clock: Contract::CLOCK.get_from(r),
         token: token_of(Contract::TOKEN.get_from(r))?,
+        tags_url: Contract::TAGS.get_from(r).or_else(|| {
+            Contract::RELEASES
+                .get_from(r)
+                .is_none()
+                .then(|| FAMILY_URL.to_string())
+        }),
         releases_url: Contract::RELEASES.get_from(r).unwrap_or_else(|| {
             "https://api.github.com/repos/linux-phone-oco/lab-tools/releases?per_page=100"
                 .to_string()
@@ -2141,6 +2149,13 @@ fn restart_watchers(st: &State) {
 fn newest_release(st: &State) -> Result<Option<String>, String> {
     let work = format!("{}/.cache/lpoco-host/follow", st.home);
     fs::create_dir_all(&work).map_err(|e| format!("cannot make {work}: {e}"))?;
+    if let Some(url) = &st.tags_url {
+        match newest_by_git(url) {
+            Ok(Some(v)) => return Ok(Some(v)),
+            Ok(None) => println!("git ls-remote {url}: no family tag; asking the releases list"),
+            Err(e) => println!("git ls-remote {url}: {e}; asking the releases list"),
+        }
+    }
     let file = Path::new(&work).join("releases.json");
     let _ = fs::remove_file(&file);
     let from_gh = if st.token.is_none() {
@@ -2163,6 +2178,42 @@ fn newest_release(st: &State) -> Result<Option<String>, String> {
         fs::read_to_string(&file).map_err(|e| format!("cannot read {}: {e}", file.display()))?;
     follow::newest_family_version(&text)
 }
+
+/// The newest family release by the remote's tags: `git ls-remote --tags --refs URL 'refs/tags/lpoco-v*'` - git over
+/// https, which the REST API's rate limit does not count. Bounded, and never asking for a password.
+fn newest_by_git(url: &str) -> Result<Option<String>, String> {
+    let mut git = Proc::new("git")
+        .args(["ls-remote", "--tags", "--refs", url, "refs/tags/lpoco-v*"])
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_ASKPASS", "true")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| format!("cannot run git: {e}"))?;
+    let Some(mut stdout) = git.stdout.take() else {
+        let _ = git.kill();
+        let _ = git.wait();
+        return Err("no output pipe".into());
+    };
+    let (sent, received) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        use std::io::Read;
+        let mut text = String::new();
+        let _ = stdout.read_to_string(&mut text);
+        let _ = sent.send(text);
+    });
+    if !wait_or_kill(&mut git, GIT_TAGS_SECONDS) {
+        return Err("it failed or took too long".into());
+    }
+    let text = received
+        .recv_timeout(std::time::Duration::from_secs(1))
+        .map_err(|_| "no answer".to_string())?;
+    Ok(follow::newest_family_tag(&text))
+}
+
+/// How long `git ls-remote` may take.
+const GIT_TAGS_SECONDS: u64 = 30;
 
 /// A keeper lease's holder and the time since its last renewal.
 fn lease_age(holder_file: &str) -> Option<(String, std::time::Duration)> {
