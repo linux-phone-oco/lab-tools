@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.49.3](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-v0.49.2...lpoco-v0.49.3) - 2026-11-24
+
+### Added
+
+- *(bringup)* image ensure --rebuild proves a declared sha256 against its recipe ([#423](https://github.com/linux-phone-oco/lab-tools/pull/423))
+
 ## [0.49.2](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-v0.49.1...lpoco-v0.49.2) - 2026-11-24
 
 ### Added
