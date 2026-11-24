@@ -1732,3 +1732,19 @@ fn a_401_for_the_token_gh_gave_is_retried_anonymous_and_a_given_token_is_not() {
         "a token the user gave is not dropped: {said}"
     );
 }
+
+#[test]
+fn a_gh_that_hangs_is_given_up_on_and_follow_goes_on_anonymous() {
+    // source: a `gh auth token` that waits (a keyring prompt, a broken credential helper) must not stop follow,
+    // which runs from a timer: it gives gh 10 seconds, then asks anonymous
+    let l = gh_lab("ghhang", "while :; do :; done; echo ghp_LATE");
+    let started = std::time::Instant::now();
+    let said = follow_with(&l, API, None);
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(40),
+        "follow waited for gh: {:?}",
+        started.elapsed()
+    );
+    let cfg = fs::read_to_string(l.dir.join("curl-config")).unwrap_or_default();
+    assert!(!cfg.contains("Bearer"), "{cfg} {said}");
+}
