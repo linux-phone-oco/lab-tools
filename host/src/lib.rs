@@ -1778,3 +1778,38 @@ mod member_name_tests {
         }
     }
 }
+
+/// The name of `user`'s primary group: the fourth field of its /etc/passwd line is the gid, /etc/group names it.
+/// None when the user, or the group of that gid, is not there (or the user is empty).
+pub fn primary_group(etc_group: &str, etc_passwd: &str, user: &str) -> Option<String> {
+    if user.is_empty() {
+        return None;
+    }
+    let gid = etc_passwd.lines().find_map(|p| {
+        let f: Vec<&str> = p.split(':').collect();
+        (f.first() == Some(&user)).then(|| f.get(3).copied().unwrap_or(""))
+    })?;
+    if gid.is_empty() {
+        return None;
+    }
+    etc_group.lines().find_map(|l| {
+        let f: Vec<&str> = l.split(':').collect();
+        (f.get(2) == Some(&gid)).then(|| f.first().map(|n| n.to_string()))?
+    })
+}
+
+#[cfg(test)]
+mod primary_group_tests {
+    use super::*;
+
+    #[test]
+    fn the_primary_group_is_named_by_the_gid_in_passwd() {
+        let g = "users:x:982:\nlab:x:1001:carol\n";
+        let p = "carol:x:1001:1001::/home/carol:/bin/sh\nbob:x:1002:982::/h:/bin/sh\n";
+        assert_eq!(primary_group(g, p, "carol").as_deref(), Some("lab"));
+        assert_eq!(primary_group(g, p, "bob").as_deref(), Some("users"));
+        assert_eq!(primary_group(g, p, "nobody"), None);
+        assert_eq!(primary_group(g, p, ""), None);
+        assert_eq!(primary_group("", p, "carol"), None);
+    }
+}

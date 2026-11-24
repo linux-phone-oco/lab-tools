@@ -21,11 +21,12 @@ pub enum Command {
     Follow,
     Clones,
     Family,
+    Targets,
 }
 
 impl Command {
     pub const TOKENS: &'static [&'static str] = &[
-        "plan", "prepare", "check", "revoke", "follow", "clones", "family",
+        "plan", "prepare", "check", "revoke", "follow", "clones", "family", "targets",
     ];
 }
 
@@ -39,6 +40,7 @@ impl FromRaw for Command {
             "follow" => Command::Follow,
             "clones" => Command::Clones,
             "family" => Command::Family,
+            "targets" => Command::Targets,
             _ => return None,
         })
     }

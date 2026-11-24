@@ -383,6 +383,13 @@ fn run(r: &Resolution) -> Result<i32, String> {
         Command::Check => check(&st),
         Command::Follow => follow(&st, Contract::NOW.get_from(r).as_deref() == Some("now")),
         Command::Clones => clones(&st, Contract::NOW.get_from(r).as_deref() == Some("now")),
+        Command::Targets => {
+            // the Rust targets the declarations name, once, one a line: what health/build.sh builds for
+            for (t, _) in targets_of(&st.devices) {
+                println!("{t}");
+            }
+            Ok(0)
+        }
         Command::Family => unreachable!("answered before the lab is read"),
         Command::Revoke => {
             if Contract::NOW.get_from(r).as_deref() != Some("now") {
@@ -500,10 +507,22 @@ fn enabled_watchers(st: &State) -> Vec<String> {
     v
 }
 
+/// The group the gadget nodes get: lab.toml's gadget_group, else the lab user's primary group (so a headless host,
+/// with no seat session to give uaccess, still reaches the node); None when neither is known.
+fn gadget_group(st: &State) -> Option<String> {
+    st.lab.gadget_group.clone().or_else(|| {
+        primary_group(
+            &read_text(&st.fs_root, "/etc/group").unwrap_or_default(),
+            &read_text(&st.fs_root, "/etc/passwd").unwrap_or_default(),
+            st.user.as_deref().unwrap_or(""),
+        )
+    })
+}
+
 fn plan(st: &State) {
     let files = files_for(
         &st.devices,
-        st.lab.gadget_group.as_deref(),
+        gadget_group(st).as_deref(),
         LinkManager::detect(&st.fs_root),
         st.user.as_deref(),
         &|p| read_file(st, p),
@@ -565,6 +584,9 @@ fn plan(st: &State) {
     let _ = print_commands(st, false);
     let _ = print_targets(st, false);
     print_foreign_rules(st);
+    if gadget_group(st).is_none() {
+        println!("\ngadget group: none declared and the lab user's primary group is not known (USER unset, or not in /etc/passwd): the nodes get uaccess only");
+    }
     let tools = tool_plans(st);
     let (unit, ucmds, unknown) = watchers(st, &tools);
     println!("\nwatchers (user units, no root; replaces lab-machine setup/devlab-watch.sh):");
@@ -680,7 +702,7 @@ fn prepare(st: &State) -> Result<i32, String> {
     let tool_timers = tool_timer_units(st)?;
     let files = files_for(
         &st.devices,
-        st.lab.gadget_group.as_deref(),
+        gadget_group(st).as_deref(),
         LinkManager::detect(&st.fs_root),
         st.user.as_deref(),
         &|p| read_file(st, p),
@@ -889,7 +911,7 @@ fn record_proved_share_files(st: &State) {
     ];
     let files: Vec<FileChange> = files_for(
         &st.devices,
-        st.lab.gadget_group.as_deref(),
+        gadget_group(st).as_deref(),
         LinkManager::detect(&st.fs_root),
         st.user.as_deref(),
         &|p| read_file(st, p),
