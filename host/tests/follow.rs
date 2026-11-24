@@ -1942,3 +1942,154 @@ fn follow_installs_lpoco_layer_with_the_rest_of_the_family() {
         text(&o)
     );
 }
+
+/// Publishes `member` at `version` as one more family asset (what and how: publish_release).
+fn publish_member(l: &Lab, member: &str, version: &str) {
+    let tag = l.dir.join("release").join(format!("{member}-v{version}"));
+    fs::create_dir_all(&tag).unwrap();
+    let file = tag.join(format!("{member}-{SUFFIX}"));
+    fs::write(&file, format!("#!/bin/sh\necho {member} {version} asset\n")).unwrap();
+    let sum = Command::new("sha256sum").arg(&file).output().unwrap();
+    fs::write(
+        tag.join(format!("{member}-{SUFFIX}.sha256")),
+        format!(
+            "{}  {member}-{SUFFIX}\n",
+            String::from_utf8(sum.stdout)
+                .unwrap()
+                .split_whitespace()
+                .next()
+                .unwrap()
+        ),
+    )
+    .unwrap();
+}
+
+#[test]
+fn a_release_that_adds_a_family_member_installs_it_before_the_new_host_judges() {
+    // source: the new host lists its family with `lpoco-host family` (one name per line, FAMILY of host/src/lib.rs) and its
+    // check names a member it lacks as `tool NAME: FAIL, pinned P found not found` (host/src/main.rs); the running
+    // follow's own FAMILY does not hold the new member (2026-11-24, lpoco-layer: follow stepped back every round)
+    let l = lab("newmember", "");
+    releases(&l, &["0.2.1", "0.2.0"]);
+    install_old(&l);
+    publish_member(&l, "lpoco-newmember", "0.2.1");
+    let asset = l
+        .dir
+        .join(format!("release/lpoco-host-v0.2.1/lpoco-host-{SUFFIX}"));
+    let members: String = FAMILY
+        .iter()
+        .chain(&["lpoco-newmember"])
+        .map(|m| format!("{m}\\n"))
+        .collect();
+    fs::write(
+        &asset,
+        format!(
+            "#!/bin/sh\ncase \"$1\" in family) printf '{members}';; check) [ -x \"$HOME/.local/bin/lpoco-newmember\" ] || {{ echo \"tool lpoco-newmember: FAIL, pinned 0.2.1 found not found\"; exit 1; }};; plan) printf '%s\\n' '{NO_ROOT}';; esac\n"
+        ),
+    )
+    .unwrap();
+    let sum = Command::new("sha256sum").arg(&asset).output().unwrap();
+    fs::write(
+        asset.with_file_name(format!("lpoco-host-{SUFFIX}.sha256")),
+        format!(
+            "{}  lpoco-host-{SUFFIX}\n",
+            String::from_utf8(sum.stdout)
+                .unwrap()
+                .split_whitespace()
+                .next()
+                .unwrap()
+        ),
+    )
+    .unwrap();
+    let o = follow(&l, &["now"]);
+    let s = text(&o);
+    assert!(o.status.success(), "{s}");
+    assert!(installed(&l, "lpoco-newmember").contains("0.2.1"), "{s}");
+    assert_eq!(landed_pin(&l).0, "lpoco = \"0.2.1\"", "{s}");
+}
+
+#[test]
+fn a_family_answer_that_is_not_one_word_names_is_refused_and_installs_nothing_extra() {
+    // an answer is data from a program we just installed: a name is `lpoco-` and letters, digits, hyphens
+    let l = lab("badmember", "");
+    releases(&l, &["0.2.1", "0.2.0"]);
+    install_old(&l);
+    let asset = l
+        .dir
+        .join(format!("release/lpoco-host-v0.2.1/lpoco-host-{SUFFIX}"));
+    fs::write(
+        &asset,
+        format!(
+            "#!/bin/sh\ncase \"$1\" in family) printf 'lpoco-x/../../evil\\nlpoco-ok name\\nnot-lpoco\\n';; plan) printf '%s\\n' '{NO_ROOT}';; esac\n"
+        ),
+    )
+    .unwrap();
+    let sum = Command::new("sha256sum").arg(&asset).output().unwrap();
+    fs::write(
+        asset.with_file_name(format!("lpoco-host-{SUFFIX}.sha256")),
+        format!(
+            "{}  lpoco-host-{SUFFIX}\n",
+            String::from_utf8(sum.stdout)
+                .unwrap()
+                .split_whitespace()
+                .next()
+                .unwrap()
+        ),
+    )
+    .unwrap();
+    let o = follow(&l, &["now"]);
+    let s = text(&o);
+    assert!(
+        !l.dir.join("home/.local/evil").exists() && !installed(&l, "evil").contains("asset"),
+        "{s}"
+    );
+    assert!(
+        s.contains("family") && s.contains("not a member name"),
+        "{s}"
+    );
+}
+
+#[test]
+fn a_member_the_new_host_added_is_taken_away_again_when_the_install_steps_back() {
+    let l = lab("newmemberback", "");
+    releases(&l, &["0.2.1", "0.2.0"]);
+    install_old(&l);
+    publish_member(&l, "lpoco-newmember", "0.2.1");
+    let asset = l
+        .dir
+        .join(format!("release/lpoco-host-v0.2.1/lpoco-host-{SUFFIX}"));
+    let members: String = FAMILY
+        .iter()
+        .chain(&["lpoco-newmember"])
+        .map(|m| format!("{m}\\n"))
+        .collect();
+    // the new host's check fails on something else: the install steps back
+    fs::write(
+        &asset,
+        format!(
+            "#!/bin/sh\ncase \"$1\" in family) printf '{members}';; check) echo \"udev: FAIL, broken\"; exit 1;; plan) printf '%s\\n' '{NO_ROOT}';; esac\n"
+        ),
+    )
+    .unwrap();
+    let sum = Command::new("sha256sum").arg(&asset).output().unwrap();
+    fs::write(
+        asset.with_file_name(format!("lpoco-host-{SUFFIX}.sha256")),
+        format!(
+            "{}  lpoco-host-{SUFFIX}\n",
+            String::from_utf8(sum.stdout)
+                .unwrap()
+                .split_whitespace()
+                .next()
+                .unwrap()
+        ),
+    )
+    .unwrap();
+    let o = follow(&l, &["now"]);
+    let s = text(&o);
+    assert!(s.contains("are back"), "{s}");
+    assert!(
+        !l.dir.join("home/.local/bin/lpoco-newmember").exists(),
+        "the added member stayed: {s}"
+    );
+    assert!(installed(&l, "lpoco").contains("0.2.0"), "{s}");
+}

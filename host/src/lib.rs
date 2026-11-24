@@ -924,6 +924,49 @@ pub fn family_tag(program: &str, version: &str) -> String {
     format!("{program}-v{version}")
 }
 
+/// Whether `name` can be a family program's name: `lpoco`, then letters, digits and hyphens (it becomes a file name
+/// in ~/.local/bin and a tag, so nothing else is taken from a host's answer).
+pub fn is_member_name(name: &str) -> bool {
+    name.starts_with("lpoco")
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+}
+
+/// One program of the family at release `version`: its asset, else cargo from its tag.
+pub fn family_plan(
+    p: &str,
+    v: &str,
+    home: &str,
+    found: &dyn Fn(&str) -> Option<String>,
+    release_base: Option<&str>,
+) -> ToolPlan {
+    let build = [
+        "cargo",
+        "install",
+        "--locked",
+        "--git",
+        FAMILY_URL,
+        "--tag",
+        &family_tag(p, v),
+        p,
+        "--root",
+        &format!("{home}/.local"),
+        "--force",
+    ]
+    .map(String::from)
+    .to_vec();
+    ToolPlan {
+        name: p.to_string(),
+        pinned: v.to_string(),
+        found: found(p),
+        installed_by: None,
+        by_rev: false,
+        on_path: false,
+        steps: release_steps(home, p, v, release_base, build),
+    }
+}
+
 /// `release_base`: where a tag's release assets are (None when this host fits no asset, so cargo builds). `found` is the version a program reports, `stamp` the rev a script tool's install recorded, `on_path` whether a program is on PATH.
 pub fn tools_for(
     lab: &Lab,
@@ -939,32 +982,7 @@ pub fn tools_for(
         match pin {
             ToolPin::Version(v) if name == "lpoco" => {
                 for p in FAMILY {
-                    plans.push(ToolPlan {
-                        name: (*p).to_string(),
-                        pinned: v.clone(),
-                        found: found(p),
-                        installed_by: None,
-                        by_rev: false,
-                        on_path: false,
-                        steps: {
-                            let build = [
-                                "cargo",
-                                "install",
-                                "--locked",
-                                "--git",
-                                FAMILY_URL,
-                                "--tag",
-                                &family_tag(p, v),
-                                p,
-                                "--root",
-                                &format!("{home}/.local"),
-                                "--force",
-                            ]
-                            .map(String::from)
-                            .to_vec();
-                            release_steps(home, p, v, release_base, build)
-                        },
-                    });
+                    plans.push(family_plan(p, v, home, found, release_base));
                 }
                 for (old, from) in OLD_NAMES {
                     plans.push(ToolPlan {
@@ -1729,4 +1747,28 @@ fn valid_timers(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod member_name_tests {
+    use super::*;
+
+    #[test]
+    fn a_member_name_is_lpoco_then_letters_digits_and_hyphens_only() {
+        for good in ["lpoco", "lpoco-layer", "lpoco-ffs-acm", "lpoco2-x"] {
+            assert!(is_member_name(good), "{good}");
+        }
+        for bad in [
+            "",
+            "tone",
+            "lpoco/x",
+            "lpoco-x/../../evil",
+            "lpoco x",
+            "lpoco-X",
+            "lpoco.x",
+            "lpoco\nx",
+        ] {
+            assert!(!is_member_name(bad), "{bad:?}");
+        }
+    }
 }
