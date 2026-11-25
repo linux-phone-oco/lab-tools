@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.53.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-lab-v0.53.0...lpoco-lab-v0.53.1) - 2026-11-25
+
+### Fixed
+
+- *(layer)* an apk says its release, so its pkgver, file name and index agree ([#441](https://github.com/linux-phone-oco/lab-tools/pull/441))
+
+### Other
+
+- *(layer)* -boot packages proved against Fedora, Debian and Arch real kernel packages ([#439](https://github.com/linux-phone-oco/lab-tools/pull/439))
+
 ## [0.53.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-lab-v0.52.0...lpoco-lab-v0.53.0) - 2026-11-25
 
 ### Added
