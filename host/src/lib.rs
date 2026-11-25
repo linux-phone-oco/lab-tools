@@ -55,7 +55,10 @@ pub enum ToolPin {
         /// For a release that ships a tar.gz and one file of `HASH  NAME` lines, not a bare binary with a `.sha256`:
         /// the checksums file's name in the release; the asset is then the archive and `member` the file installed.
         checksums: Option<String>,
-        /// The file of the archive installed as the tool (with `checksums`).
+        /// For a release that ships an archive and no checksums file (shellcheck): the archive's own sha256, pinned
+        /// here, 64 hex digits; `member` is then the path of the file inside the archive (folders allowed).
+        sha256: Option<String>,
+        /// The file of the archive installed as the tool (with `checksums` or `sha256`).
         member: Option<String>,
         /// User timers the tag ships under `packaging/systemd/NAME.service` and `NAME.timer`: written as user units and enabled.
         #[serde(default)]
@@ -823,11 +826,11 @@ pub enum Step {
         to: String,
         rev: String,
     },
-    /// fetch a release's tar.gz and its checksums file, install `member` of the archive at `to` only when the hash
-    /// the checksums file gives for the archive's name matches; never built
+    /// fetch a release's archive (tar.gz, tar.xz), install `member` of it at `to` only when its hash is the one the
+    /// checksums file gives for the archive's name, or the sha256 lab.toml pins; never built
     ReleaseArchive {
         url: String,
-        sums_url: String,
+        hash: ArchiveHash,
         member: String,
         to: String,
     },
@@ -860,14 +863,28 @@ impl Step {
             Step::Stamp { to, rev } => format!("echo {rev} > {to}"),
             Step::ReleaseArchive {
                 url,
-                sums_url,
+                hash,
                 member,
                 to,
             } => format!(
-                "fetch {url} (hash from the line for it in {sums_url}), install {member} of it to {to}, never built"
+                "fetch {url} ({}), install {member} of it to {to}, never built",
+                match hash {
+                    ArchiveHash::SumsFile(sums_url) =>
+                        format!("hash from the line for it in {sums_url}"),
+                    ArchiveHash::Pinned(sha) => format!("hash pinned in lab.toml: {sha}"),
+                }
             ),
         }
     }
+}
+
+/// Where an archive's expected hash comes from.
+#[derive(Debug, Clone)]
+pub enum ArchiveHash {
+    /// the release's own file of `HASH  NAME` lines, at this URL
+    SumsFile(String),
+    /// the sha256 lab.toml pins
+    Pinned(String),
 }
 
 #[derive(Debug, Clone)]
@@ -1046,6 +1063,7 @@ pub fn tools_for(
                 tag,
                 asset,
                 checksums,
+                sha256,
                 member,
                 ..
             } => {
@@ -1055,9 +1073,15 @@ pub fn tools_for(
                 );
                 let url = format!("{base}/{asset}");
                 let to = format!("{home}/.local/bin/{name}");
-                let fetch_step = match (checksums, member) {
-                    (Some(sums), Some(member)) => Step::ReleaseArchive {
-                        sums_url: format!("{base}/{sums}"),
+                let fetch_step = match (checksums, sha256, member) {
+                    (Some(sums), _, Some(member)) => Step::ReleaseArchive {
+                        hash: ArchiveHash::SumsFile(format!("{base}/{sums}")),
+                        url,
+                        member: member.clone(),
+                        to,
+                    },
+                    (None, Some(sha), Some(member)) => Step::ReleaseArchive {
+                        hash: ArchiveHash::Pinned(sha.clone()),
                         url,
                         member: member.clone(),
                         to,
@@ -1308,14 +1332,20 @@ fn validate_lab(lab: &Lab) -> Result<(), String> {
                 tag,
                 asset,
                 checksums,
+                sha256,
                 member,
                 timers,
                 env_file,
                 env,
             } => {
-                match (checksums, member) {
-                    (None, None) => {}
-                    (Some(c), Some(m)) => {
+                match (checksums, sha256, member) {
+                    (None, None, None) => {}
+                    (Some(_), Some(_), _) => {
+                        return Err(format!(
+                            "[tools.{name}] checksums and sha256 both name the archive's hash: give one"
+                        ))
+                    }
+                    (Some(c), None, Some(m)) => {
                         for (w, s) in [("checksums", c), ("member", m)] {
                             if s.is_empty()
                                 || s.starts_with('-')
@@ -1329,14 +1359,36 @@ fn validate_lab(lab: &Lab) -> Result<(), String> {
                             }
                         }
                     }
-                    (Some(_), None) => {
-                        return Err(format!(
-                        "[tools.{name}] checksums needs member: the file of the archive to install"
-                    ))
+                    (None, Some(sha), Some(m)) => {
+                        if sha.len() != 64 || !sha.chars().all(|c| c.is_ascii_hexdigit()) {
+                            return Err(format!(
+                                "[tools.{name}] sha256 {sha:?} must be 64 hex digits"
+                            ));
+                        }
+                        // folders are allowed (the archive's own top folder), a way out of the work folder is not
+                        if m.starts_with('-')
+                            || m.split('/').any(|c| c.is_empty() || c == "." || c == "..")
+                            || m.contains(['?', '#', '%', '\\'])
+                            || m.chars().any(|c| c.is_whitespace() || c.is_control())
+                        {
+                            return Err(format!(
+                                "[tools.{name}] member {m:?} must be a path of plain names inside the archive"
+                            ));
+                        }
                     }
-                    (None, Some(_)) => {
+                    (Some(_), None, None) => {
                         return Err(format!(
-                            "[tools.{name}] member needs checksums: the release's file of hashes"
+                            "[tools.{name}] checksums needs member: the file of the archive to install"
+                        ))
+                    }
+                    (None, Some(_), None) => {
+                        return Err(format!(
+                            "[tools.{name}] sha256 needs member: the file of the archive to install"
+                        ))
+                    }
+                    (None, None, Some(_)) => {
+                        return Err(format!(
+                            "[tools.{name}] member needs checksums (the release's file of hashes) or sha256 (the archive's)"
                         ))
                     }
                 }
