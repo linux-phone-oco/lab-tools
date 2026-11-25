@@ -88,17 +88,32 @@ pub fn rebuild(
     name: &str,
     sources: &Sources,
     say: &mut dyn FnMut(String),
+    proving: &mut Proving,
 ) -> Result<PathBuf, String> {
-    rebuild_once(manifest, name, sources, say, &mut Vec::new())
+    if proving.active.iter().any(|n| n == name) {
+        return Err(format!("{name}: its inputs lead back to {name} itself"));
+    }
+    proving.active.push(name.to_string());
+    let made = rebuild_one(manifest, name, sources, say, proving);
+    proving.active.pop();
+    made
 }
 
-/// [`rebuild`], with the names already proved in this run (an input two images share is rebuilt once).
-fn rebuild_once(
+/// What a run of rebuilds has done: the images proved (an input two images share is rebuilt once, also across
+/// the images `--changed-since` chooses) and the ones being proved now (an input that leads back is a cycle).
+#[derive(Default)]
+pub struct Proving {
+    done: Vec<String>,
+    active: Vec<String>,
+}
+
+/// [`rebuild`] of one image, its inputs proved first.
+fn rebuild_one(
     manifest: &Manifest,
     name: &str,
     sources: &Sources,
     say: &mut dyn FnMut(String),
-    proved: &mut Vec<String>,
+    proving: &mut Proving,
 ) -> Result<PathBuf, String> {
     if !manifest
         .images
@@ -112,7 +127,7 @@ fn rebuild_once(
     }
     let (wanted, recipe) = image(manifest, name)?;
     let recipe = recipe.ok_or_else(|| format!("{name}: no recipe to rebuild it from"))?;
-    prove_inputs(manifest, name, recipe, sources, say, proved)?;
+    prove_inputs(manifest, name, recipe, sources, say, proving)?;
     let path = build(manifest, name, &wanted, recipe, sources, say, true)?;
     let built = sum(&path)?;
     if built != wanted.sha256 {
@@ -121,7 +136,7 @@ fn rebuild_once(
             wanted.sha256
         ));
     }
-    proved.push(name.to_string());
+    proving.done.push(name.to_string());
     say(format!(
         "{name}: rebuilt from its recipe, equal to its declared sha256"
     ));
@@ -136,21 +151,29 @@ fn prove_inputs(
     recipe: &Recipe,
     sources: &Sources,
     say: &mut dyn FnMut(String),
-    proved: &mut Vec<String>,
+    proving: &mut Proving,
 ) -> Result<(), String> {
     let images = manifest.images.as_ref().map(|i| &i.named);
+    // two images may share a sha256: the one with a recipe is the one to prove
     let by_sha = |sha: &String| {
-        images.and_then(|m| {
-            m.iter()
-                .find(|(_, i)| i.sha256.as_ref() == Some(sha))
-                .map(|(n, i)| (n.clone(), i.recipe.is_some()))
-        })
+        let same = |want: bool| {
+            images.and_then(|m| {
+                m.iter()
+                    .find(|(_, i)| i.sha256.as_ref() == Some(sha) && i.recipe.is_some() == want)
+                    .map(|(n, _)| n.clone())
+            })
+        };
+        same(true)
+            .map(|n| (n, true))
+            .or_else(|| same(false).map(|n| (n, false)))
     };
+    let seed = "it has no recipe (a seed)".to_string();
     let mut inputs = vec![(
         recipe.control.clone(),
         images
             .and_then(|m| m.get(&recipe.control))
             .is_some_and(|i| i.recipe.is_some()),
+        seed.clone(),
     )];
     for (part, sha) in [
         ("kernel", &recipe.kernel),
@@ -159,14 +182,21 @@ fn prove_inputs(
     ] {
         if let Some(sha) = sha {
             let (input, has_recipe) = by_sha(sha).unwrap_or((format!("{name} {part}"), false));
-            inputs.push((input, has_recipe));
+            let made = manifest
+                .kernel_builds
+                .iter()
+                .find(|(_, k)| part == "kernel" && k.sha256 == *sha);
+            let why = made.map_or(seed.clone(), |(n, _)| {
+                format!("it is made by [kernel_builds.{n}], which --rebuild does not run")
+            });
+            inputs.push((input, has_recipe, why));
         }
     }
-    for (input, has_recipe) in inputs {
+    for (input, has_recipe, why) in inputs {
         if !has_recipe {
-            say(format!("{input}: not proved, it has no recipe (a seed)"));
-        } else if !proved.contains(&input) {
-            rebuild_once(manifest, &input, sources, say, proved)?;
+            say(format!("{input}: not proved, {why}"));
+        } else if !proving.done.contains(&input) {
+            rebuild(manifest, &input, sources, say, proving)?;
         }
     }
     Ok(())

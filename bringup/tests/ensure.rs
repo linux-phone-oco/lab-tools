@@ -612,7 +612,9 @@ fn a_rebuild_proves_an_input_that_has_a_recipe_and_names_a_seed_input_as_not_pro
         "mid was not proved: {said}"
     );
     assert!(
-        said.contains("base: not proved") && said.contains("no recipe"),
+        said.contains("base: not proved")
+            && said.contains("mid ramdisk: not proved")
+            && said.contains("no recipe"),
         "the seed input is not named as not proved: {said}"
     );
 
@@ -631,4 +633,38 @@ fn a_rebuild_proves_an_input_that_has_a_recipe_and_names_a_seed_input_as_not_pro
     ] {
         assert!(said.contains(want), "{want} is not named: {said}");
     }
+}
+
+/// A recipe whose part is the image's own sha256 leads back to itself: `--rebuild` says so and stops, where
+/// proving each input first would otherwise never end (review of image-rebuild-proves-inputs).
+#[test]
+fn a_rebuild_whose_input_leads_back_to_the_image_stops_and_says_so() {
+    let dir = tmp("rebuild-cycle");
+    let sha = "ab".repeat(32);
+    let base = fs::read_to_string(fixture("device.toml")).unwrap();
+    let device = dir.join("device.toml");
+    fs::write(
+        &device,
+        format!(
+            "{base}\n[images.base]\npath = \"base.img\"\nsha256 = \"{}\"\n\n\
+             [images.loop]\npath = \"loop.img\"\nsha256 = \"{sha}\"\n\n\
+             [images.loop.recipe]\ncontrol = \"base\"\nramdisk = \"{sha}\"\n",
+            "cd".repeat(32)
+        ),
+    )
+    .unwrap();
+    let o = bringup(&[
+        "image",
+        "ensure",
+        "loop",
+        "--rebuild",
+        "--device",
+        s(&device),
+    ]);
+    let said = text(&o.stderr);
+    assert!(!o.status.success(), "a cycle was not refused: {said}");
+    assert!(
+        said.contains("loop: its inputs lead back to loop itself"),
+        "{said}"
+    );
 }
