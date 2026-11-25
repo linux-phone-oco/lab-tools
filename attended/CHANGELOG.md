@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.45.8](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-attended-v0.45.7...lpoco-attended-v0.45.8) - 2026-11-25
+
+### Added
+
+- *(attended)* lift walleye's install steps: read_slot, mount_is_readonly, adb_write_partition ([#446](https://github.com/linux-phone-oco/lab-tools/pull/446))
+
 ## [0.45.7](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-attended-v0.45.6...lpoco-attended-v0.45.7) - 2026-11-25
 
 ### Added
