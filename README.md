@@ -311,9 +311,9 @@ no image and is refused with `--dry-run`; its control and parts are served as fo
 `--rebuild --changed-since REV` (no NAME; decision 2026-11-24-image-rebuild-runs-at-land) is what a lab's `make land-check`
 calls: it reads the device.toml as git REV holds it (beside the given one, `git show REV:./device.toml`), chooses every
 image with a recipe whose sha256 or recipe differ from it (or that REV did not declare), says each as `NAME: changed since
-REV (its sha256|its recipe|not declared there), rebuilding`, and `--rebuild`s them in turn, stopping at the first that is not
+REV (its sha256|its recipe|its control|not declared there), rebuilding`, and `--rebuild`s them in turn, stopping at the first that is not
 its declared sha256. None changed: it says so and passes. A revision git cannot read, or one with no device.toml, is refused,
-never taken for "nothing changed". Proof: `bringup/tests/rebuild_changed_since.rs` and `ensure::tests`.
+never taken for "nothing changed"; so is one whose device.toml no longer parses. A recipe that names a control whose sha256 changed (or the control's own control) is chosen though its own text is the same. Proof: `bringup/tests/rebuild_changed_since.rs` and `ensure::tests`.
 
 A recipe's `kernel` is a file by sha256; `[kernel_builds.NAME]` makes one from an `int/` tag, and `image ensure NAME` takes
 the same ways (store, cache, seed) before building it:

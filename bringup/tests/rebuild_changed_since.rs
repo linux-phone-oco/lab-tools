@@ -99,7 +99,10 @@ fn only_an_image_whose_recipe_differs_from_the_revision_is_rebuilt_and_none_chan
     );
     let said = format!("{}{}", text(&o.stdout), text(&o.stderr));
     assert!(said.contains("no image changed since HEAD"), "{said}");
-    assert!(!said.contains("a: ") && !said.contains("b: "), "{said}");
+    assert!(
+        !said.contains("a: changed since") && !said.contains("b: changed since"),
+        "{said}"
+    );
 
     device(&dir, "console=ttyMSM0 a=1", "console=ttyMSM0 b=2", B);
     let o = since(&dir, "HEAD");
@@ -109,7 +112,7 @@ fn only_an_image_whose_recipe_differs_from_the_revision_is_rebuilt_and_none_chan
         "the image whose recipe differs is chosen: {said}"
     );
     assert!(
-        !said.contains("a: "),
+        !said.contains("a: changed since"),
         "an image that did not change is never named: {said}"
     );
     assert!(
@@ -129,7 +132,7 @@ fn a_changed_sha256_or_an_image_the_revision_lacked_is_rebuilt() {
         said.contains("b: changed since HEAD (its sha256)"),
         "{said}"
     );
-    assert!(!said.contains("a: "), "{said}");
+    assert!(!said.contains("a: changed since"), "{said}");
 
     let dir = repo("new");
     fs::write(
@@ -193,6 +196,37 @@ fn changed_since_is_refused_without_rebuild_and_with_a_name() {
     assert!(!o.status.success());
     assert!(
         text(&o.stderr).contains("--changed-since takes every image"),
+        "{}",
+        text(&o.stderr)
+    );
+}
+
+/// A revision without a device.toml, and one whose device.toml no longer parses, are each refused in words.
+#[test]
+fn a_revision_without_a_manifest_or_with_one_that_does_not_parse_is_refused() {
+    let dir = repo("nofile");
+    fs::write(dir.join("other"), "x").unwrap();
+    git(&dir, &["add", "other"]);
+    git(&dir, &["commit", "-q", "-m", "other"]);
+    git(&dir, &["rm", "-q", "device.toml"]);
+    git(&dir, &["commit", "-q", "-m", "no manifest"]);
+    device(&dir, "console=ttyMSM0 a=1", "console=ttyMSM0 b=1", B);
+    let o = since(&dir, "HEAD");
+    assert!(!o.status.success());
+    assert!(
+        text(&o.stderr).contains("cannot read device.toml at HEAD"),
+        "{}",
+        text(&o.stderr)
+    );
+
+    let dir = repo("garbled");
+    fs::write(dir.join("device.toml"), "[images.x\nnot toml").unwrap();
+    git(&dir, &["commit", "-q", "-am", "garbled"]);
+    device(&dir, "console=ttyMSM0 a=1", "console=ttyMSM0 b=1", B);
+    let o = since(&dir, "HEAD");
+    assert!(!o.status.success());
+    assert!(
+        text(&o.stderr).contains("device.toml at HEAD:"),
         "{}",
         text(&o.stderr)
     );

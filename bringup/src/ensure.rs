@@ -120,6 +120,8 @@ pub enum Change {
     New,
     Sha256,
     Recipe,
+    /// its control, or the control's control, has another sha256 than at the revision
+    Control,
 }
 
 impl std::fmt::Display for Change {
@@ -128,6 +130,7 @@ impl std::fmt::Display for Change {
             Change::New => "not declared there",
             Change::Sha256 => "its sha256",
             Change::Recipe => "its recipe",
+            Change::Control => "its control",
         })
     }
 }
@@ -148,11 +151,31 @@ pub fn changed_since(then: &Manifest, now: &Manifest) -> Vec<(String, Change)> {
                 None => Change::New,
                 Some(o) if o.sha256 != i.sha256 => Change::Sha256,
                 Some(o) if o.recipe != i.recipe => Change::Recipe,
+                Some(_) if control_differs(then, now, i) => Change::Control,
                 Some(_) => return None,
             };
             Some((name.clone(), change))
         })
         .collect()
+}
+
+/// Whether the control an image's recipe starts from, or that control's own control, is another file than at the
+/// revision: a recipe names its control by name, so only the sha256s say it changed.
+fn control_differs(then: &Manifest, now: &Manifest, image: &lpoco_manifest::images::Image) -> bool {
+    let get = |m: &Manifest, n: &str| m.images.as_ref().and_then(|i| i.named.get(n)).cloned();
+    let mut next = image.recipe.as_ref().map(|r| r.control.clone());
+    // the manifest refuses a loop; the bound is only so a bug cannot spin here
+    for _ in 0..32 {
+        let Some(name) = next else { return false };
+        let (n, o) = (get(now, &name), get(then, &name));
+        match (n, o) {
+            (Some(n), Some(o)) if n.sha256 == o.sha256 => {
+                next = n.recipe.map(|r| r.control);
+            }
+            _ => return true,
+        }
+    }
+    true
 }
 
 /// Where an image would come from.
@@ -632,5 +655,27 @@ mod tests {
             "a seed-only image has nothing to rebuild, whatever changed"
         );
         assert_eq!(changed_since(&now, &now), vec![]);
+    }
+
+    #[test]
+    fn a_recipe_whose_control_is_another_file_is_chosen_though_its_own_text_is_the_same() {
+        let with = |control_sha: &str| {
+            manifest(&format!(
+                "[images.base]\npath = \"base.img\"\nsha256 = \"{control_sha}\"\n[images.base.recipe]\ncontrol = \"c\"\ncmdline = \"x\"\n\n{}",
+                [
+                    "[images.top]\npath = \"top.img\"\nsha256 = \"{A}\"\n[images.top.recipe]\ncontrol = \"base\"\ncmdline = \"y\"\n"
+                        .replace("{A}", A),
+                ]
+                .join("")
+            ))
+        };
+        let changed: Vec<_> = changed_since(&with(A), &with(B)).into_iter().collect();
+        assert_eq!(
+            changed,
+            vec![
+                ("base".to_string(), Change::Sha256),
+                ("top".to_string(), Change::Control)
+            ]
+        );
     }
 }
