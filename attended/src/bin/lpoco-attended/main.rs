@@ -3,6 +3,7 @@
 //! dry-run by name (decision 2026-11-19-procedures-one-shape). See cli.rs for the invocation surface.
 
 mod cli;
+mod export;
 mod lift;
 mod repo;
 mod template;
@@ -48,6 +49,7 @@ fn run(r: &Resolution) -> Result<i32, String> {
         Verb::Run => run_one(r, &repo()?, &rust_script),
         Verb::Check => check(r, &repo()?, &rust_script, device.as_deref()),
         Verb::Lift => lift_verb(r),
+        Verb::Export => export_verb(r, &repo()?, &rust_script),
     }
 }
 
@@ -263,3 +265,43 @@ fn lift_verb(r: &Resolution) -> Result<i32, String> {
     print!("{}", lift::csv(&lift::lift(&mine, &lib)));
     Ok(0)
 }
+
+/// `export NAME`: the procedure walks itself with `--export` (nothing is reached), its log is read for the checks.
+fn export_verb(r: &Resolution, repo: &repo::Repo, rust_script: &str) -> Result<i32, String> {
+    let name = name_of(r)?;
+    let file = repo.existing(&name)?;
+    let dir = scratch_dir()?;
+    let log = dir.join(format!("{name}.log"));
+    let mut cmd = Command::new(rust_script);
+    cmd.arg(&file)
+        .args(["--export", "--log"])
+        .arg(&log)
+        .arg("--device")
+        .arg(&repo.manifest);
+    // a check that never ends must not hang the export; a first build of the procedure takes minutes
+    let out = lpoco_attended::call::run_limited(cmd, "", Some(EXPORT_LIMIT))
+        .map_err(|e| format!("cannot run {rust_script}: {e}"))?;
+    if !out.status.success() {
+        let _ = std::fs::remove_dir_all(&dir);
+        return Err(format!(
+            "{name} does not walk (exit {}): {}{}",
+            out.status.code().unwrap_or(-1),
+            String::from_utf8_lossy(&out.stdout).trim(),
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    let text = std::fs::read_to_string(&log)
+        .map_err(|e| format!("{name} left no log {}: {e}", log.display()))?;
+    let _ = std::fs::remove_dir_all(&dir);
+    let cases = export::cases(&text);
+    if cases.is_empty() {
+        return Err(format!(
+            "{name} has no check to export (a step that only changes the phone is not a test case)"
+        ));
+    }
+    print!("{}", export::definition(&name, &repo.codename, &cases));
+    Ok(0)
+}
+
+/// The longest an export may take, the procedure's first build included.
+const EXPORT_LIMIT: std::time::Duration = std::time::Duration::from_secs(900);

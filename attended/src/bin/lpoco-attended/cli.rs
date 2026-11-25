@@ -6,6 +6,8 @@
 //!                                                    run procedures/NAME.rs; the options go to the procedure as given
 //!   lpoco-attended check [--host]                    dry-run every procedure; exit 1 naming each that fails;
 //!                                                    --host also runs the installed devlab on the manifest (read-only, cut after 30 s)
+//!   lpoco-attended export NAME [--device FILE]       the checks of procedures/NAME.rs as a LAVA test definition (Lava-Test Test Definition 1.0) on standard output;
+//!                                                    the procedure walks itself with --export: no phone is reached
 //!   lpoco-attended --version                         this program's version (its own: tagged only when attended changes)
 
 use argenv_resolve::*;
@@ -17,10 +19,11 @@ pub enum Verb {
     Run,
     Check,
     Lift,
+    Export,
 }
 
 impl Verb {
-    pub const TOKENS: &'static [&'static str] = &["new", "run", "check", "lift"];
+    pub const TOKENS: &'static [&'static str] = &["new", "run", "check", "lift", "export"];
 }
 
 impl FromRaw for Verb {
@@ -30,6 +33,7 @@ impl FromRaw for Verb {
             "run" => Verb::Run,
             "check" => Verb::Check,
             "lift" => Verb::Lift,
+            "export" => Verb::Export,
             _ => return None,
         })
     }
@@ -41,7 +45,7 @@ contract! {
         ty: Type::Enum,
         allowed: Verb::TOKENS,
         arg: Some(Arg::positional(0)),
-        summary: "What to do: new (scaffold a procedure), run (one by name), check (dry-run them all) or lift (list every repo's steps beside the library, flag near-duplicates).",
+        summary: "What to do: new (scaffold a procedure), run (one by name), check (dry-run them all), lift (list every repo's steps beside the library, flag near-duplicates) or export (a procedure's checks as a LAVA test definition on standard output).",
         ..Input::EMPTY
     };
 

@@ -166,6 +166,8 @@ impl Step {
 
 struct Config {
     dry: bool,
+    /// `--export`: a dry run that also runs each check, its phone scripts logged and not sent
+    export: bool,
     until_first_prompt: bool,
     part: Option<String>,
     /// start at the step of this name; the steps before it are skipped
@@ -343,7 +345,9 @@ pub fn procedure(name: &str, device: &str) -> Run {
         print!("{}", cli::usage(name));
         std::process::exit(0);
     }
-    let dry = cli::Contract::DRY_RUN.get_from(&r).unwrap_or(false);
+    let export = cli::Contract::EXPORT.get_from(&r).unwrap_or(false);
+    // an export reaches nothing either: every guard of a dry run holds for it
+    let dry = export || cli::Contract::DRY_RUN.get_from(&r).unwrap_or(false);
     let (device_file, manifest, raw) =
         device::load(cli::Contract::DEVICE.get_from(&r).as_deref(), device).unwrap_or_else(|e| {
             eprintln!("{name}: {e}");
@@ -392,6 +396,7 @@ pub fn procedure(name: &str, device: &str) -> Run {
     let prompt_files = prompt::Files::new(prompt::dir_for(&prompt_base, device));
     let c = Config {
         dry,
+        export,
         until_first_prompt,
         part,
         from,
@@ -505,12 +510,21 @@ pub fn run_step(s: Step) {
             "dry",
             &path,
             &format!(
-                "{kind}{}",
+                "{kind}{}{}",
                 s.id.as_deref()
                     .map(|i| format!(" (bring-up step {i})"))
+                    .unwrap_or_default(),
+                s.source
+                    .as_deref()
+                    .map(|src| format!(" [source {src}]"))
                     .unwrap_or_default()
             ),
         );
+        if c.export && s.kind == Kind::Check {
+            // the check's closure runs so the scripts it sends the phone are logged; what it answers is not read
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| s.execute()));
+            STATE.lock().unwrap_or_else(|e| e.into_inner()).step.clear();
+        }
         return;
     }
     // a person is the usual doer and not said; a bench is
@@ -852,7 +866,7 @@ pub fn unknown_part(asked: &str, known: &[&str]) -> ! {
 pub fn retry<R: Outcome>(tries: u32, every: u64, mut run: impl FnMut() -> R) -> Result<(), String> {
     let mut last = Err("no tries".to_string());
     for t in 0..tries.max(1) {
-        if t > 0 {
+        if t > 0 && !CONFIG.get().is_some_and(|c| c.export) {
             std::thread::sleep(Duration::from_secs(every));
         }
         last = run().outcome();
@@ -908,6 +922,17 @@ fn seconds(flag: &str, given: Option<String>) -> Result<Option<std::time::Durati
 /// error) when it exits 0. `reached` names what a dry run does not reach, `failed` how a failure is worded. A
 /// call past the call limit is cut and fails.
 fn call_devlab(args: &[&str], stdin: &str, reached: &str, failed: &str) -> Result<String, String> {
+    if config().export && matches!(args, ["phone", "sh" | "root", ..]) {
+        // the script is the check's: filed under the step, not sent, and answered with nothing
+        let step = STATE.lock().unwrap_or_else(|e| e.into_inner()).step.clone();
+        // one log line: a backslash is written `\\` and a newline `\n`, so the script is read back whole
+        note(
+            "script",
+            &step,
+            &stdin.replace('\\', "\\\\").replace('\n', "\\n"),
+        );
+        return Ok(String::new());
+    }
     if config().dry {
         return Err(format!("dry run: {reached} is not reached"));
     }
