@@ -113,6 +113,48 @@ pub fn rebuild(
     Ok(path)
 }
 
+/// Why an image is chosen by `--changed-since`.
+#[derive(Debug, PartialEq)]
+pub enum Change {
+    /// the revision declares no such image
+    New,
+    Sha256,
+    Recipe,
+}
+
+impl std::fmt::Display for Change {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str(match self {
+            Change::New => "not declared there",
+            Change::Sha256 => "its sha256",
+            Change::Recipe => "its recipe",
+        })
+    }
+}
+
+/// The images with a recipe that `now` declares differently from `then` (the manifest at a revision): their names,
+/// in the manifest's order, and why. An image without a recipe has nothing to rebuild and is never chosen.
+pub fn changed_since(then: &Manifest, now: &Manifest) -> Vec<(String, Change)> {
+    let old = |name: &str| then.images.as_ref().and_then(|i| i.named.get(name));
+    let Some(images) = now.images.as_ref() else {
+        return Vec::new();
+    };
+    images
+        .named
+        .iter()
+        .filter(|(_, i)| i.recipe.is_some())
+        .filter_map(|(name, i)| {
+            let change = match old(name) {
+                None => Change::New,
+                Some(o) if o.sha256 != i.sha256 => Change::Sha256,
+                Some(o) if o.recipe != i.recipe => Change::Recipe,
+                Some(_) => return None,
+            };
+            Some((name.clone(), change))
+        })
+        .collect()
+}
+
 /// Where an image would come from.
 #[derive(Debug, PartialEq)]
 pub enum Origin {
@@ -538,4 +580,57 @@ fn ensure_kernel(
         k.tag
     ));
     Ok(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+    fn manifest(images: &str) -> Manifest {
+        let base = include_str!("../tests/fixtures/device.toml");
+        let control = format!("[images.c]\npath = \"c.img\"\nsha256 = \"{A}\"\n");
+        Manifest::parse(&format!("{base}\n{control}\n{images}")).unwrap()
+    }
+
+    fn image(name: &str, sha: &str, cmdline: &str) -> String {
+        format!(
+            "[images.{name}]\npath = \"{name}.img\"\nsha256 = \"{sha}\"\n[images.{name}.recipe]\ncontrol = \"c\"\ncmdline = \"{cmdline}\"\n"
+        )
+    }
+
+    #[test]
+    fn an_image_is_chosen_for_each_way_its_declaration_can_differ_and_for_no_other() {
+        let then = manifest(
+            &[
+                image("same", A, "x"),
+                image("recipe", A, "x"),
+                image("sha", A, "x"),
+                format!("[images.seed]\npath = \"seed.img\"\nsha256 = \"{A}\"\n"),
+            ]
+            .join("\n"),
+        );
+        let now = manifest(
+            &[
+                image("same", A, "x"),
+                image("recipe", A, "y"),
+                image("sha", B, "x"),
+                image("new", A, "x"),
+                format!("[images.seed]\npath = \"seed.img\"\nsha256 = \"{B}\"\n"),
+            ]
+            .join("\n"),
+        );
+        assert_eq!(
+            changed_since(&then, &now),
+            vec![
+                ("new".to_string(), Change::New),
+                ("recipe".to_string(), Change::Recipe),
+                ("sha".to_string(), Change::Sha256),
+            ],
+            "a seed-only image has nothing to rebuild, whatever changed"
+        );
+        assert_eq!(changed_since(&now, &now), vec![]);
+    }
 }

@@ -73,6 +73,20 @@ fn run(r: &argenv_resolve::Resolution) -> Result<i32, String> {
             return Err("--rebuild builds; --dry-run changes nothing: give one".into());
         }
     }
+    if Contract::CHANGED_SINCE.get_from(r).is_some() {
+        if !matches!(verb, Verb::Ensure) || !Contract::REBUILD.get_from(r).unwrap_or(false) {
+            return Err(
+                "--changed-since goes with --rebuild: lpoco-bringup image ensure --rebuild --changed-since REV"
+                    .into(),
+            );
+        }
+        if Contract::IMAGE.get_from(r).is_some() {
+            return Err(
+                "--changed-since takes every image, not one: give no NAME (image ensure NAME --rebuild is one image)"
+                    .into(),
+            );
+        }
+    }
     if matches!(verb, Verb::Capture | Verb::Diff) != (command == Some(Command::Reference)) {
         return Err("capture and diff are for the reference: lpoco-bringup reference capture --via COMMAND --out DIR | reference diff PART --live DIR --ours DIR".into());
     }
@@ -178,8 +192,8 @@ fn run(r: &argenv_resolve::Resolution) -> Result<i32, String> {
             Ok(0)
         }
         Verb::Ensure => {
-            let name = need(Contract::IMAGE.get_from(r), "the image's name (NAME)")?;
-            image_ensure(&name, &device, r)
+            let name = Contract::IMAGE.get_from(r);
+            image_ensure(name.as_deref(), &device, r)
         }
         Verb::Bisect => {
             let series = need(Contract::IMAGE.get_from(r), "the series file (SERIES)")?;
@@ -452,7 +466,11 @@ fn reference(verb: Verb, r: &argenv_resolve::Resolution) -> Result<i32, String> 
 }
 
 /// `image ensure NAME`: the image's store path, after a line for each step that got it there.
-fn image_ensure(name: &str, device: &str, r: &argenv_resolve::Resolution) -> Result<i32, String> {
+fn image_ensure(
+    name: Option<&str>,
+    device: &str,
+    r: &argenv_resolve::Resolution,
+) -> Result<i32, String> {
     let text = fs::read_to_string(device).map_err(|e| format!("cannot read {device}: {e}"))?;
     let manifest = lpoco_manifest::Manifest::parse(&text).map_err(|e| format!("{device}: {e}"))?;
     let (cache, seed, source) = (
@@ -466,6 +484,10 @@ fn image_ensure(name: &str, device: &str, r: &argenv_resolve::Resolution) -> Res
         source: source.as_deref().map(Path::new),
         version: VERSION,
     };
+    if let Some(rev) = Contract::CHANGED_SINCE.get_from(r) {
+        return rebuild_changed_since(&manifest, device, &rev, &sources);
+    }
+    let name = name.ok_or("the image's name (NAME) is needed")?;
     if Contract::DRY_RUN.get_from(r).unwrap_or(false) {
         let (origin, path) = ensure::plan(&manifest, name, &sources)?;
         println!("{name}: {origin} ({})", path.display());
@@ -478,5 +500,53 @@ fn image_ensure(name: &str, device: &str, r: &argenv_resolve::Resolution) -> Res
     }
     let path = ensure::ensure(&manifest, name, &sources, &mut |line| eprintln!("{line}"))?;
     println!("{}", path.display());
+    Ok(0)
+}
+
+/// `image ensure --rebuild --changed-since REV`: the device.toml as git REV holds it (read beside the one given),
+/// then `--rebuild` of each image with a recipe that this one declares differently; none: it passes saying so.
+fn rebuild_changed_since(
+    manifest: &lpoco_manifest::Manifest,
+    device: &str,
+    rev: &str,
+    sources: &Sources,
+) -> Result<i32, String> {
+    let device = Path::new(device);
+    let file = device
+        .file_name()
+        .and_then(|f| f.to_str())
+        .ok_or_else(|| format!("{}: names no file", device.display()))?;
+    let dir = device
+        .parent()
+        .filter(|d| !d.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let shown = std::process::Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .arg("show")
+        .arg(format!("{rev}:./{file}"))
+        .output()
+        .map_err(|e| format!("cannot run git: {e}"))?;
+    if !shown.status.success() {
+        return Err(format!(
+            "cannot read {file} at {rev}: {}",
+            String::from_utf8_lossy(&shown.stderr).trim()
+        ));
+    }
+    let then = lpoco_manifest::Manifest::parse(&String::from_utf8_lossy(&shown.stdout))
+        .map_err(|e| format!("{file} at {rev}: {e}"))?;
+    let changed = ensure::changed_since(&then, manifest);
+    if changed.is_empty() {
+        println!("no image changed since {rev}: nothing to rebuild");
+        return Ok(0);
+    }
+    for (name, why) in &changed {
+        eprintln!("{name}: changed since {rev} ({why}), rebuilding");
+        ensure::rebuild(manifest, name, sources, &mut |line| eprintln!("{line}"))?;
+    }
+    println!(
+        "{} image(s) changed since {rev}, each rebuilt equal to its declared sha256",
+        changed.len()
+    );
     Ok(0)
 }
