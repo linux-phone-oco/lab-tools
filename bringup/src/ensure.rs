@@ -81,11 +81,39 @@ pub fn ensure(
 /// The image `name` proved against its recipe: the recipe built in the sandbox, ignoring the store, the cache and
 /// the seed (decision 2026-11-24-a-recipe-sha-is-proved-by-a-rebuild), and its sha256 compared to the declared
 /// one. A result that is not the declared one fails naming the image and both sha256s; nothing is published.
+/// Each input of the recipe that has a recipe of its own is proved first, the same way; one that has none (a
+/// seed, hand-built) is said to be not proved.
 pub fn rebuild(
     manifest: &Manifest,
     name: &str,
     sources: &Sources,
     say: &mut dyn FnMut(String),
+    proving: &mut Proving,
+) -> Result<PathBuf, String> {
+    if proving.active.iter().any(|n| n == name) {
+        return Err(format!("{name}: its inputs lead back to {name} itself"));
+    }
+    proving.active.push(name.to_string());
+    let made = rebuild_one(manifest, name, sources, say, proving);
+    proving.active.pop();
+    made
+}
+
+/// What a run of rebuilds has done: the images proved (an input two images share is rebuilt once, also across
+/// the images `--changed-since` chooses) and the ones being proved now (an input that leads back is a cycle).
+#[derive(Default)]
+pub struct Proving {
+    done: Vec<String>,
+    active: Vec<String>,
+}
+
+/// [`rebuild`] of one image, its inputs proved first.
+fn rebuild_one(
+    manifest: &Manifest,
+    name: &str,
+    sources: &Sources,
+    say: &mut dyn FnMut(String),
+    proving: &mut Proving,
 ) -> Result<PathBuf, String> {
     if !manifest
         .images
@@ -99,6 +127,7 @@ pub fn rebuild(
     }
     let (wanted, recipe) = image(manifest, name)?;
     let recipe = recipe.ok_or_else(|| format!("{name}: no recipe to rebuild it from"))?;
+    prove_inputs(manifest, name, recipe, sources, say, proving)?;
     let path = build(manifest, name, &wanted, recipe, sources, say, true)?;
     let built = sum(&path)?;
     if built != wanted.sha256 {
@@ -107,10 +136,70 @@ pub fn rebuild(
             wanted.sha256
         ));
     }
+    proving.done.push(name.to_string());
     say(format!(
         "{name}: rebuilt from its recipe, equal to its declared sha256"
     ));
     Ok(path)
+}
+
+/// The inputs of `recipe` (the control by name; the kernel, dtb and ramdisk by sha256): one that is an image with a
+/// recipe is rebuilt; any other is said to be not proved, and is not a failure.
+fn prove_inputs(
+    manifest: &Manifest,
+    name: &str,
+    recipe: &Recipe,
+    sources: &Sources,
+    say: &mut dyn FnMut(String),
+    proving: &mut Proving,
+) -> Result<(), String> {
+    let images = manifest.images.as_ref().map(|i| &i.named);
+    // two images may share a sha256: the one with a recipe is the one to prove
+    let by_sha = |sha: &String| {
+        let same = |want: bool| {
+            images.and_then(|m| {
+                m.iter()
+                    .find(|(_, i)| i.sha256.as_ref() == Some(sha) && i.recipe.is_some() == want)
+                    .map(|(n, _)| n.clone())
+            })
+        };
+        same(true)
+            .map(|n| (n, true))
+            .or_else(|| same(false).map(|n| (n, false)))
+    };
+    let seed = "it has no recipe (a seed)".to_string();
+    let mut inputs = vec![(
+        recipe.control.clone(),
+        images
+            .and_then(|m| m.get(&recipe.control))
+            .is_some_and(|i| i.recipe.is_some()),
+        seed.clone(),
+    )];
+    for (part, sha) in [
+        ("kernel", &recipe.kernel),
+        ("dtb", &recipe.dtb),
+        ("ramdisk", &recipe.ramdisk),
+    ] {
+        if let Some(sha) = sha {
+            let (input, has_recipe) = by_sha(sha).unwrap_or((format!("{name} {part}"), false));
+            let made = manifest
+                .kernel_builds
+                .iter()
+                .find(|(_, k)| part == "kernel" && k.sha256 == *sha);
+            let why = made.map_or(seed.clone(), |(n, _)| {
+                format!("it is made by [kernel_builds.{n}], which --rebuild does not run")
+            });
+            inputs.push((input, has_recipe, why));
+        }
+    }
+    for (input, has_recipe, why) in inputs {
+        if !has_recipe {
+            say(format!("{input}: not proved, {why}"));
+        } else if !proving.done.contains(&input) {
+            rebuild(manifest, &input, sources, say, proving)?;
+        }
+    }
+    Ok(())
 }
 
 /// Why an image is chosen by `--changed-since`.

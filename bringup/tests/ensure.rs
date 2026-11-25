@@ -519,3 +519,152 @@ fn a_rebuild_names_a_kernel_build_as_not_its_kind() {
         text(&o.stderr)
     );
 }
+
+/// image-rebuild-proves-inputs: `--rebuild` also rebuilds each input that has its own recipe (the same class of
+/// hole one level down: an input whose declared sha256 came from a script passes plain ensure), and names an input
+/// with no recipe - a seed, hand-built - as not proved, rather than failing on it. The chain is base (a seed) ->
+/// mid (recipe over base) -> out (recipe over mid); the expected sha256s are what `image swap` makes of each step.
+#[test]
+fn a_rebuild_proves_an_input_that_has_a_recipe_and_names_a_seed_input_as_not_proved() {
+    if !have("nix-store", "--version") || !have("avbtool", "--help") {
+        eprintln!("not measured: no nix, or no avbtool (it makes the control)");
+        return;
+    }
+    let dir = tmp("rebuild-inputs");
+    let (seed, cache) = (dir.join("seed"), dir.join("cache"));
+    fs::create_dir_all(&seed).unwrap();
+    fs::rename(control(&dir), seed.join("base.img")).unwrap();
+    fs::write(seed.join("ramdisk.new"), vec![0x5Bu8; 5000]).unwrap();
+    let swap = |from: &Path, to: &Path, cmdline: &str, ramdisk: Option<&Path>| {
+        let mut args = vec![
+            "image",
+            "swap",
+            s(from),
+            "--cmdline",
+            cmdline,
+            "--out",
+            s(to),
+        ];
+        if let Some(r) = ramdisk {
+            args.extend(["--ramdisk", s(r)]);
+        }
+        let o = bringup(&args);
+        assert!(o.status.success(), "swap: {}", text(&o.stderr));
+    };
+    let (mid, out) = (dir.join("mid.img"), dir.join("out.img"));
+    swap(
+        &seed.join("base.img"),
+        &mid,
+        "console=ttyMSM0 mid=1",
+        Some(&seed.join("ramdisk.new")),
+    );
+    swap(&mid, &out, "console=ttyMSM0 out=1", None);
+    let (base_sha, ramdisk_sha, mid_sha, out_sha) = (
+        sha256(&seed.join("base.img")),
+        sha256(&seed.join("ramdisk.new")),
+        sha256(&mid),
+        sha256(&out),
+    );
+    // a file the seed holds that mid's recipe does not make: plain ensure would serve it as mid
+    fs::write(
+        seed.join("other.img"),
+        format!("not mid's {}", std::process::id()),
+    )
+    .unwrap();
+    let other_sha = sha256(&seed.join("other.img"));
+    let write = |declared_mid: &str| {
+        let base = fs::read_to_string(fixture("device.toml")).unwrap();
+        let t = format!(
+            "{base}\n[images.base]\npath = \"base.img\"\nsha256 = \"{base_sha}\"\n\n\
+             [images.mid]\npath = \"mid.img\"\nsha256 = \"{declared_mid}\"\n\n\
+             [images.mid.recipe]\ncontrol = \"base\"\nramdisk = \"{ramdisk_sha}\"\ncmdline = \"console=ttyMSM0 mid=1\"\n\n\
+             [images.out]\npath = \"out.img\"\nsha256 = \"{out_sha}\"\n\n\
+             [images.out.recipe]\ncontrol = \"mid\"\ncmdline = \"console=ttyMSM0 out=1\"\n"
+        );
+        let p = dir.join("device.toml");
+        fs::write(&p, t).unwrap();
+        p
+    };
+    let rebuild = |device: &Path| {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        bringup(&[
+            "image",
+            "ensure",
+            "out",
+            "--rebuild",
+            "--device",
+            s(device),
+            "--cache",
+            s(&cache),
+            "--seed",
+            s(&seed),
+            "--source",
+            s(&source),
+        ])
+    };
+
+    // every sha256 right: out is proved, mid is rebuilt on the way, base (a seed) is named as not proved
+    let o = rebuild(&write(&mid_sha));
+    let said = text(&o.stderr);
+    assert!(o.status.success(), "--rebuild of a right chain: {said}");
+    assert!(
+        said.contains("mid: rebuilt from its recipe"),
+        "mid was not proved: {said}"
+    );
+    assert!(
+        said.contains("base: not proved")
+            && said.contains("mid ramdisk: not proved")
+            && said.contains("no recipe"),
+        "the seed input is not named as not proved: {said}"
+    );
+
+    // mid declares a sha256 its recipe does not make (the seed holds that file): the rebuild fails at mid
+    let o = rebuild(&write(&other_sha));
+    let said = text(&o.stderr);
+    assert!(
+        !o.status.success(),
+        "--rebuild passed an input its recipe does not make: {said}"
+    );
+    for want in [
+        "mid",
+        "its recipe makes sha256",
+        other_sha.as_str(),
+        mid_sha.as_str(),
+    ] {
+        assert!(said.contains(want), "{want} is not named: {said}");
+    }
+}
+
+/// A recipe whose part is the image's own sha256 leads back to itself: `--rebuild` says so and stops, where
+/// proving each input first would otherwise never end (review of image-rebuild-proves-inputs).
+#[test]
+fn a_rebuild_whose_input_leads_back_to_the_image_stops_and_says_so() {
+    let dir = tmp("rebuild-cycle");
+    let sha = "ab".repeat(32);
+    let base = fs::read_to_string(fixture("device.toml")).unwrap();
+    let device = dir.join("device.toml");
+    fs::write(
+        &device,
+        format!(
+            "{base}\n[images.base]\npath = \"base.img\"\nsha256 = \"{}\"\n\n\
+             [images.loop]\npath = \"loop.img\"\nsha256 = \"{sha}\"\n\n\
+             [images.loop.recipe]\ncontrol = \"base\"\nramdisk = \"{sha}\"\n",
+            "cd".repeat(32)
+        ),
+    )
+    .unwrap();
+    let o = bringup(&[
+        "image",
+        "ensure",
+        "loop",
+        "--rebuild",
+        "--device",
+        s(&device),
+    ]);
+    let said = text(&o.stderr);
+    assert!(!o.status.success(), "a cycle was not refused: {said}");
+    assert!(
+        said.contains("loop: its inputs lead back to loop itself"),
+        "{said}"
+    );
+}

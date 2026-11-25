@@ -494,7 +494,13 @@ fn image_ensure(
         return Ok(0);
     }
     if Contract::REBUILD.get_from(r).unwrap_or(false) {
-        let path = ensure::rebuild(&manifest, name, &sources, &mut |line| eprintln!("{line}"))?;
+        let path = ensure::rebuild(
+            &manifest,
+            name,
+            &sources,
+            &mut |line| eprintln!("{line}"),
+            &mut ensure::Proving::default(),
+        )?;
         println!("{}", path.display());
         return Ok(0);
     }
@@ -540,9 +546,16 @@ fn rebuild_changed_since(
         println!("no image changed since {rev}: nothing to rebuild");
         return Ok(0);
     }
+    let mut proving = ensure::Proving::default();
     for (name, why) in &changed {
         eprintln!("{name}: changed since {rev} ({why}), rebuilding");
-        ensure::rebuild(manifest, name, sources, &mut |line| eprintln!("{line}"))?;
+        ensure::rebuild(
+            manifest,
+            name,
+            sources,
+            &mut |line| eprintln!("{line}"),
+            &mut proving,
+        )?;
     }
     println!(
         "{} image(s) changed since {rev}, each rebuilt equal to its declared sha256",

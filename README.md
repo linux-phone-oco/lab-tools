@@ -304,9 +304,9 @@ absent it says "not measured"); measured on the lab 2026-11-23 for walleye's z21
 `--rebuild` proves a declared sha256 against its recipe (decision 2026-11-24-a-recipe-sha-is-proved-by-a-rebuild): it
 builds the recipe in the sandbox as a plain derivation, ignoring the store, the cache and the seed (the recipe's parts are
 still found by their sha256; `nix-build --check`, no substituters), and fails unless the result is the declared sha256, naming the image and both. It publishes
-no image and is refused with `--dry-run`; its control and parts are served as for ensure (not rebuilt), and a kernel build name is refused. A lab's CI calls it per image whose recipe or sha256 a change touches; plain
+no image and is refused with `--dry-run`, and a kernel build name is refused. Each input (control, kernel, dtb, ramdisk) that is an image with a recipe of its own is rebuilt first, once, the same way, and fails the run naming itself; one with no recipe (a seed) is said `not proved, it has no recipe (a seed)`, not failed. A lab's CI calls it per image whose recipe or sha256 a change touches; plain
 `ensure` serves by sha256 and does not prove it. Proof: `bringup/tests/ensure.rs`
-`a_rebuild_fails_a_declared_sha256_the_recipe_does_not_make_though_plain_ensure_passes_it`.
+`a_rebuild_fails_a_declared_sha256_the_recipe_does_not_make_though_plain_ensure_passes_it`, and for the inputs `a_rebuild_proves_an_input_that_has_a_recipe_and_names_a_seed_input_as_not_proved`.
 
 `--rebuild --changed-since REV` (no NAME; decision 2026-11-24-image-rebuild-runs-at-land) is what a lab's `make land-check`
 calls: it reads the device.toml as git REV holds it (beside the given one, `git show REV:./device.toml`), chooses every
