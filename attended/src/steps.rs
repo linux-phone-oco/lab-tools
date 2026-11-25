@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! The library's steps: small, device-agnostic functions that return a [`Step`]; a lane's procedure only chains
 //! them with its own values. Here: ask, dmesg_clean, check_probe, wait_for_phone, read_dmesg, wait_for_usb, boot_once,
-//! back_to_known_good. More come as a second device needs one, each keyed to its bring-up step id and taking its device values from
+//! back_to_known_good, and the install steps read_slot, mount_is_readonly, adb_write_partition. More come as a second device needs one, each keyed to its bring-up step id and taking its device values from
 //! device.toml / [layer], never hard-coded.
 
 use crate::bench::{self, Act, ActKind};
 use crate::prompt::Prompt;
 use crate::{Kind, Step};
 use lpoco_manifest::is_kernel_name;
+
+// The install steps (lifted from walleye) live in `install`; they are steps of this library.
+pub use crate::install::{adb_write_partition, mount_is_readonly, read_slot};
 
 /// The author does something and looks at something ("what to do / what to check"); "ok" goes on, anything
 /// else is what was seen and stops the run; nobody answering stops it too. The same as [`confirm`].
