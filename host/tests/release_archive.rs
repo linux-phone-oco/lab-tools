@@ -28,6 +28,10 @@ fn exe(path: &Path, body: &str) {
 }
 
 fn lab(name: &str, pin_extra: &str) -> Lab {
+    lab_of(name, (REPO, TAG, ASSET, "nfpm"), pin_extra)
+}
+
+fn lab_of(name: &str, (repo, tag, asset, tool): (&str, &str, &str, &str), pin_extra: &str) -> Lab {
     let dir =
         std::env::temp_dir().join(format!("lpoco-host-archive-{}-{name}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
@@ -39,7 +43,7 @@ fn lab(name: &str, pin_extra: &str) -> Lab {
     fs::write(
         dir.join("lab.toml"),
         format!(
-            "devices = \"{}/none/*/device.toml\"\n[tools.nfpm]\nrepository = \"{REPO}\"\ntag = \"{TAG}\"\nasset = \"{ASSET}\"\n{pin_extra}",
+            "devices = \"{}/none/*/device.toml\"\n[tools.{tool}]\nrepository = \"{repo}\"\ntag = \"{tag}\"\nasset = \"{asset}\"\n{pin_extra}",
             dir.display()
         ),
     )
@@ -56,7 +60,7 @@ fn lab(name: &str, pin_extra: &str) -> Lab {
             calls.display()
         ),
     );
-    for p in ["cp", "tar", "gzip"] {
+    for p in ["cp", "tar", "gzip", "xz"] {
         let real = ["/usr/bin", "/bin"]
             .iter()
             .map(|d| Path::new(d).join(p))
@@ -281,4 +285,157 @@ fn the_first_line_for_the_archive_decides_even_when_its_hash_is_broken() {
     let o = host(&l, &["prepare", "now"]);
     assert!(!o.status.success(), "{}", text_of(&o));
     assert!(!installed(&l).exists());
+}
+
+// A release with no checksums file (koalaman/shellcheck v0.11.0): the archive is a tar.xz whose binary sits one
+// folder down, `shellcheck-v0.11.0/shellcheck` (the layout is the one the backlog row host-tool-pinned-sha256 names),
+// and lab.toml pins the archive's sha256 itself.
+const SC_REPO: &str = "koalaman/shellcheck";
+const SC_TAG: &str = "v0.11.0";
+const SC_ASSET: &str = "shellcheck-v0.11.0.linux.x86_64.tar.xz";
+const SC_MEMBER: &str = "shellcheck-v0.11.0/shellcheck";
+
+fn sc_lab(name: &str, pin_extra: &str) -> Lab {
+    lab_of(name, (SC_REPO, SC_TAG, SC_ASSET, "shellcheck"), pin_extra)
+}
+
+/// Publishes the tar.xz and returns its real sha256.
+fn sc_publish(l: &Lab, member: &str) -> String {
+    let folder = l
+        .github
+        .join(SC_REPO)
+        .join("releases/download")
+        .join(SC_TAG);
+    fs::create_dir_all(&folder).unwrap();
+    let src = l.dir.join("src");
+    fs::create_dir_all(src.join("shellcheck-v0.11.0")).unwrap();
+    fs::write(src.join(member), "#!/bin/sh\necho shellcheck asset\n").unwrap();
+    fs::write(src.join("shellcheck-v0.11.0/README.txt"), "not the tool\n").unwrap();
+    let ok = Command::new("tar")
+        .args(["-cJf"])
+        .arg(folder.join(SC_ASSET))
+        .arg("-C")
+        .arg(&src)
+        .arg("shellcheck-v0.11.0")
+        .status()
+        .unwrap();
+    assert!(ok.success());
+    let o = Command::new("sha256sum")
+        .arg(folder.join(SC_ASSET))
+        .output()
+        .unwrap();
+    let out = String::from_utf8(o.stdout).unwrap();
+    out.split_whitespace().next().unwrap().to_string()
+}
+
+fn sc_pin(sha: &str) -> String {
+    format!("sha256 = \"{sha}\"\nmember = \"{SC_MEMBER}\"\n")
+}
+
+fn sc_installed(l: &Lab) -> PathBuf {
+    l.dir.join("home/.local/bin/shellcheck")
+}
+
+#[test]
+fn an_archive_pinned_by_its_own_sha256_installs_a_member_inside_a_folder_and_stamps_the_tag() {
+    let l = sc_lab("pinned-good", "");
+    let sha = sc_publish(&l, SC_MEMBER);
+    fs::write(
+        l.dir.join("lab.toml"),
+        format!(
+            "devices = \"{}/none/*/device.toml\"\n[tools.shellcheck]\nrepository = \"{SC_REPO}\"\ntag = \"{SC_TAG}\"\nasset = \"{SC_ASSET}\"\n{}",
+            l.dir.display(),
+            sc_pin(&sha)
+        ),
+    )
+    .unwrap();
+    let o = host(&l, &["prepare", "now"]);
+    let s = text_of(&o);
+    assert!(o.status.success(), "{s}");
+    let f = sc_installed(&l);
+    assert_eq!(
+        fs::metadata(&f).unwrap().permissions().mode() & 0o777,
+        0o755
+    );
+    assert!(fs::read_to_string(&f).unwrap().contains("shellcheck asset"));
+    assert!(!l.dir.join("home/.local/bin/README.txt").exists());
+    assert!(
+        !calls(&l).contains("checksums"),
+        "a checksums file was asked for: {}",
+        calls(&l)
+    );
+    let stamp = l.dir.join("home/.local/share/lpoco-host/rev-shellcheck");
+    assert_eq!(fs::read_to_string(stamp).unwrap().trim(), SC_TAG);
+}
+
+#[test]
+fn an_archive_whose_sha256_is_not_the_pinned_one_installs_nothing_and_stamps_nothing() {
+    let l = sc_lab("pinned-bad", "");
+    sc_publish(&l, SC_MEMBER);
+    fs::write(
+        l.dir.join("lab.toml"),
+        format!(
+            "devices = \"{}/none/*/device.toml\"\n[tools.shellcheck]\nrepository = \"{SC_REPO}\"\ntag = \"{SC_TAG}\"\nasset = \"{SC_ASSET}\"\n{}",
+            l.dir.display(),
+            sc_pin(&"0".repeat(64))
+        ),
+    )
+    .unwrap();
+    let o = host(&l, &["prepare", "now"]);
+    let s = text_of(&o);
+    assert!(!o.status.success(), "{s}");
+    assert!(s.contains("sha256") && s.contains("not installed"), "{s}");
+    assert!(!sc_installed(&l).exists());
+    assert!(!l
+        .dir
+        .join("home/.local/share/lpoco-host/rev-shellcheck")
+        .exists());
+}
+
+#[test]
+fn a_pinned_sha256_that_is_not_64_hex_digits_or_that_lacks_a_member_or_comes_with_checksums_is_refused(
+) {
+    let good = "a".repeat(64);
+    for (i, (extra, word)) in [
+        (
+            format!("sha256 = \"abc\"\nmember = \"{SC_MEMBER}\"\n"),
+            "sha256",
+        ),
+        (
+            format!(
+                "sha256 = \"{}\"\nmember = \"{SC_MEMBER}\"\n",
+                "G".repeat(64)
+            ),
+            "sha256",
+        ),
+        (format!("sha256 = \"{good}\"\n"), "member"),
+        (
+            format!("sha256 = \"{good}\"\nchecksums = \"c.txt\"\nmember = \"x\"\n"),
+            "checksums",
+        ),
+        (
+            format!("sha256 = \"{good}\"\nmember = \"../x\"\n"),
+            "member",
+        ),
+        (format!("sha256 = \"{good}\"\nmember = \"/x\"\n"), "member"),
+        (
+            format!("sha256 = \"{good}\"\nmember = \"a//b\"\n"),
+            "member",
+        ),
+        (
+            format!("sha256 = \"{good}\"\nmember = \"a/../b\"\n"),
+            "member",
+        ),
+        (format!("sha256 = \"{good}\"\nmember = \"./x\"\n"), "member"),
+        (format!("sha256 = \"{good}\"\nmember = \"x/\"\n"), "member"),
+        (format!("sha256 = \"{good}\"\nmember = \"-x\"\n"), "member"),
+    ]
+    .iter()
+    .enumerate()
+    {
+        let l = sc_lab(&format!("pinned-refused-{i}"), extra);
+        let o = host(&l, &["plan"]);
+        let s = text_of(&o);
+        assert!(!o.status.success() && s.contains(word), "{extra}: {s}");
+    }
 }

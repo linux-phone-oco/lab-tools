@@ -827,10 +827,10 @@ fn install_tool(st: &State, t: &ToolPlan) -> Result<(), ReleaseError> {
             } => install_release(st, url, sha_url, to, also, fallback)?,
             Step::ReleaseArchive {
                 url,
-                sums_url,
+                hash,
                 member,
                 to,
-            } => install_release_archive(st, url, sums_url, member, to)?,
+            } => install_release_archive(st, url, hash, member, to)?,
             Step::Stamp { to, rev } => {
                 if let Some(d) = Path::new(to).parent() {
                     fs::create_dir_all(d)
@@ -1584,12 +1584,13 @@ fn hash_for(checksums: &str, name: &str) -> Option<String> {
     named_hash(line.split_once(char::is_whitespace)?.0)
 }
 
-/// Installs `member` of a release's tar.gz at `to` after the archive's hash, from the release's checksums file,
-/// matches; nothing is installed when the archive, the file, its line, the hash or the member is missing or wrong.
+/// Installs `member` of a release's archive (tar.gz or tar.xz, read by its own format) at `to` after the archive's
+/// hash, from the release's checksums file or the sha256 lab.toml pins, matches; nothing is installed when the
+/// archive, the file, its line, the hash or the member is missing or wrong.
 fn install_release_archive(
     st: &State,
     url: &str,
-    sums_url: &str,
+    hash: &ArchiveHash,
     member: &str,
     to: &str,
 ) -> Result<(), String> {
@@ -1597,7 +1598,7 @@ fn install_release_archive(
     let _ = fs::remove_dir_all(&work);
     fs::create_dir_all(&work).map_err(|e| format!("cannot make {work}: {e}"))?;
     let (file, sums) = (
-        Path::new(&work).join("archive.tar.gz"),
+        Path::new(&work).join("archive"),
         Path::new(&work).join("checksums"),
     );
     let name = url.rsplit('/').next().unwrap_or(url);
@@ -1605,23 +1606,31 @@ fn install_release_archive(
         if !fetch(url, &file)? {
             return Err(format!("no release asset at {url}: not installed"));
         }
-        if !fetch(sums_url, &sums)? {
-            return Err(format!(
-                "{sums_url} is not in the release: {name} not installed"
-            ));
-        }
-        let text = fs::read_to_string(&sums).map_err(|e| format!("cannot read {sums_url}: {e}"))?;
-        let named = hash_for(&text, name)
-            .ok_or_else(|| format!("{sums_url} has no sha256 line for {name}: not installed"))?;
+        let (named, said_by) = match hash {
+            ArchiveHash::SumsFile(sums_url) => {
+                if !fetch(sums_url, &sums)? {
+                    return Err(format!(
+                        "{sums_url} is not in the release: {name} not installed"
+                    ));
+                }
+                let text = fs::read_to_string(&sums)
+                    .map_err(|e| format!("cannot read {sums_url}: {e}"))?;
+                let named = hash_for(&text, name).ok_or_else(|| {
+                    format!("{sums_url} has no sha256 line for {name}: not installed")
+                })?;
+                (named, "the release says")
+            }
+            ArchiveHash::Pinned(sha) => (sha.to_ascii_lowercase(), "lab.toml pins"),
+        };
         let bytes = fs::read(&file).map_err(|e| format!("cannot read {url}: {e}"))?;
         let have = hex_sha256(&bytes);
         if have != named {
             return Err(format!(
-                "{to}: sha256 of {url} is {have}, the release says {named}: not installed"
+                "{to}: sha256 of {url} is {have}, {said_by} {named}: not installed"
             ));
         }
         let out = Proc::new("tar")
-            .args(["-xzf"])
+            .args(["-xf"])
             .arg(&file)
             .arg("-C")
             .arg(&work)
@@ -1634,7 +1643,7 @@ fn install_release_archive(
             || !fs::symlink_metadata(&got).is_ok_and(|m| m.file_type().is_file())
         {
             return Err(format!(
-                "{name} holds no file {member}: not installed ({})",
+                "{name} could not be read for {member} (a .tar.xz needs xz on the PATH; the archive names its files as given, no ./): not installed ({})",
                 String::from_utf8_lossy(&out.stderr).trim()
             ));
         }
