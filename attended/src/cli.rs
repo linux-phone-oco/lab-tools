@@ -17,6 +17,15 @@ contract! {
         ..Input::EMPTY
     };
 
+    EXPORT: bool = Input {
+        key: "export",
+        ty: Type::Bool,
+        default: Some(false),
+        arg: Some(Arg::long("export")),
+        summary: "Walk every step as a dry run does, but run each check so the scripts it sends the phone are logged (`script` lines) and not sent: what `lpoco attended export` reads. Reaches no phone.",
+        ..Input::EMPTY
+    };
+
     DEVICE: String = Input {
         key: "device",
         ty: Type::String,
