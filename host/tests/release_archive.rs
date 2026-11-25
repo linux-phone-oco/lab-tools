@@ -422,6 +422,13 @@ fn a_pinned_sha256_that_is_not_64_hex_digits_or_that_lacks_a_member_or_comes_wit
             format!("sha256 = \"{good}\"\nmember = \"a//b\"\n"),
             "member",
         ),
+        (
+            format!("sha256 = \"{good}\"\nmember = \"a/../b\"\n"),
+            "member",
+        ),
+        (format!("sha256 = \"{good}\"\nmember = \"./x\"\n"), "member"),
+        (format!("sha256 = \"{good}\"\nmember = \"x/\"\n"), "member"),
+        (format!("sha256 = \"{good}\"\nmember = \"-x\"\n"), "member"),
     ]
     .iter()
     .enumerate()

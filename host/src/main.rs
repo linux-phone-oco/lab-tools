@@ -1643,7 +1643,7 @@ fn install_release_archive(
             || !fs::symlink_metadata(&got).is_ok_and(|m| m.file_type().is_file())
         {
             return Err(format!(
-                "{name} holds no file {member}: not installed ({})",
+                "{name} could not be read for {member} (a .tar.xz needs xz on the PATH; the archive names its files as given, no ./): not installed ({})",
                 String::from_utf8_lossy(&out.stderr).trim()
             ));
         }
