@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.53.2](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-lab-v0.53.1...lpoco-lab-v0.53.2) - 2026-11-25
+
+### Other
+
+- *(tone)* no recording in the repository top or crate; refused command lines write nothing ([#444](https://github.com/linux-phone-oco/lab-tools/pull/444))
+
 ## [0.53.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-lab-v0.53.0...lpoco-lab-v0.53.1) - 2026-11-25
 
 ### Fixed
