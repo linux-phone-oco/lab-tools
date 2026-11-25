@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.45.7](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-attended-v0.45.6...lpoco-attended-v0.45.7) - 2026-11-25
+
+### Added
+
+- *(attended)* lpoco attended export writes a procedure's checks as a LAVA test definition ([#442](https://github.com/linux-phone-oco/lab-tools/pull/442))
+
 ## [0.45.6](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-attended-v0.45.5...lpoco-attended-v0.45.6) - 2026-11-25
 
 ### Other
