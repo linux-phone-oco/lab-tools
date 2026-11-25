@@ -16,7 +16,7 @@
 //!
 //! Alpine installs the real linux-lts, so mkinitfs's and kernel-hooks' triggers run (the layer's hook is a kernel-hooks.d script: nfpm writes no apk trigger).
 //!
-//! Not covered: a real kernel package's scriptlets.
+//! A real distro kernel package's scriptlets (Fedora kernel-core, Debian linux-image-amd64, Arch linux; Alpine's linux-lts above) run in the last three tests; only the phone's dtb is put there by a helper, an x86_64 kernel shipping none.
 
 use lpoco_layer::{add_boot_trigger, materialize, packages, Format};
 use lpoco_manifest::Manifest;
@@ -210,6 +210,66 @@ fn alpine_apk_add_of_a_kernel_leaves_a_boot_img_with_the_dtb_appended() {
          apk add -q --allow-untrusted /w/out/*.apk\n\
          apk add -q linux-lts\n\
          cp /boot/google-walleye-lts.img /w/boot.img",
+    );
+    counted(&dir, "boot.img");
+}
+
+// The distro's own kernel packages (proof: layer-real-kernel-scriptlets). The container is x86_64, whose kernels
+// ship no device tree, so a helper that runs before the layer's trigger (names sort before 95-) puts the phone's
+// dtb where that distro's kernels keep theirs; everything else is the distro's own package and scriptlets.
+
+#[test]
+#[ignore = "needs docker, the network and LPOCO_BRINGUP"]
+fn fedora_kernel_core_scriptlets_leave_a_boot_img_with_the_dtb_appended() {
+    let dir = work(Format::Rpm, "fedora-real");
+    in_container(
+        "fedora:latest",
+        &dir,
+        "dnf install -y -q systemd-udev /w/out/*.rpm >/dev/null\n\
+         systemd-id128 new > /etc/machine-id\n\
+         echo layout=bls > /etc/kernel/install.conf\n\
+         mkdir -p /etc/kernel/install.d\n\
+         printf '#!/bin/sh\\n[ \"$1\" = add ] || exit 0\\nmkdir -p /usr/lib/modules/$2/dtb/qcom\\ncp /w/w.dtb /usr/lib/modules/$2/dtb/qcom/msm8998-google-walleye.dtb\\n' > /etc/kernel/install.d/50-test-dtb.install\n\
+         chmod 755 /etc/kernel/install.d/50-test-dtb.install\n\
+         dnf install -y -q kernel-core >/dev/null\n\
+         cp /boot/*/*/boot.img /w/boot.img",
+    );
+    counted(&dir, "boot.img");
+}
+
+#[test]
+#[ignore = "needs docker, the network and LPOCO_BRINGUP"]
+fn debian_linux_image_amd64_scriptlets_leave_a_boot_img_with_the_dtb_appended() {
+    let dir = work(Format::Deb, "debian-real");
+    in_container(
+        "debian:trixie",
+        &dir,
+        "apt-get update -qq >/dev/null && apt-get install -y -qq systemd-boot initramfs-tools >/dev/null\n\
+         printf '#!/bin/sh\\nexit 0\\n' > /usr/bin/bootctl && chmod +x /usr/bin/bootctl\n\
+         apt-get install -y -qq /w/out/*.deb >/dev/null\n\
+         systemd-id128 new > /etc/machine-id\n\
+         echo layout=bls > /etc/kernel/install.conf\n\
+         mkdir -p /etc/kernel/postinst.d\n\
+         printf '#!/bin/sh\\nmkdir -p /usr/lib/linux-image-$1/qcom\\ncp /w/w.dtb /usr/lib/linux-image-$1/qcom/msm8998-google-walleye.dtb\\n' > /etc/kernel/postinst.d/50-test-dtb\n\
+         chmod 755 /etc/kernel/postinst.d/50-test-dtb\n\
+         apt-get install -y -qq linux-image-amd64 >/dev/null\n\
+         cp /boot/*/*/boot.img /w/boot.img",
+    );
+    counted(&dir, "boot.img");
+}
+
+#[test]
+#[ignore = "needs docker, the network and LPOCO_BRINGUP"]
+fn arch_linux_package_hooks_leave_a_boot_img_with_the_dtb_appended() {
+    let dir = work(Format::Archlinux, "arch-real");
+    in_container(
+        "archlinux:latest",
+        &dir,
+        "pacman -Syu --noconfirm android-tools python >/dev/null\n\
+         pacman -U --noconfirm /w/out/*.pkg.tar.zst >/dev/null\n\
+         printf '[Trigger]\\nType = Path\\nOperation = Install\\nOperation = Upgrade\\nTarget = usr/lib/modules/*/vmlinuz\\n[Action]\\nWhen = PostTransaction\\nExec = /bin/sh -c \"for d in /usr/lib/modules/*/; do mkdir -p $d/dtb/qcom; cp /w/w.dtb $d/dtb/qcom/msm8998-google-walleye.dtb; done\"\\n' > /usr/share/libalpm/hooks/50-test-dtb.hook\n\
+         pacman -S --noconfirm linux >/dev/null\n\
+         cp /boot/google-walleye-linux.img /w/boot.img",
     );
     counted(&dir, "boot.img");
 }
