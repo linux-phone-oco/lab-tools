@@ -15,6 +15,8 @@
 //!                                                (--dry-run: only say which of these it would be, changing nothing)
 //!                                                (--rebuild: build the recipe ignoring those, and fail unless it equals the declared sha256, naming both)
 //!                                                the image [images.NAME] by its sha256:its Nix store path, from the store, else the file:// cache, else the seed, else built from its [images.NAME.recipe] in Nix's sandbox (the build is held to the declared sha256 by Nix)
+//!   lpoco-bringup image ensure --rebuild --changed-since REV [--device device.toml] [--source DIR]
+//!                                                --rebuild of every image whose sha256 or recipe differ from the device.toml at git REV; passes when none do
 //!   lpoco-bringup image bisect SERIES --out DIR
 //!                                                the images a series file declares (control = "...", [[image]] name, kernel, dtb, ramdisk,
 //!                                                cmdline, lz4, footer), each the control with exactly those parts swapped, counted
@@ -456,6 +458,15 @@ contract! {
         subcommands: &[Command::Image],
         arg: Some(Arg::long("rebuild")),
         summary: "ensure: build the image from its recipe in the sandbox, ignoring the store, the cache and the seed, and fail unless the result is the declared sha256 (naming both).",
+        ..Input::EMPTY
+    };
+
+    CHANGED_SINCE: String, Command = Input {
+        key: "changed_since",
+        ty: Type::String,
+        subcommands: &[Command::Image],
+        arg: Some(Arg { value_name: "REV", ..Arg::long("changed-since") }),
+        summary: "ensure --rebuild: with no NAME, rebuild only the images whose sha256 or recipe differ from the device.toml at git REV (an image it did not declare counts), and pass when none do.",
         ..Input::EMPTY
     };
 

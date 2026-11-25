@@ -279,6 +279,7 @@ is proven against mkbootimg by test (`bringup/tests/pack_v0.rs`; where android-t
 ### lpoco bringup image ensure: an image by its sha256, from a store or a recipe
 
     lpoco bringup image ensure NAME [--device device.toml] [--cache DIR] [--seed DIR] [--source DIR] [--dry-run | --rebuild]
+    lpoco bringup image ensure --rebuild --changed-since REV [--device device.toml] [--source DIR]
 
 Prints the Nix store path of `[images.NAME]` (its `sha256` and the file name of its `path` give it a fixed-output path:
 `nix-store --print-fixed-path`). In the store: done. Else `nix copy --from` the file:// cache `--cache` (or
@@ -306,6 +307,13 @@ still found by their sha256; `nix-build --check`, no substituters), and fails un
 no image and is refused with `--dry-run`; its control and parts are served as for ensure (not rebuilt), and a kernel build name is refused. A lab's CI calls it per image whose recipe or sha256 a change touches; plain
 `ensure` serves by sha256 and does not prove it. Proof: `bringup/tests/ensure.rs`
 `a_rebuild_fails_a_declared_sha256_the_recipe_does_not_make_though_plain_ensure_passes_it`.
+
+`--rebuild --changed-since REV` (no NAME; decision 2026-11-24-image-rebuild-runs-at-land) is what a lab's `make land-check`
+calls: it reads the device.toml as git REV holds it (beside the given one, `git show REV:./device.toml`), chooses every
+image with a recipe whose sha256 or recipe differ from it (or that REV did not declare), says each as `NAME: changed since
+REV (its sha256|its recipe|its control|not declared there), rebuilding`, and `--rebuild`s them in turn, stopping at the first that is not
+its declared sha256. None changed: it says so and passes. A revision git cannot read, or one with no device.toml, is refused,
+never taken for "nothing changed"; so is one whose device.toml no longer parses. A recipe that names a control whose sha256 changed (or the control's own control) is chosen though its own text is the same. Proof: `bringup/tests/rebuild_changed_since.rs` and `ensure::tests`.
 
 A recipe's `kernel` is a file by sha256; `[kernel_builds.NAME]` makes one from an `int/` tag, and `image ensure NAME` takes
 the same ways (store, cache, seed) before building it:
