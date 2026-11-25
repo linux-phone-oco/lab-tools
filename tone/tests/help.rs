@@ -7,7 +7,17 @@
 use std::process::Command;
 
 fn run(bin: &str, args: &[&str]) -> (i32, String, String) {
-    let o = Command::new(bin).args(args).output().unwrap();
+    let dir = std::env::temp_dir().join(format!("lpoco-tone-cwd-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    run_in(&dir, bin, args)
+}
+
+fn run_in(dir: &std::path::Path, bin: &str, args: &[&str]) -> (i32, String, String) {
+    let o = Command::new(bin)
+        .args(args)
+        .current_dir(dir)
+        .output()
+        .unwrap();
     (
         o.status.code().unwrap_or(-1),
         String::from_utf8_lossy(&o.stdout).into_owned(),
@@ -115,5 +125,50 @@ fn the_version_is_printed_under_both_names() {
             assert_eq!(code, 0);
             assert!(out.starts_with("lpoco-tone "), "{out}");
         }
+    }
+}
+
+/// Decision/backlog tone-recording-out-of-the-tree: an argument test once left a 576 KB recording at
+/// the repository's top. A refused command line writes nothing into the folder it ran in.
+#[test]
+fn a_refused_command_line_writes_nothing_into_the_working_folder() {
+    let dir = std::env::temp_dir().join(format!("lpoco-tone-clean-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    for args in [
+        &["make", "--channels", "70000", "a.wav"][..],
+        &["make", "--channels", "0", "a.wav"],
+        &["make", "--rate", "5000000000", "a.wav"],
+        &["make", "--rate", "0", "a.wav"],
+        &["make", "--secs", "inf", "a.wav"],
+        &["make", "--rate", "x", "a.wav"],
+        &["make", "a.wav", "b.wav"],
+        &["make", "--no-such-flag", "a.wav"],
+        &["make", "--min-snr", "3", "a.wav"],
+    ] {
+        for bin in BINS {
+            let (code, _, _) = run_in(&dir, bin, args);
+            let left: Vec<_> = std::fs::read_dir(&dir)
+                .unwrap()
+                .map(|e| e.unwrap().file_name())
+                .collect();
+            assert!(left.is_empty(), "{args:?} (exit {code}) left {left:?}");
+        }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The same leak's trace: a recording tracked at the repository's top or in the crate's folder
+/// (--weird.wav, tone/a.wav, from #101). A recording a test needs is made in a temp folder.
+#[test]
+fn no_recording_sits_in_the_crate_or_the_repository_top() {
+    let crate_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    for dir in [crate_dir, crate_dir.parent().unwrap()] {
+        let wavs: Vec<_> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|n| n.ends_with(".wav"))
+            .collect();
+        assert!(wavs.is_empty(), "{dir:?} holds recordings: {wavs:?}");
     }
 }
