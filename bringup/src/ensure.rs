@@ -81,11 +81,24 @@ pub fn ensure(
 /// The image `name` proved against its recipe: the recipe built in the sandbox, ignoring the store, the cache and
 /// the seed (decision 2026-11-24-a-recipe-sha-is-proved-by-a-rebuild), and its sha256 compared to the declared
 /// one. A result that is not the declared one fails naming the image and both sha256s; nothing is published.
+/// Each input of the recipe that has a recipe of its own is proved first, the same way; one that has none (a
+/// seed, hand-built) is said to be not proved.
 pub fn rebuild(
     manifest: &Manifest,
     name: &str,
     sources: &Sources,
     say: &mut dyn FnMut(String),
+) -> Result<PathBuf, String> {
+    rebuild_once(manifest, name, sources, say, &mut Vec::new())
+}
+
+/// [`rebuild`], with the names already proved in this run (an input two images share is rebuilt once).
+fn rebuild_once(
+    manifest: &Manifest,
+    name: &str,
+    sources: &Sources,
+    say: &mut dyn FnMut(String),
+    proved: &mut Vec<String>,
 ) -> Result<PathBuf, String> {
     if !manifest
         .images
@@ -99,6 +112,7 @@ pub fn rebuild(
     }
     let (wanted, recipe) = image(manifest, name)?;
     let recipe = recipe.ok_or_else(|| format!("{name}: no recipe to rebuild it from"))?;
+    prove_inputs(manifest, name, recipe, sources, say, proved)?;
     let path = build(manifest, name, &wanted, recipe, sources, say, true)?;
     let built = sum(&path)?;
     if built != wanted.sha256 {
@@ -107,10 +121,55 @@ pub fn rebuild(
             wanted.sha256
         ));
     }
+    proved.push(name.to_string());
     say(format!(
         "{name}: rebuilt from its recipe, equal to its declared sha256"
     ));
     Ok(path)
+}
+
+/// The inputs of `recipe` (the control by name; the kernel, dtb and ramdisk by sha256): one that is an image with a
+/// recipe is rebuilt; any other is said to be not proved, and is not a failure.
+fn prove_inputs(
+    manifest: &Manifest,
+    name: &str,
+    recipe: &Recipe,
+    sources: &Sources,
+    say: &mut dyn FnMut(String),
+    proved: &mut Vec<String>,
+) -> Result<(), String> {
+    let images = manifest.images.as_ref().map(|i| &i.named);
+    let by_sha = |sha: &String| {
+        images.and_then(|m| {
+            m.iter()
+                .find(|(_, i)| i.sha256.as_ref() == Some(sha))
+                .map(|(n, i)| (n.clone(), i.recipe.is_some()))
+        })
+    };
+    let mut inputs = vec![(
+        recipe.control.clone(),
+        images
+            .and_then(|m| m.get(&recipe.control))
+            .is_some_and(|i| i.recipe.is_some()),
+    )];
+    for (part, sha) in [
+        ("kernel", &recipe.kernel),
+        ("dtb", &recipe.dtb),
+        ("ramdisk", &recipe.ramdisk),
+    ] {
+        if let Some(sha) = sha {
+            let (input, has_recipe) = by_sha(sha).unwrap_or((format!("{name} {part}"), false));
+            inputs.push((input, has_recipe));
+        }
+    }
+    for (input, has_recipe) in inputs {
+        if !has_recipe {
+            say(format!("{input}: not proved, it has no recipe (a seed)"));
+        } else if !proved.contains(&input) {
+            rebuild_once(manifest, &input, sources, say, proved)?;
+        }
+    }
+    Ok(())
 }
 
 /// Why an image is chosen by `--changed-since`.
