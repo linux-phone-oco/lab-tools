@@ -826,3 +826,23 @@ fn apk_gets_no_extractor_entry_its_firmware_is_its_own_service() {
         "{items:?}"
     );
 }
+
+#[test]
+fn an_apk_says_its_release_so_its_version_is_the_one_its_file_name_and_the_index_carry() {
+    // source: nfpm 2.49.0 on the lab, 2026-11-25: without release the apk's .PKGINFO says `pkgver = 0.1.0`
+    // while the file is named NAME-0.1.0-r0.apk, so an index made from it points at a file apk cannot find
+    // ("package mentioned in index not found"); with `release: "0"` pkgver is 0.1.0-r0.
+    let (dir, stage) = fixture("rel");
+    let m = Manifest::parse(DEVICE).unwrap();
+    let layer = m.layer.as_ref().unwrap();
+    let yaml = |f: Format| {
+        let p = packages(layer, f)
+            .into_iter()
+            .find(|p| p.name == "xiaomi-surya-config")
+            .unwrap();
+        let e = materialize(&p, &dir, &stage).unwrap();
+        nfpm_yaml(&p, f, "0.1.0", &e, None).unwrap()
+    };
+    assert!(yaml(Format::Apk).contains("release: \"0\"\n"));
+    assert!(!yaml(Format::Deb).contains("release:"));
+}

@@ -9,6 +9,9 @@ use lpoco_manifest::{Boot, BootMethod, FileKind, Layer};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+/// The release every apk of the layer carries: in its file name and, said to nfpm, in its `.PKGINFO` pkgver.
+const APK_RELEASE: &str = "0";
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Format {
     Apk,
@@ -43,7 +46,7 @@ impl Format {
     pub fn file_name_for(self, name: &str, version: &str, arch: Option<&str>) -> String {
         let arm = arch.is_some();
         match self {
-            Format::Apk => format!("{name}-{version}-r0.apk"),
+            Format::Apk => format!("{name}-{version}-r{APK_RELEASE}.apk"),
             Format::Deb => format!("{name}_{version}_{}.deb", arch.unwrap_or("all")),
             Format::Rpm => format!(
                 "{name}-{version}-1.{}.rpm",
@@ -369,6 +372,10 @@ pub fn nfpm_yaml(
         quote(version),
         quote(&pkg.description)
     );
+    if format == Format::Apk {
+        // the file is named -r0 (file_name_for); without this nfpm leaves the release out of .PKGINFO's pkgver
+        y.push_str(&format!("release: \"{APK_RELEASE}\"\n"));
+    }
     if !pkg.depends.is_empty() {
         y.push_str("depends:\n");
         for d in &pkg.depends {
