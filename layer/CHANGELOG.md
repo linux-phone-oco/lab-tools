@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.52.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-layer-v0.51.1...lpoco-layer-v0.52.0) - 2026-11-25
+
+### Added
+
+- *(host)* a release archive pinned by its own sha256 ([#435](https://github.com/linux-phone-oco/lab-tools/pull/435))
+
 ## [0.51.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-layer-v0.51.0...lpoco-layer-v0.51.1) - 2026-11-25
 
 ### Added
