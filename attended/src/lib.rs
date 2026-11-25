@@ -27,6 +27,7 @@ pub mod bench;
 pub mod call;
 mod cli;
 mod device;
+pub mod install;
 pub(crate) mod prompt;
 mod source;
 pub mod steps;

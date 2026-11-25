@@ -1,0 +1,4 @@
+sys /sys sysfs rw,relatime 0 0
+dev /dev devtmpfs rw,nosuid,noexec,relatime,size=10240k,nr_inodes=463619,mode=755 0 0
+/dev/sda22 /lower ext4 ro,relatime,norecovery 0 0
+overlay / overlay rw,relatime,lowerdir=/lower,upperdir=/ovl/upper,workdir=/ovl/work,uuid=on 0 0
