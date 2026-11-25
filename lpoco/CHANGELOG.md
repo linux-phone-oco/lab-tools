@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.53.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-v0.52.0...lpoco-v0.53.0) - 2026-11-25
+
+### Added
+
+- *(bringup)* image ensure --rebuild also proves each input that has a recipe ([#437](https://github.com/linux-phone-oco/lab-tools/pull/437))
+
 ## [0.52.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-v0.51.1...lpoco-v0.52.0) - 2026-11-25
 
 ### Added
