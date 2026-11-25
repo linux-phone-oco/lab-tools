@@ -188,3 +188,44 @@ fn the_kernel_package_carries_arm64_in_each_formats_own_word() {
     )));
     assert!(pkginfo.contains("arch = aarch64"), "{pkginfo}");
 }
+
+#[test]
+#[ignore = "needs docker, the network and nfpm"]
+fn an_unsigned_nfpm_apk_signed_in_a_container_installs_from_a_signed_repository_without_allow_untrusted(
+) {
+    // proof: layer-apk-via-nfpm. The conveyor's way, in miniature: nfpm packs the apk unsigned (here, on the
+    // host); a fresh Alpine 3.24 container that alone holds the key signs it, indexes the repository and signs
+    // the index; a second clean 3.24 container trusts only the public key and installs from that repository
+    // by name, at the layer's version, without --allow-untrusted.
+    // source: abuild-sign(1) and apk-tools 3 on alpine:3.24, read on the lab 2026-11-25.
+    let dir = packed("apk");
+    let repo = dir.join("repo/aarch64");
+    fs::create_dir_all(&repo).unwrap();
+    for f in fs::read_dir(dir.join("out")).unwrap() {
+        let p = f.unwrap().path();
+        if p.extension().is_some_and(|e| e == "apk") {
+            fs::copy(&p, repo.join(p.file_name().unwrap())).unwrap();
+        }
+    }
+    in_container(
+        "alpine:3.24",
+        &dir,
+        "apk add -q abuild >/dev/null\n\
+         openssl genrsa -out /w/key.rsa 2048 2>/dev/null\n\
+         openssl rsa -in /w/key.rsa -pubout -out /w/key.rsa.pub 2>/dev/null\n\
+         cd /w/repo/aarch64\n\
+         for a in *.apk; do abuild-sign -k /w/key.rsa $a; done\n\
+         apk index -q --allow-untrusted --rewrite-arch aarch64 -o APKINDEX.tar.gz *.apk\n\
+         abuild-sign -k /w/key.rsa APKINDEX.tar.gz\n",
+    );
+    // an aarch64 root on the x86 lab: no scripts run; only the public key is trusted
+    in_container(
+        "alpine:3.24",
+        &dir,
+        "mkdir -p /keys /r\n\
+         cp /w/key.rsa.pub /keys/\n\
+         apk add -q --root /r --initdb --arch aarch64 --keys-dir /keys --repository /w/repo --no-scripts test-phone-config\n\
+         test -f /r/usr/share/alsa/ucm2/Test/phone/HiFi.conf\n\
+         apk list --root /r -I | grep -q '^test-phone-config-0.1.0-r0 aarch64 '\n",
+    );
+}
