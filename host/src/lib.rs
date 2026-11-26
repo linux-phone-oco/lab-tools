@@ -950,6 +950,20 @@ pub fn is_member_name(name: &str) -> bool {
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
 }
 
+/// The programs in the install prefix named like the family (`lpoco...`) that neither the family nor a lab.toml pin
+/// holds: leftovers of an older install (`lpoco-attended` 0.45.4 on 2026-11-26), sorted.
+pub fn stray_programs(in_prefix: &[String], pinned: &[String]) -> Vec<String> {
+    let mut v: Vec<String> = in_prefix
+        .iter()
+        .filter(|n| is_member_name(n))
+        .filter(|n| !FAMILY.contains(&n.as_str()) && !pinned.contains(n))
+        .cloned()
+        .collect();
+    v.sort();
+    v.dedup();
+    v
+}
+
 /// One program of the family at release `version`: its asset, else cargo from its tag.
 pub fn family_plan(
     p: &str,
@@ -1863,5 +1877,28 @@ mod primary_group_tests {
         assert_eq!(primary_group(g, p, "nobody"), None);
         assert_eq!(primary_group(g, p, ""), None);
         assert_eq!(primary_group("", p, "carol"), None);
+    }
+}
+
+#[cfg(test)]
+mod stray_tests {
+    use super::*;
+
+    #[test]
+    fn a_stray_is_family_named_unpinned_unlisted_sorted_and_once() {
+        let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        let found = s(&[
+            "lpoco-z",
+            "lpoco-attended",
+            "lpoco-lab",
+            "lpoco-pinned",
+            "land",
+            "lpoco-z",
+            "lpoco-a.new",
+        ]);
+        assert_eq!(
+            stray_programs(&found, &s(&["lpoco-pinned"])),
+            s(&["lpoco-attended", "lpoco-z"])
+        );
     }
 }

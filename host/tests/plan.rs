@@ -1654,3 +1654,84 @@ fn targets_names_each_declared_cross_target_once_one_a_line_and_changes_nothing(
     assert_eq!(out(&o), "t-musl\nu-musl\n");
     assert!(changes(&l).is_none());
 }
+
+/// Walleye saw `~/.local/bin/lpoco-attended` 0.45.4 on 2026-11-26 (google-walleye-lab#1191): a program in the
+/// family's name that no lab.toml pin holds. The stand-in prefix is the test's HOME; lpoco-lab is a family
+/// program and is not a stray, `land` is not named lpoco*.
+fn with_stray(name: &str, tools: &str) -> Lab {
+    let l = lab(name, tools);
+    let bin = l.dir.join("home/.local/bin");
+    fs::create_dir_all(&bin).unwrap();
+    exe(&bin.join("lpoco-attended"), "echo lpoco-attended 0.45.4");
+    exe(&bin.join("lpoco-lab"), "echo lpoco-lab 0.2.0");
+    exe(&bin.join("land"), "echo land 0.1.0");
+    l
+}
+
+#[test]
+fn check_names_a_stray_lpoco_program_no_pin_holds_and_counts_it_a_failure() {
+    let l = with_stray("stray-check", "[tools]\nlpoco = \"0.2.0\"\n");
+    let s = out(&host(&l, &["check"]));
+    let line = s
+        .lines()
+        .find(|x| x.contains("stray"))
+        .unwrap_or_else(|| panic!("no stray line: {s}"));
+    assert!(
+        line.contains("lpoco-attended") && line.contains("FAIL") && line.contains(".local/bin"),
+        "{line}"
+    );
+    assert!(
+        !s.lines()
+            .any(|x| x.contains("stray") && x.contains("lpoco-lab")),
+        "a family program is not a stray: {s}"
+    );
+    assert!(
+        l.dir.join("home/.local/bin/lpoco-attended").exists(),
+        "check removed it"
+    );
+}
+
+#[test]
+fn plan_lists_the_removal_of_a_stray_and_removes_nothing() {
+    let l = with_stray("stray-plan", "[tools]\nlpoco = \"0.2.0\"\n");
+    let s = out(&host(&l, &["plan"]));
+    let path = l.dir.join("home/.local/bin/lpoco-attended");
+    assert!(
+        s.lines()
+            .any(|x| x.contains("rm") && x.contains(path.to_str().unwrap())),
+        "{s}"
+    );
+    assert!(!s.contains(&format!(
+        "rm {}",
+        l.dir.join("home/.local/bin/lpoco-lab").display()
+    )));
+    assert!(path.exists(), "the plan removed it");
+}
+
+#[test]
+fn prepare_now_takes_the_stray_off_and_leaves_the_family_alone() {
+    let l = with_stray("stray-prepare", "");
+    let o = host(&l, &["prepare", "now"]);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    assert!(
+        !l.dir.join("home/.local/bin/lpoco-attended").exists(),
+        "the stray is still there"
+    );
+    assert!(l.dir.join("home/.local/bin/lpoco-lab").exists());
+    assert!(l.dir.join("home/.local/bin/land").exists());
+}
+
+#[test]
+fn a_pinned_script_tool_named_like_the_family_is_not_a_stray_and_a_directory_is_left() {
+    let l = lab(
+        "stray-pinned",
+        "[tools.lpoco-extra]\ngit = \"https://github.com/grenudi/lab-machine\"\npath = \"bin/lpoco-extra\"\nrev = \"abc123\"\nversion = \"0.1.0\"\n",
+    );
+    let bin = l.dir.join("home/.local/bin");
+    fs::create_dir_all(bin.join("lpoco-dir")).unwrap();
+    exe(&bin.join("lpoco-extra"), "echo x");
+    let s = out(&host(&l, &["plan"]));
+    assert!(!s.lines().any(|x| x.contains("rm ")), "{s}");
+    let s = out(&host(&l, &["check"]));
+    assert!(!s.contains("stray"), "{s}");
+}
