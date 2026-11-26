@@ -15,6 +15,10 @@ pub const MANIFEST: &str = "device.toml";
 pub struct Device {
     pub device: Identity,
     pub connection: Connection,
+    /// The other ways in, by name ([connections.NAME])
+    pub connections: std::collections::BTreeMap<String, Connection>,
+    /// The name of the connection `connection` is, when it was chosen by name; none for the default
+    pub connection_name: Option<String>,
     pub tests: Tests,
     pub provision: Provision,
     pub flash: Flash,
@@ -34,6 +38,30 @@ pub struct Device {
 }
 
 impl Device {
+    /// This device reached by the connection NAME ([connections.NAME]), or as it is for none. A name the manifest
+    /// does not declare is refused, saying so.
+    pub fn on(&self, name: Option<&str>) -> Result<Device> {
+        let Some(name) = name else {
+            return Ok(self.clone());
+        };
+        let connection = self.connections.get(name).with_context(|| {
+            format!(
+                "{} declares no [connections.{name}] in device.toml (declared: {})",
+                self.device.codename,
+                self.connections
+                    .keys()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        })?;
+        Ok(Device {
+            connection: connection.clone(),
+            connection_name: Some(name.to_string()),
+            ..self.clone()
+        })
+    }
+
     /// The serial adb reaches this phone by: its fastboot serial, else the first gadget serial the manifest names.
     pub fn adb_serial(&self) -> Result<String> {
         let from_fastboot = self.fastboot.serial.trim();
@@ -119,9 +147,16 @@ impl Device {
         {
             bail!("device.toml: connection.addresses is empty");
         }
+        for (name, c) in &m.connections {
+            if c.addresses.is_empty() && c.transport == lpoco_manifest::Transport::Ssh {
+                bail!("device.toml: connections.{name}.addresses is empty");
+            }
+        }
         Ok(Device {
             device,
             connection,
+            connections: m.connections,
+            connection_name: None,
             tests: m.tests,
             provision: m.provision,
             flash: m.flash,

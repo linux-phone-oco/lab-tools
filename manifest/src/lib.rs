@@ -26,6 +26,9 @@ pub use layer::{
 pub struct Manifest {
     pub device: Option<Identity>,
     pub connection: Option<Connection>,
+    /// The other ways in, by name, for a phone that boots more than one system ([connection] stays the default)
+    #[serde(default)]
+    pub connections: std::collections::BTreeMap<String, Connection>,
     #[serde(default)]
     pub tests: Tests,
     #[serde(default)]
@@ -91,6 +94,18 @@ impl Manifest {
         }
         if let Some(c) = &m.connection {
             c.validate()?;
+        }
+        for (name, c) in &m.connections {
+            if name.is_empty()
+                || !name
+                    .chars()
+                    .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+                || name.starts_with('-')
+            {
+                return Err(format!("connections.{name:?}: a connection name is a plain word (letters, digits, - and _, not leading -)"));
+            }
+            c.validate()
+                .map_err(|e| e.replacen("connection:", &format!("connections.{name}:"), 1))?;
         }
         if let Some(i) = &m.images {
             i.validate()?;

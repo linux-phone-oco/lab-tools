@@ -4,7 +4,7 @@
 //! phone is NOT on, read back by sha256. They run as root on the phone through devlab (adb), take their values as
 //! arguments (a procedure reads them from its device.toml) and write only what they are told is allowed.
 
-use crate::{Kind, Step};
+use crate::{Kind, Phone, Step};
 
 /// The block size of the write and of its read-back: an image is a whole number of these.
 const BLOCK: u64 = 4096;
@@ -99,25 +99,28 @@ fn write_script(by_name: &str, partition: &str, staged: &str, sha256: &str) -> S
     )
 }
 
+/// Every step runs on the phone it is given: `phone()` the device's default connection, `phone_on("android")` a named
+/// one ([connections.android]) - the procedure says which system it means, the device says how to reach it.
+///
 /// The slot the phone runs from reads as `_a` or `_b` (`getprop ro.boot.slot_suffix`).
-pub fn read_slot() -> Step {
+pub fn read_slot(on: Phone) -> Step {
     Step::new(
         Kind::Check,
         "the phone says which slot it runs from",
-        || {
-            let said = crate::phone().root("getprop ro.boot.slot_suffix")?;
+        move || {
+            let said = on.root("getprop ro.boot.slot_suffix")?;
             parse_slot_suffix(&said).map(|_| ())
         },
     )
 }
 
 /// The mount at `point` is read-only (`/proc/mounts` as root).
-pub fn mount_is_readonly(point: &str) -> Step {
+pub fn mount_is_readonly(on: Phone, point: &str) -> Step {
     let point = point.to_string();
     Step::new(
         Kind::Check,
         &format!("{point} is mounted read-only"),
-        move || mount_readonly(&crate::phone().root("cat /proc/mounts")?, &point),
+        move || mount_readonly(&on.root("cat /proc/mounts")?, &point),
     )
 }
 
@@ -126,6 +129,7 @@ pub fn mount_is_readonly(point: &str) -> Step {
 /// now), is refused before anything is written, and so is a staged image that is not whole blocks or not `sha256`.
 /// The step fails when the partition read back over the image's length does not hash to `sha256`.
 pub fn adb_write_partition(
+    on: Phone,
     allowed: &[&str],
     by_name: &str,
     partition: &str,
@@ -147,11 +151,10 @@ pub fn adb_write_partition(
             plain("partition", &partition)?;
             plain("staged image", &staged)?;
             let sha256 = sha256_word(&sha256)?;
-            let active = parse_slot_suffix(&crate::phone().root("getprop ro.boot.slot_suffix")?)?;
+            let active = parse_slot_suffix(&on.root("getprop ro.boot.slot_suffix")?)?;
             let allowed: Vec<&str> = allowed.iter().map(String::as_str).collect();
             write_allowed(&allowed, &partition, active)?;
-            let said =
-                crate::phone().root(&write_script(&by_name, &partition, &staged, &sha256))?;
+            let said = on.root(&write_script(&by_name, &partition, &staged, &sha256))?;
             let read_back = said.lines().last().unwrap_or("").trim();
             if read_back == sha256 {
                 Ok(())

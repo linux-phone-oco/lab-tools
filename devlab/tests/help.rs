@@ -45,8 +45,11 @@ const PATHS: &[(&[&str], &[&str])] = &[
     (&["phone"], &["find", "sh", "root", "put", "reboot"]),
     (&["phone", "find"], &["address that answers"]),
     (&["phone", "sh"], &["standard input as the user"]),
-    (&["phone", "root"], &["standard input as root"]),
-    (&["phone", "put"], &["LOCAL", "REMOTE"]),
+    (
+        &["phone", "root"],
+        &["standard input as root", "--connection"],
+    ),
+    (&["phone", "put"], &["LOCAL", "REMOTE", "--connection"]),
     (&["phone", "reboot"], &["answers again"]),
     (
         &["flash"],

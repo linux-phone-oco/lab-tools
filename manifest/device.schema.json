@@ -24,6 +24,13 @@
         }
       ]
     },
+    "connections": {
+      "description": "The other ways in, by name, for a phone that boots more than one system ([connection] stays the default)",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/Connection"
+      }
+    },
     "tests": {
       "$ref": "#/definitions/Tests"
     },
