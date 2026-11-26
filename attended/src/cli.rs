@@ -92,6 +92,15 @@ contract! {
         ..Input::EMPTY
     };
 
+    TAIL_LIMIT: String = Input {
+        key: "tail_limit",
+        ty: Type::String,
+        env: Some(Env::new("LPOCO_ATTENDED_TAIL_LIMIT")),
+        arg: Some(Arg { value_name: "SECONDS", ..Arg::long("tail-limit") }),
+        summary: "The longest the output of a call that has ended may take to end, in seconds (30 when none is given): a call that left a daemon holding its pipes fails its step naming the bound.",
+        ..Input::EMPTY
+    };
+
     ANSWER_LIMIT: String = Input {
         key: "answer_limit",
         ty: Type::String,

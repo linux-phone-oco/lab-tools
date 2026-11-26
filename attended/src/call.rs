@@ -3,13 +3,24 @@
 //! cut, with every process it started that is still attached to it, and fails its step naming the limit. With
 //! no limit the call is waited for as it always was. The call stays in this run's own process group, so Ctrl-C
 //! reaches it as it reaches the run, and a signal sent to the run alone cuts it (stop.rs); a way back's call
-//! leaves the group. (A double-forked daemon is reparented to init and is not found.)
+//! leaves the group. (A double-forked daemon is reparented to init and is not found.) A call that has ended but
+//! whose output does not end within the tail bound fails its step naming the bound.
 
 use crate::stop;
 use std::io::{Read, Write};
 use std::process::{Command, Output, Stdio};
-use std::sync::mpsc::{channel, Receiver, RecvTimeoutError};
+use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, TryRecvError};
 use std::time::{Duration, Instant};
+
+/// How long the output of a call that has ended may take to end: a call that is gone but left a daemon on its pipes.
+pub const DEFAULT_TAIL: Duration = Duration::from_secs(30);
+
+fn tail_error(tail: Duration) -> String {
+    format!(
+        "the call ended but its output did not end within the tail bound of {} s; something it started still holds it open",
+        tail.as_secs()
+    )
+}
 
 fn limit_error(limit: Option<Duration>) -> String {
     format!(
@@ -25,6 +36,7 @@ pub fn run_limited(
     mut cmd: Command,
     stdin: &str,
     limit: Option<Duration>,
+    tail: Duration,
 ) -> Result<Output, String> {
     if stop::is_leaving() {
         // a way back is not cut short by the signal that ended the run, nor by one sent to its group again
@@ -62,8 +74,9 @@ pub fn run_limited(
             None => std::thread::sleep(Duration::from_millis(20)),
         }
     };
-    let stdout = collect(&out, limit, began)?;
-    let stderr = collect(&err, limit, began)?;
+    let ended = Instant::now();
+    let stdout = collect(&out, limit, began, tail, ended)?;
+    let stderr = collect(&err, limit, began, tail, ended)?;
     Ok(Output {
         status,
         stdout,
@@ -71,19 +84,36 @@ pub fn run_limited(
     })
 }
 
-/// What a reader read, once its pipe ended; past the limit, the limit error.
+/// What a reader read, once its pipe ended. The call has ended (at `ended`): its output has `tail` to end too, and
+/// the call limit still counts from `began`; a signal ends the wait. Whichever bound comes first is the error.
 fn collect(
     from: &Receiver<Vec<u8>>,
     limit: Option<Duration>,
     began: Instant,
+    tail: Duration,
+    ended: Instant,
 ) -> Result<Vec<u8>, String> {
-    match limit {
-        None => Ok(from.recv().unwrap_or_default()),
-        Some(l) => match from.recv_timeout(l.saturating_sub(began.elapsed())) {
-            Ok(b) => Ok(b),
-            Err(RecvTimeoutError::Timeout) => Err(limit_error(limit)),
-            Err(RecvTimeoutError::Disconnected) => Ok(Vec::new()),
-        },
+    loop {
+        // what is already read is taken before any bound is looked at
+        match from.try_recv() {
+            Ok(b) => return Ok(b),
+            Err(TryRecvError::Disconnected) => return Ok(Vec::new()),
+            Err(TryRecvError::Empty) => {}
+        }
+        if let Some((_, name)) = stop::came() {
+            return Err(format!("stopped by {name}; the call was cut"));
+        }
+        if limit.is_some_and(|l| began.elapsed() >= l) {
+            return Err(limit_error(limit));
+        }
+        if ended.elapsed() >= tail {
+            return Err(tail_error(tail));
+        }
+        match from.recv_timeout(Duration::from_millis(20)) {
+            Ok(b) => return Ok(b),
+            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => return Ok(Vec::new()),
+        }
     }
 }
 
@@ -142,12 +172,12 @@ mod tests {
     fn a_call_inside_the_limit_returns_its_output_and_one_past_it_is_cut() {
         let mut c = Command::new("sh");
         c.args(["-c", "cat; echo done"]);
-        let o = run_limited(c, "hi\n", Some(Duration::from_secs(10))).unwrap();
+        let o = run_limited(c, "hi\n", Some(Duration::from_secs(10)), DEFAULT_TAIL).unwrap();
         assert_eq!(String::from_utf8_lossy(&o.stdout), "hi\ndone\n");
         let mut c = Command::new("sh");
         c.args(["-c", "sleep 30 & sleep 30"]);
         let began = Instant::now();
-        let e = run_limited(c, "", Some(Duration::from_millis(200))).unwrap_err();
+        let e = run_limited(c, "", Some(Duration::from_millis(200)), DEFAULT_TAIL).unwrap_err();
         assert!(e.contains("call limit"), "{e}");
         assert!(
             began.elapsed() < Duration::from_secs(10),
@@ -160,7 +190,7 @@ mod tests {
         let began = Instant::now();
         let mut c = Command::new("sh");
         c.args(["-c", "while :; do sleep 7771; done"]);
-        let e = run_limited(c, "", Some(Duration::from_secs(1))).unwrap_err();
+        let e = run_limited(c, "", Some(Duration::from_secs(1)), DEFAULT_TAIL).unwrap_err();
         assert!(e.contains("call limit"), "{e}");
         std::thread::sleep(Duration::from_millis(200));
         let left = Command::new("pgrep")
@@ -174,7 +204,7 @@ mod tests {
         );
         let mut c = Command::new("sh");
         c.args(["-c", "sleep 7773 & echo hi"]);
-        let e = run_limited(c, "", Some(Duration::from_secs(1))).unwrap_err();
+        let e = run_limited(c, "", Some(Duration::from_secs(1)), DEFAULT_TAIL).unwrap_err();
         assert!(
             e.contains("call limit"),
             "a daemon holding the pipes hung the step: {e}"
@@ -184,10 +214,24 @@ mod tests {
     }
 
     #[test]
+    fn a_call_that_ended_but_left_its_output_open_fails_after_the_tail_bound() {
+        // sh exits at once; the sleep it started holds the pipes, with no call limit to cut it
+        let mut c = Command::new("sh");
+        c.args(["-c", "sleep 7775 & echo hi"]);
+        let began = Instant::now();
+        let e = run_limited(c, "", None, Duration::from_millis(300)).unwrap_err();
+        assert!(e.contains("tail bound"), "{e}");
+        assert!(
+            began.elapsed() < Duration::from_secs(10),
+            "the tail was waited out"
+        );
+        let _ = Command::new("pkill").args(["-f", "sleep 7775"]).status();
+    }
+    #[test]
     fn with_no_limit_a_slow_call_is_waited_for_and_stays_in_this_processs_group() {
         let mut c = Command::new("sh");
         c.args(["-c", "sleep 1; ps -o pgid= -p $$"]);
-        let o = run_limited(c, "", None).unwrap();
+        let o = run_limited(c, "", None, DEFAULT_TAIL).unwrap();
         let theirs: u32 = String::from_utf8_lossy(&o.stdout).trim().parse().unwrap();
         let mine = Command::new("ps")
             .args(["-o", "pgid=", "-p", &std::process::id().to_string()])

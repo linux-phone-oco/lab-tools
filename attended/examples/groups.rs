@@ -51,6 +51,10 @@ fn main() {
                             return retry(60, 5, || phone().sh("touch holding; false"))
                                 .map(|()| String::new());
                         }
+                        // with tail-here: the call ends at once but leaves a daemon holding its output open for 20 s
+                        if std::path::Path::new("tail-here").exists() {
+                            return phone().sh("sleep 20 & echo started");
+                        }
                         // with hold-here: the step holds the run until a signal ends it
                         if std::path::Path::new("hold-here").exists() {
                             return phone().sh("touch holding; sleep 30");

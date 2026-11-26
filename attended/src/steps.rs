@@ -462,7 +462,7 @@ fn run_argv(
         let mut cmd = std::process::Command::new(program);
         cmd.args(argv).current_dir(folder);
         // through the run's calls: a signal cuts a gate, and a way back's command leaves the run's process group
-        let out = crate::call::run_limited(cmd, "", None)
+        let out = crate::call::run_limited(cmd, "", None, crate::config().tail_limit)
             .map_err(|e| format!("{key} command {gate:?}: {e}: {then}"))?;
         if !out.status.success() {
             return Err(format!(

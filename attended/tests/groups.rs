@@ -415,3 +415,37 @@ fn a_signal_in_a_step_that_tries_again_ends_the_run_at_once_not_after_the_tries(
         "the 60 tries were waited out"
     );
 }
+
+#[test]
+fn a_call_whose_output_never_ends_fails_its_step_after_the_tail_bound_and_the_way_backs_run() {
+    // the call exits at once, but a daemon it started holds its output open: the tail of the call never comes
+    let dir = tmp("tail");
+    fs::write(dir.join("tail-here"), "").unwrap();
+    let began = std::time::Instant::now();
+    let (o, said, log) = run(&dir, &["--tail-limit", "2"]);
+    assert!(
+        began.elapsed() < std::time::Duration::from_secs(18),
+        "the tail was waited out: {said}"
+    );
+    assert_eq!(o.status.code(), Some(1), "{said}");
+    assert!(
+        said.contains("work unless told not to") && said.contains("2 s"),
+        "the step and the bound are not named: {said}"
+    );
+    assert!(!said.contains("all done"), "the run went on: {said}");
+    assert_eq!(waybacks(&dir), "inner\nouter\n", "{said}");
+    assert!(
+        log.contains("FAIL do the work > the inner part > work unless told not to")
+            && log.contains("2 s"),
+        "{log}"
+    );
+}
+
+#[test]
+fn a_tail_limit_that_is_not_a_number_of_seconds_is_refused_before_any_step() {
+    let dir = tmp("tail-bad");
+    let (o, said, _) = run(&dir, &["--tail-limit", "soon"]);
+    assert_eq!(o.status.code(), Some(2), "{said}");
+    assert!(said.contains("tail-limit"), "{said}");
+    assert!(!dir.join("calls").exists(), "a step ran: {said}");
+}

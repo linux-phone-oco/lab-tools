@@ -2,7 +2,7 @@
 //! lpoco-attended's invocation surface, declared once with argenv. Run as `lpoco attended ...`.
 //!
 //!   lpoco-attended new NAME [--device FILE]          write procedures/NAME.rs for the repo's device, ready to run
-//!   lpoco-attended run NAME [--dry-run] [--log FILE] [--device FILE] [--until FIRST_PROMPT] [--part NAME] [--call-limit SECONDS]
+//!   lpoco-attended run NAME [--dry-run] [--log FILE] [--device FILE] [--until FIRST_PROMPT] [--part NAME] [--call-limit SECONDS] [--tail-limit SECONDS]
 //!                                                    run procedures/NAME.rs; the options go to the procedure as given
 //!   lpoco-attended check [--host]                    dry-run every procedure; exit 1 naming each that fails;
 //!                                                    --host also runs the installed devlab on the manifest (read-only, cut after 30 s)
@@ -105,6 +105,14 @@ contract! {
         allowed: &["FIRST_PROMPT"],
         arg: Some(Arg { value_name: "POINT", ..Arg::long("until") }),
         summary: "run: stop cleanly at the first ask_author, never answering it.",
+        ..Input::EMPTY
+    };
+
+    TAIL_LIMIT: String = Input {
+        key: "tail_limit",
+        ty: Type::String,
+        arg: Some(Arg { value_name: "SECONDS", ..Arg::long("tail-limit") }),
+        summary: "run: the longest the output of a call that has ended may take to end, in seconds (30 when not given).",
         ..Input::EMPTY
     };
 
