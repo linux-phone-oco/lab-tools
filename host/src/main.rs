@@ -472,6 +472,23 @@ fn tool_plans(st: &State) -> Vec<ToolPlan> {
     )
 }
 
+/// The family-named programs in ~/.local/bin that no lab.toml pin and no family member holds, as paths.
+fn stray_paths(st: &State, tools: &[ToolPlan]) -> Vec<String> {
+    let dir = format!("{}/.local/bin", st.home);
+    let names: Vec<String> = fs::read_dir(&dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| e.file_type().is_ok_and(|t| !t.is_dir()))
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    let pinned: Vec<String> = tools.iter().map(|t| t.name.clone()).collect();
+    stray_programs(&names, &pinned)
+        .into_iter()
+        .map(|n| format!("{dir}/{n}"))
+        .collect()
+}
+
 fn watchers(st: &State, tools: &[ToolPlan]) -> (FileChange, Vec<Vec<String>>, Vec<String>) {
     let replaced = tools.iter().any(|t| t.name == WATCH_TOOL && !t.ok());
     let wants = format!("{}/.config/systemd/user/default.target.wants", st.home);
@@ -661,6 +678,7 @@ fn plan(st: &State) {
         }
         Err(e) => println!("\ntool timers: not measured, {e}"),
     }
+    let strays = stray_paths(st, &tools);
     println!("\ntools:");
     for t in tools {
         let found = t.found_text();
@@ -684,6 +702,12 @@ fn plan(st: &State) {
             if let Some(by) = &t.installed_by {
                 println!("        off the pin: an older {} is first on PATH; {by} installs this name too, so reinstall {by} into ~/.local and remove any copy that shadows it", t.name);
             }
+        }
+    }
+    if !strays.is_empty() {
+        println!("\nstray programs (named like the family, held by no lab.toml pin; prepare now takes them off):");
+        for p in &strays {
+            println!("    rm {p}");
         }
     }
 }
@@ -740,7 +764,12 @@ fn prepare(st: &State) -> Result<i32, String> {
     for i in &unknown {
         println!("devlab-watch@{i}.service: not measured, `systemctl --user is-active` could not tell: left as it is");
     }
+    let strays = stray_paths(st, &tools);
     install_tools(st, tools)?;
+    for p in &strays {
+        println!("remove: {p}");
+        fs::remove_file(p).map_err(|e| format!("cannot remove {p}: {e}"))?;
+    }
     if unit.changed() {
         if let Some(d) = Path::new(&unit.dst).parent() {
             fs::create_dir_all(d).map_err(|e| format!("cannot make {}: {e}", d.display()))?;
@@ -1091,7 +1120,12 @@ fn check(st: &State) -> Result<i32, String> {
             }
         }
     }
-    for t in tool_plans(st) {
+    let tools = tool_plans(st);
+    for p in stray_paths(st, &tools) {
+        bad += 1;
+        println!("stray {p}: FAIL, named like the family but no lab.toml pin holds it; `lpoco host prepare now` takes it off");
+    }
+    for t in tools {
         if t.unpinned() {
             println!("tool {}: not measured, its pin is not known yet", t.name);
         } else if t.ok() {
