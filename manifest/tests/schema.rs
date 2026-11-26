@@ -461,3 +461,58 @@ fn a_firmware_declaration_that_would_break_the_extractors_toml_or_leave_its_fold
     );
     assert!(Manifest::parse(&t).unwrap_err().contains("firmware"));
 }
+
+/// `[part_builds.NAME]` (item recipe-static-binary-part): a static aarch64 binary made from a crate at a commit in
+/// the sandbox. The repository and the commit name what is read, the crate's folder and the binary what is built,
+/// the sha256 what it must be.
+#[test]
+fn a_part_build_names_its_repository_commit_crate_and_binary_and_the_sha256_it_must_have() {
+    let sha = "ab".repeat(32);
+    let rev = "0e20c7a89ac5748fbd38f59a2b66324aad84cbbb";
+    let row = |name: &str, extra: &str, sha: &str| {
+        format!(
+            "[part_builds.{name}]\nrepo = \"https://github.com/linux-phone-oco/google-walleye-lab.git\"\nrev = \"{rev}\"\nbin = \"walleye-reboot\"\nsha256 = \"{sha}\"\n{extra}"
+        )
+    };
+    let one = |extra: &str| Manifest::parse(&format!("{HEAD}{}", row("p", extra, &sha)));
+    assert!(one("").is_ok());
+    assert!(one("crate = \"tools/walleye-reboot\"\n").is_ok());
+    for (what, extra) in [
+        ("an absolute crate folder", "crate = \"/tools/x\"\n"),
+        ("a crate folder that leaves the repo", "crate = \"../x\"\n"),
+        ("a crate folder with a dot segment", "crate = \"a/./b\"\n"),
+        ("a misspelt key", "target = \"x\"\n"),
+    ] {
+        assert!(one(extra).is_err(), "{what} was accepted");
+    }
+    let bad = |from: &str, to: &str| {
+        Manifest::parse(&format!("{HEAD}{}", row("p", "", &sha).replace(from, to)))
+    };
+    assert!(
+        bad(&format!("rev = \"{rev}\""), "rev = \"main\"").is_err(),
+        "a rev that is not a commit"
+    );
+    assert!(
+        bad("repo = \"https://", "repo = \"ext::sh -c x\" #").is_err(),
+        "a repo with a scheme git does not take here"
+    );
+    assert!(
+        bad("bin = \"walleye-reboot\"", "bin = \"-x\"").is_err(),
+        "a binary named like a cargo option"
+    );
+    assert!(
+        bad("[part_builds.p]", "[part_builds.P]").is_err(),
+        "a name with a capital"
+    );
+    assert!(
+        bad(&format!("sha256 = \"{sha}\""), "sha256 = \"abc\"").is_err(),
+        "a short sha256"
+    );
+    // one name, one meaning; one sha256, one row
+    let both = format!("{HEAD}[images.p]\npath = \"p.img\"\n{}", row("p", "", &sha));
+    let e = Manifest::parse(&both).unwrap_err();
+    assert!(e.contains("two meanings"), "{e}");
+    let twice = format!("{HEAD}{}{}", row("p", "", &sha), row("q", "", &sha));
+    let e = Manifest::parse(&twice).unwrap_err();
+    assert!(e.contains("same sha256"), "{e}");
+}

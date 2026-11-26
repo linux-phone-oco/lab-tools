@@ -137,6 +137,13 @@
         "$ref": "#/definitions/KernelBuild"
       }
     },
+    "part_builds": {
+      "description": "The static aarch64 binaries made from a crate at a commit in the sandbox, by name",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/PartBuild"
+      }
+    },
     "images": {
       "description": "The images a procedure puts on the phone, by name",
       "anyOf": [
@@ -1499,6 +1506,40 @@
         "tag",
         "rev",
         "epoch",
+        "sha256"
+      ]
+    },
+    "PartBuild": {
+      "description": "`[part_builds.NAME]`: one binary and how it is made.",
+      "type": "object",
+      "properties": {
+        "repo": {
+          "description": "the git repository holding the crate (an https://, file:// or ssh:// address)",
+          "type": "string"
+        },
+        "rev": {
+          "description": "the commit the crate is read at, 40 lowercase hex digits (a tag can be moved, a commit cannot)",
+          "type": "string"
+        },
+        "crate": {
+          "description": "the crate's folder in the repository, holding its Cargo.toml and Cargo.lock (the repository's root when none)",
+          "type": "string",
+          "default": "."
+        },
+        "bin": {
+          "description": "the name of the binary the crate builds",
+          "type": "string"
+        },
+        "sha256": {
+          "description": "lowercase hex sha256 the binary must have: Nix refuses a build that is not these bytes",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "repo",
+        "rev",
+        "bin",
         "sha256"
       ]
     },
