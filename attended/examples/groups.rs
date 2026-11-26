@@ -14,7 +14,10 @@ use lpoco_attended::prelude::*;
 fn marks(word: &'static str) -> Step {
     // with slow-back: the way back takes a while, to be signalled again while it runs
     Step::new(Kind::Do, &format!("leave the {word} mark"), move || {
-        let wait = if std::path::Path::new("slow-back").exists() {
+        // with hang-back: the way back never ends on its own
+        let wait = if std::path::Path::new("hang-back").exists() {
+            "touch backing; sleep 30; "
+        } else if std::path::Path::new("slow-back").exists() {
             "touch backing; sleep 2; "
         } else {
             ""

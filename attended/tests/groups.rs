@@ -391,10 +391,41 @@ fn a_second_signal_during_the_way_back_does_not_cut_it_short() {
     send_to_group(&run, "INT");
     wait_for(&dir, "backing");
     send_to_group(&run, "INT");
-    send_to_group(&run, "TERM");
     let status = run.wait().unwrap();
     assert_eq!(status.code(), Some(130), "{}", said_so_far(&dir));
     assert_eq!(waybacks(&dir), "inner\nouter\n", "{}", said_so_far(&dir));
+}
+
+#[test]
+fn a_third_signal_during_a_way_back_that_hangs_ends_the_run_naming_the_way_back_left_unfinished() {
+    let dir = tmp("thrice");
+    fs::write(dir.join("hold-here"), "").unwrap();
+    fs::write(dir.join("hang-back"), "").unwrap();
+    let mut run = start(&dir);
+    wait_for(&dir, "holding");
+    send_to_group(&run, "INT");
+    wait_for(&dir, "backing");
+    let began = std::time::Instant::now();
+    send_to_group(&run, "INT");
+    send_to_group(&run, "HUP");
+    let status = run.wait().unwrap();
+    let said = said_so_far(&dir);
+    let log = fs::read_to_string(dir.join("run.log")).unwrap_or_default();
+    assert_eq!(status.code(), Some(3), "{said}");
+    assert!(log.contains("left unfinished by a third signal"), "{log}");
+    assert!(!waybacks(&dir).contains("outer"), "the outer way back ran");
+    assert!(
+        said.contains("way back \"leave the inner mark\" left unfinished"),
+        "the way back left is not named: {said}"
+    );
+    assert!(
+        said.contains("by hand"),
+        "no word on the phone by hand: {said}"
+    );
+    assert!(
+        began.elapsed() < std::time::Duration::from_secs(20),
+        "the hang was waited out"
+    );
 }
 
 #[test]

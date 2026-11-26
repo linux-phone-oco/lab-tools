@@ -343,7 +343,7 @@ impl Drop for Run {
 
 /// Begin the procedure: read the arguments (`--dry-run`, `--log FILE`, `--device FILE`, `--until FIRST_PROMPT`, `--part NAME`, `--from STEP`, `--help`), load the device's manifest, open the log. Call it once,
 /// first, and keep what it returns until the end of main. Exits 0 for `--help`; 1 for a wrong argument (as
-/// argenv does in every lpoco program); 2 when the device's device.toml is missing, invalid or another phone's (even in a dry run; only its schema and codename are checked, devlab judges the rest), when the log cannot be written, or when `--part` names a part the procedure has not got (a run stopped by `--until` exits 0 and leaves the log without an `end` line).
+/// argenv does in every lpoco program); 2 when the device's device.toml is missing, invalid or another phone's (even in a dry run; only its schema and codename are checked, devlab judges the rest), when the log cannot be written, or when `--part` names a part the procedure has not got (a run stopped by `--until` exits 0 and leaves the log without an `end` line); 3 when a third signal ended a way back that hung (the run ends at once, naming the way back left unfinished).
 pub fn procedure(name: &str, device: &str) -> Run {
     let r = cli::Contract::parse_and_lint(OnProblems::FailOnError);
     if cli::Contract::HELP.get_from(&r).unwrap_or(false) {
@@ -752,6 +752,21 @@ fn end_if_signalled(at: &str) {
     }
 }
 
+/// The third signal reached a way back that hangs: end the run (exit 3), naming the way back left unfinished.
+fn escape_hung_way_back() {
+    let name = STATE.lock().unwrap_or_else(|e| e.into_inner()).step.clone();
+    if name.is_empty() {
+        return; // between way backs or at the end: nothing hangs, the run is ending by itself
+    }
+    let program = config().name.clone();
+    say_err(&format!(
+        "{program}: way back {name:?} left unfinished (a third signal ended the run); the way backs after it did not run. \
+         Its command may still be running; bring the phone back by hand - look at what {name:?} does in the procedure, and at the log"
+    ));
+    note("way-back", &name, "left unfinished by a third signal");
+    std::process::exit(3)
+}
+
 /// End the run that failed: run the way backs owed, the last owed first, then exit 1.
 fn leave_failed() -> ! {
     leave_with(1)
@@ -760,6 +775,7 @@ fn leave_failed() -> ! {
 /// End the run with `code` after the way backs owed (a run that cannot go on, exit 2, leaves the phone as a failed one does).
 pub(crate) fn leave_with(code: i32) -> ! {
     stop::leaving();
+    stop::watch_for_escape(escape_hung_way_back);
     let owed = OWED.with(|o| std::mem::take(&mut *o.borrow_mut()));
     for (_, back) in owed.into_iter().rev() {
         let name = back.name.clone();
