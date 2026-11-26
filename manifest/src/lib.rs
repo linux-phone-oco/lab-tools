@@ -135,6 +135,7 @@ impl Manifest {
         if let Some(k) = &m.kernels {
             k.validate()?;
             k.validate_boot(&m)?;
+            k.validate_way_back(&m)?;
         }
         for (i, c) in m.user_config.iter().enumerate() {
             if m.user_config[..i].iter().any(|o| o.path == c.path) {
@@ -184,6 +185,13 @@ pub struct Kernels {
     /// quoting) in the device's folder, each exiting 0; one that does not stops the boot before the phone is touched
     #[serde(default)]
     pub pre_boot: Vec<String>,
+    /// How the phone comes back to its known good after a try: each a command line run in order as argv (the rules of
+    /// `pre_boot`) in the device's folder, each exiting 0. A fastboot boot declares it (its test image may have no
+    /// systemd); without one, the phone is told `systemctl reboot` over its root shell.
+    #[serde(default)]
+    pub way_back: Vec<String>,
+    /// The connection (a `[connections.NAME]`; `[connection]` when left out) that must answer once the way back has run
+    pub back_on: Option<String>,
 }
 
 /// How a test kernel gets booted (`[kernels] boot`).
@@ -231,6 +239,23 @@ impl Kernels {
         }
         if !self.pre_boot.is_empty() && self.boot != KernelBoot::Fastboot {
             return Err("kernels: pre_boot gates a fastboot boot; say boot = \"fastboot\" or leave pre_boot out".into());
+        }
+        Ok(())
+    }
+
+    fn validate_way_back(&self, m: &Manifest) -> Result<(), String> {
+        if self.way_back.iter().any(|g| g.trim().is_empty()) {
+            return Err("kernels: way_back lists a blank command (each is a command line)".into());
+        }
+        if self.boot == KernelBoot::Fastboot && self.way_back.is_empty() {
+            return Err("kernels: boot = \"fastboot\" needs way_back (the command lines that bring the phone back to its known good: its test image may have no systemd to reboot by)".into());
+        }
+        if let Some(n) = &self.back_on {
+            if !m.connections.contains_key(n) {
+                return Err(format!(
+                    "kernels: back_on {n:?} is not a declared connection (a [connections.NAME])"
+                ));
+            }
         }
         Ok(())
     }
