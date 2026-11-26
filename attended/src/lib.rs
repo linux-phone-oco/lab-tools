@@ -31,6 +31,7 @@ pub mod install;
 pub(crate) mod prompt;
 mod source;
 pub mod steps;
+mod stop;
 mod values;
 pub use values::Val;
 
@@ -396,6 +397,13 @@ pub fn procedure(name: &str, device: &str) -> Run {
                 .join(".cache/lpoco-attended")
         });
     let prompt_files = prompt::Files::new(prompt::dir_for(&prompt_base, device));
+    // a signal ends the run through its way backs (a dry run owes none and is cut as it was)
+    if !dry {
+        stop::catch().unwrap_or_else(|e| {
+            eprintln!("{name}: {e}");
+            std::process::exit(2)
+        });
+    }
     let c = Config {
         dry,
         export,
@@ -535,6 +543,7 @@ pub fn run_step(s: Step) {
         .as_deref()
         .filter(|d| *d != bench::PERSON)
         .map_or(String::new(), |d| format!(" by {d}"));
+    end_if_signalled(&path);
     arm_way_backs();
     println!("{indent}{kind} {n}: {name}{by}");
     note("begin", &path, &format!("{kind}{by}"));
@@ -545,10 +554,13 @@ pub fn run_step(s: Step) {
             Err("the step panicked".to_string())
         });
     STATE.lock().unwrap_or_else(|e| e.into_inner()).step.clear();
+    if let Err(why) = &result {
+        note("FAIL", &path, why);
+    }
+    end_if_signalled(&path);
     match result {
         Ok(()) => note("ok", &path, ""),
         Err(why) => {
-            note("FAIL", &path, &why);
             let within = if path == name {
                 String::new()
             } else {
@@ -707,6 +719,30 @@ fn settle_finished() {
     OWED.with(|o| o.borrow_mut().retain(|(owner, _)| open.contains(owner)));
 }
 
+/// Say a line while the run is ending: a terminal that went away (SIGHUP) makes the print macros panic, and a run
+/// that is ending must still run its way backs.
+fn say_out(line: &str) {
+    let _ = writeln!(std::io::stdout(), "{line}");
+}
+
+fn say_err(line: &str) {
+    let _ = writeln!(std::io::stderr(), "{line}");
+}
+
+/// A signal came: end the run as one that failed, through the way backs owed, with the exit code a shell gives a
+/// process ended by it (128 and the number). Nothing is done when none came.
+fn end_if_signalled(at: &str) {
+    if let Some((number, name)) = stop::came() {
+        note(
+            "SIGNAL",
+            at,
+            &format!("{name}: the run was stopped; the way backs owed run"),
+        );
+        say_err(&format!("{}: stopped by {name} at {at:?}", config().name));
+        leave_with(128 + number);
+    }
+}
+
 /// End the run that failed: run the way backs owed, the last owed first, then exit 1.
 fn leave_failed() -> ! {
     leave_with(1)
@@ -714,10 +750,11 @@ fn leave_failed() -> ! {
 
 /// End the run with `code` after the way backs owed (a run that cannot go on, exit 2, leaves the phone as a failed one does).
 pub(crate) fn leave_with(code: i32) -> ! {
+    stop::leaving();
     let owed = OWED.with(|o| std::mem::take(&mut *o.borrow_mut()));
     for (_, back) in owed.into_iter().rev() {
         let name = back.name.clone();
-        println!("way back: {name}");
+        say_out(&format!("way back: {name}"));
         note("way-back", &name, "begin");
         STATE.lock().unwrap_or_else(|e| e.into_inner()).step = name.clone();
         let result = back.execute();
@@ -869,7 +906,7 @@ pub fn retry<R: Outcome>(tries: u32, every: u64, mut run: impl FnMut() -> R) -> 
     let mut last = Err("no tries".to_string());
     for t in 0..tries.max(1) {
         if t > 0 && !CONFIG.get().is_some_and(|c| c.export) {
-            std::thread::sleep(Duration::from_secs(every));
+            stop::sleep(Duration::from_secs(every))?;
         }
         last = run().outcome();
         if last.is_ok() {

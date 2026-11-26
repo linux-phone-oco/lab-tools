@@ -2,8 +2,10 @@
 //! One call to a program, with an optional time limit: a call that hangs (a phone that froze under a reboot) is
 //! cut, with every process it started that is still attached to it, and fails its step naming the limit. With
 //! no limit the call is waited for as it always was. The call stays in this run's own process group, so Ctrl-C
-//! reaches it as it reaches the run. (A double-forked daemon is reparented to init and is not found.)
+//! reaches it as it reaches the run, and a signal sent to the run alone cuts it (stop.rs); a way back's call
+//! leaves the group. (A double-forked daemon is reparented to init and is not found.)
 
+use crate::stop;
 use std::io::{Read, Write};
 use std::process::{Command, Output, Stdio};
 use std::sync::mpsc::{channel, Receiver, RecvTimeoutError};
@@ -24,6 +26,11 @@ pub fn run_limited(
     stdin: &str,
     limit: Option<Duration>,
 ) -> Result<Output, String> {
+    if stop::is_leaving() {
+        // a way back is not cut short by the signal that ended the run, nor by one sent to its group again
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
     let mut child = cmd
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -40,6 +47,11 @@ pub fn run_limited(
     let err = reader(child.stderr.take().expect("piped"));
     let began = Instant::now();
     let status = loop {
+        if let Some((_, name)) = stop::came() {
+            kill_tree(child.id())?;
+            let _ = child.wait();
+            return Err(format!("stopped by {name}; the call was cut"));
+        }
         match child.try_wait().map_err(|e| format!("cannot wait: {e}"))? {
             Some(s) => break s,
             None if limit.is_some_and(|l| began.elapsed() >= l) => {

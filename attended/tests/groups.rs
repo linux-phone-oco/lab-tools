@@ -302,3 +302,116 @@ fn a_settling_group_nested_deeper_settles_the_finished_groups_but_not_the_open_o
     assert_eq!(o.status.code(), Some(1), "{said}");
     assert_eq!(waybacks(&dir), "wrapper\n", "{said}");
 }
+
+/// Start the example as a run of its own process group, as a terminal's foreground job is, its output in files.
+fn start(dir: &Path) -> std::process::Child {
+    use std::os::unix::process::CommandExt;
+    let out = fs::File::create(dir.join("said")).unwrap();
+    Command::new("rust-script")
+        .arg(dir.join("groups.rs"))
+        .args(["--log", dir.join("run.log").to_str().unwrap()])
+        .env("LPOCO_ATTENDED_DEVLAB", dir.join("devlab"))
+        .current_dir(dir)
+        .stdin(Stdio::null())
+        .stdout(out.try_clone().unwrap())
+        .stderr(out)
+        .process_group(0)
+        .spawn()
+        .expect("rust-script is on the lab machine")
+}
+
+/// Wait up to a minute for a file the example's step or way back leaves when it begins.
+fn wait_for(dir: &Path, file: &str) {
+    for _ in 0..600 {
+        if dir.join(file).exists() {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    panic!("{file} never appeared: {}", said_so_far(dir));
+}
+
+fn said_so_far(dir: &Path) -> String {
+    fs::read_to_string(dir.join("said")).unwrap_or_default()
+}
+
+/// Send `signal` to the run's whole process group, as a terminal does for Ctrl-C.
+fn send_to_group(run: &std::process::Child, signal: &str) {
+    let to = format!("-{}", run.id());
+    let ok = Command::new("kill")
+        .args([&format!("-{signal}"), "--", &to])
+        .status()
+        .unwrap();
+    assert!(ok.success());
+}
+
+fn ended_by(dir: &Path, signal: &str, code: i32) {
+    let mut run = start(dir);
+    wait_for(dir, "holding");
+    send_to_group(&run, signal);
+    let status = run.wait().unwrap();
+    let said = said_so_far(dir);
+    let log = fs::read_to_string(dir.join("run.log")).unwrap_or_default();
+    assert_eq!(status.code(), Some(code), "{said}");
+    assert!(
+        said.contains(&format!("stopped by SIG{signal}")),
+        "the signal is not named: {said}"
+    );
+    assert_eq!(waybacks(dir), "inner\nouter\n", "{said}");
+    assert!(
+        log.contains(&format!(
+            "SIGNAL do the work > the inner part > work unless told not to: SIG{signal}:"
+        )),
+        "the signal is not in the log:\n{log}"
+    );
+    assert!(!said.contains("all done"), "the run went on: {said}");
+}
+
+#[test]
+fn a_sigint_mid_step_runs_the_way_backs_owed_innermost_first_and_exits_130() {
+    let dir = tmp("sigint");
+    fs::write(dir.join("hold-here"), "").unwrap();
+    ended_by(&dir, "INT", 130);
+}
+
+#[test]
+fn a_sigterm_mid_step_runs_the_way_backs_owed_innermost_first_and_exits_143() {
+    let dir = tmp("sigterm");
+    fs::write(dir.join("hold-here"), "").unwrap();
+    ended_by(&dir, "TERM", 143);
+}
+
+#[test]
+fn a_second_signal_during_the_way_back_does_not_cut_it_short() {
+    let dir = tmp("twice");
+    fs::write(dir.join("hold-here"), "").unwrap();
+    fs::write(dir.join("slow-back"), "").unwrap();
+    let mut run = start(&dir);
+    wait_for(&dir, "holding");
+    send_to_group(&run, "INT");
+    wait_for(&dir, "backing");
+    send_to_group(&run, "INT");
+    send_to_group(&run, "TERM");
+    let status = run.wait().unwrap();
+    assert_eq!(status.code(), Some(130), "{}", said_so_far(&dir));
+    assert_eq!(waybacks(&dir), "inner\nouter\n", "{}", said_so_far(&dir));
+}
+
+#[test]
+fn a_sighup_mid_step_runs_the_way_backs_owed_and_exits_129() {
+    let dir = tmp("sighup");
+    fs::write(dir.join("hold-here"), "").unwrap();
+    ended_by(&dir, "HUP", 129);
+}
+
+#[test]
+fn a_signal_in_a_step_that_tries_again_ends_the_run_at_once_not_after_the_tries() {
+    let dir = tmp("retry");
+    fs::write(dir.join("retry-here"), "").unwrap();
+    let began = std::time::Instant::now();
+    ended_by(&dir, "TERM", 143);
+    assert!(
+        began.elapsed() < std::time::Duration::from_secs(40),
+        "the 60 tries were waited out"
+    );
+}
