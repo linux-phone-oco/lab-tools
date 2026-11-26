@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.46.4](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-attended-v0.46.3...lpoco-attended-v0.46.4) - 2026-11-26
+
+### Added
+
+- *(attended)* the output of a call that has ended has a bound to end in (--tail-limit) ([#460](https://github.com/linux-phone-oco/lab-tools/pull/460))
+
 ## [0.46.3](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-attended-v0.46.2...lpoco-attended-v0.46.3) - 2026-11-26
 
 ### Added
