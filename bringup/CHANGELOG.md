@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.53.4](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.53.3...lpoco-bringup-v0.53.4) - 2026-11-26
+
+### Added
+
+- *(manifest)* [kernels] way_back and back_on declare a phone's way back to its known good ([#452](https://github.com/linux-phone-oco/lab-tools/pull/452))
+
 ## [0.53.3](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.53.2...lpoco-bringup-v0.53.3) - 2026-11-26
 
 ### Added
