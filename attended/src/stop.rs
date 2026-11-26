@@ -3,16 +3,21 @@
 //! and the run reads it between its calls (a call waited on, a prompt waited on, the start of a step), so the way
 //! backs owed run on the run's own thread as they do for a step that returned an error. Once the way backs have
 //! begun, a signal changes nothing: they are not cut short, and the calls they make leave this run's process
-//! group so a Ctrl-C meant for the run does not reach them.
+//! group so a Ctrl-C meant for the run does not reach them. A third signal in all escapes a way back that hangs: the
+//! run ends (exit 3) naming the way back left unfinished.
 
 use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
 
 const SIGNALS: [(i32, &str); 3] = [(SIGINT, "SIGINT"), (SIGTERM, "SIGTERM"), (SIGHUP, "SIGHUP")];
 
 static CAME: OnceLock<Vec<Arc<AtomicBool>>> = OnceLock::new();
 static LEAVING: AtomicBool = AtomicBool::new(false);
+static COUNT: AtomicUsize = AtomicUsize::new(0);
+
+/// The signals in all that end a way back that hangs: the one that stopped the run, one ignored, and the escape.
+const ESCAPE: usize = 3;
 
 /// From now on a signal ends the run through its way backs instead of killing it. A handler that cannot be
 /// installed stops the run: a run that cannot be stopped safely is not started.
@@ -25,6 +30,13 @@ pub(crate) fn catch() -> Result<(), String> {
         let flag = Arc::new(AtomicBool::new(false));
         signal_hook::flag::register(sig, Arc::clone(&flag))
             .map_err(|e| format!("cannot catch {name}: {e}"))?;
+        // SAFETY: the handler only adds to an atomic, which is async-signal-safe.
+        unsafe {
+            signal_hook::low_level::register(sig, || {
+                COUNT.fetch_add(1, Ordering::SeqCst);
+            })
+        }
+        .map_err(|e| format!("cannot catch {name}: {e}"))?;
         flags.push(flag);
     }
     let _ = CAME.set(flags);
@@ -48,6 +60,20 @@ pub(crate) fn came() -> Option<(i32, &'static str)> {
 /// The way backs begin: no signal ends the run from here, and calls leave the run's process group.
 pub(crate) fn leaving() {
     LEAVING.store(true, Ordering::SeqCst);
+}
+
+/// While the way backs run, a thread waits for the signal that escapes a way back that hangs (the third one in
+/// all) and then runs `escape`, which ends the process.
+pub(crate) fn watch_for_escape(escape: impl FnOnce() + Send + 'static) {
+    // a run ended by a signal has used one of them already
+    let base = COUNT.load(Ordering::SeqCst);
+    let needed = ESCAPE - base.min(1);
+    std::thread::spawn(move || {
+        while COUNT.load(Ordering::SeqCst) - base < needed {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        escape();
+    });
 }
 
 pub(crate) fn is_leaving() -> bool {
