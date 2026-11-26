@@ -159,10 +159,7 @@ fn an_adb_phone_runs_through_adb_dash_s_its_serial_shell() {
     let (code, out, err) = run(&s, manifest, &["phone", "sh"], "echo via-adb\n");
     assert_eq!((code, out.as_str()), (0, "via-adb\n"), "{err}");
     let said = std::fs::read_to_string(&calls).unwrap();
-    assert!(
-        said.lines().all(|l| l.starts_with("-s SER1 shell")),
-        "{said}"
-    );
+    assert!(said.lines().all(|l| l.starts_with("-s SER1 ")), "{said}");
 }
 
 #[test]
@@ -528,4 +525,96 @@ fn a_named_ssh_connection_with_no_addresses_is_refused_naming_it() {
     let (code, _, err) = run(&s, &m, &["phone", "find"], "");
     assert_ne!(code, 0);
     assert!(err.contains("connections.b"), "{err}");
+}
+
+/// A stand-in adb that logs each call; `root_says` is what `adb root` prints (adb's own wording, as the walleye
+/// lab measured it: research row google-walleye-lab 2026-11-26 walleye-android-connection-user-root).
+fn logging_adb(s: &Scratch, root_says: &str) -> PathBuf {
+    let calls = s.0.join("calls");
+    stand_in(
+        &s.0,
+        "adb",
+        &format!(
+            "echo \"$*\" >> {}\n[ \"$3\" = root ] && echo '{root_says}' && exit 0\n[ \"$3\" = wait-for-device ] && exit 0\n[ \"$4\" = true ] && exit 0\nexec sh -s",
+            calls.display()
+        ),
+    );
+    calls
+}
+
+const ADB_ROOT_USER: &str = "[device]\ncodename = \"a\"\n[connection]\ntransport = \"adb\"\nuser = \"root\"\naddresses = []\n[fastboot]\nserial = \"SER1\"\n";
+
+#[test]
+fn an_adb_connection_with_user_root_runs_adb_root_then_waits_once_before_its_commands() {
+    let s = Scratch::new("adb-user-root");
+    let calls = logging_adb(&s, "restarting adbd as root");
+    let (code, out, err) = run(&s, ADB_ROOT_USER, &["phone", "root"], "echo r\n");
+    assert_eq!((code, out.as_str()), (0, "r\n"), "{err}");
+    let said = std::fs::read_to_string(&calls).unwrap();
+    let lines: Vec<&str> = said.lines().collect();
+    assert_eq!(
+        &lines[..2],
+        ["-s SER1 root", "-s SER1 wait-for-device"],
+        "{said}"
+    );
+    assert_eq!(
+        lines
+            .iter()
+            .filter(|l| l.ends_with(" root") || l.ends_with("wait-for-device"))
+            .count(),
+        2,
+        "adb root and the wait once per Phone, though the phone answered and then ran: {said}"
+    );
+    assert!(
+        lines[2..].iter().all(|l| l.starts_with("-s SER1 shell")),
+        "{said}"
+    );
+    assert!(
+        !said.contains(" su "),
+        "root's adbd runs without su: {said}"
+    );
+}
+
+#[test]
+fn an_adb_phone_whose_adbd_cannot_run_as_root_fails_naming_it() {
+    let s = Scratch::new("adb-cannot-root");
+    let _ = logging_adb(&s, "adbd cannot run as root in production builds");
+    let (code, out, err) = run(&s, ADB_ROOT_USER, &["phone", "root"], "echo r\n");
+    assert_ne!(code, 0, "{out}");
+    assert!(
+        err.contains("adbd cannot run as root")
+            && err.contains("SER1")
+            && !err.contains("does not answer"),
+        "{err}"
+    );
+}
+
+#[test]
+fn an_adb_connection_with_user_shell_never_runs_adb_root() {
+    let s = Scratch::new("adb-user-shell");
+    let calls = logging_adb(&s, "restarting adbd as root");
+    let m = ADB_ROOT_USER.replace("user = \"root\"", "user = \"shell\"");
+    let (code, _, err) = run(&s, &m, &["phone", "sh"], "echo s\n");
+    assert_eq!(code, 0, "{err}");
+    let said = std::fs::read_to_string(&calls).unwrap();
+    assert!(
+        said.lines().all(|l| l.starts_with("-s SER1 shell")),
+        "{said}"
+    );
+}
+
+#[test]
+fn an_adb_root_that_exits_nonzero_fails_naming_adb_root() {
+    let s = Scratch::new("adb-root-fails");
+    stand_in(
+        &s.0,
+        "adb",
+        "[ \"$3\" = root ] && echo 'error: device offline' && exit 1\nexit 0",
+    );
+    let (code, out, err) = run(&s, ADB_ROOT_USER, &["phone", "root"], "echo r\n");
+    assert_ne!(code, 0, "{out}");
+    assert!(
+        err.contains("adb root") || err.contains("does not answer"),
+        "{err}"
+    );
 }
