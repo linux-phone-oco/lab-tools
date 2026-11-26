@@ -107,7 +107,7 @@ fn kernels(extra: &str) -> Result<Manifest, String> {
 
 #[test]
 fn pre_boot_belongs_to_a_fastboot_boot_and_its_gates_are_not_blank() {
-    let ok = "boot = \"fastboot\"\npre_boot = [\"true\"]\n[images]\ndir = \".\"\n[images.z]\npath = \"z.img\"\n";
+    let ok = "boot = \"fastboot\"\npre_boot = [\"true\"]\nway_back = [\"true\"]\n[images]\ndir = \".\"\n[images.z]\npath = \"z.img\"\n";
     let m = kernels(ok).unwrap();
     assert_eq!(m.kernels.unwrap().pre_boot, ["true"]);
     for (text, word) in [
@@ -117,4 +117,37 @@ fn pre_boot_belongs_to_a_fastboot_boot_and_its_gates_are_not_blank() {
         let e = kernels(text).unwrap_err();
         assert!(e.contains("kernels") && e.contains(word), "{text}: {e}");
     }
+}
+
+// Decision 2026-11-26-a-phone-s-way-back-to-its-known-good-is-declared: [kernels] way_back and back_on.
+// Keys of [kernels] come before the tables that follow it.
+const IMAGES: &str = "[images]\ndir = \".\"\n[images.z]\npath = \"z.img\"\n";
+
+#[test]
+fn a_fastboot_boot_declares_its_way_back_and_the_connection_that_must_answer() {
+    let text = format!(
+        "boot = \"fastboot\"\nway_back = [\"walleye-reboot RESTART2\"]\nback_on = \"android\"\n{IMAGES}[connections.android]\ntransport = \"adb\"\nuser = \"shell\"\naddresses = [\"a\"]\nlogin = \"none\"\n"
+    );
+    let k = kernels(&text).unwrap().kernels.unwrap();
+    assert_eq!(k.way_back, ["walleye-reboot RESTART2"]);
+    assert_eq!(k.back_on.as_deref(), Some("android"));
+}
+
+#[test]
+fn a_fastboot_boot_without_a_way_back_is_refused_naming_the_key() {
+    let e = kernels(&format!("boot = \"fastboot\"\n{IMAGES}")).unwrap_err();
+    assert!(e.contains("kernels") && e.contains("way_back"), "{e}");
+}
+
+#[test]
+fn an_entry_boot_needs_no_way_back_and_a_blank_one_is_refused() {
+    assert!(kernels("").unwrap().kernels.unwrap().way_back.is_empty());
+    let e = kernels("way_back = [\"  \"]\n").unwrap_err();
+    assert!(e.contains("kernels") && e.contains("way_back"), "{e}");
+}
+
+#[test]
+fn a_back_on_that_names_no_declared_connection_is_refused_naming_it() {
+    let e = kernels("way_back = [\"true\"]\nback_on = \"android\"\n").unwrap_err();
+    assert!(e.contains("back_on") && e.contains("android"), "{e}");
 }

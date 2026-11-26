@@ -1387,6 +1387,21 @@
             "type": "string"
           },
           "default": []
+        },
+        "way_back": {
+          "description": "How the phone comes back to its known good after a try: each a command line run in order as argv (the rules of\n`pre_boot`) in the device's folder, each exiting 0. A fastboot boot declares it (its test image may have no\nsystemd); without one, the phone is told `systemctl reboot` over its root shell.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "back_on": {
+          "description": "The connection (a `[connections.NAME]`; `[connection]` when left out) that must answer once the way back has run",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "additionalProperties": false

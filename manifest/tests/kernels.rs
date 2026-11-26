@@ -55,7 +55,7 @@ fn a_kept_name_that_is_no_kernel_name_and_a_table_with_no_kernels_are_judged() {
 /// A device that boots its kernels from memory, with everything such a boot reads declared.
 const FASTBOOT_DEVICE: &str = "[device]\ncodename = \"x\"\n[fastboot]\nserial = \"FA81\"\n\
 [[host.gadget]]\nserial = \"s\"\naccess = [\"tty\"]\nusb_id = \"1d6b:0104\"\n\
-[kernels]\ntest = [\"z21\"]\nboot = \"fastboot\"\n[images.z21]\npath = \"images/z21.img\"\n";
+[kernels]\ntest = [\"z21\"]\nboot = \"fastboot\"\nway_back = [\"true\"]\n[images.z21]\npath = \"images/z21.img\"\n";
 
 #[test]
 fn a_device_says_its_kernels_boot_from_memory_by_fastboot_and_entry_is_the_default() {
