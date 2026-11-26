@@ -475,9 +475,15 @@ fn tool_plans(st: &State) -> Vec<ToolPlan> {
 /// The family-named programs in ~/.local/bin that no lab.toml pin and no family member holds, as paths.
 fn stray_paths(st: &State, tools: &[ToolPlan]) -> Vec<String> {
     let dir = format!("{}/.local/bin", st.home);
-    let names: Vec<String> = fs::read_dir(&dir)
-        .into_iter()
-        .flatten()
+    let entries = match fs::read_dir(&dir) {
+        Ok(rd) => rd,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
+        Err(e) => {
+            println!("stray programs: not measured, cannot read {dir}: {e}");
+            return Vec::new();
+        }
+    };
+    let names: Vec<String> = entries
         .flatten()
         .filter(|e| e.file_type().is_ok_and(|t| !t.is_dir()))
         .map(|e| e.file_name().to_string_lossy().into_owned())

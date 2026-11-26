@@ -1720,3 +1720,18 @@ fn prepare_now_takes_the_stray_off_and_leaves_the_family_alone() {
     assert!(l.dir.join("home/.local/bin/lpoco-lab").exists());
     assert!(l.dir.join("home/.local/bin/land").exists());
 }
+
+#[test]
+fn a_pinned_script_tool_named_like_the_family_is_not_a_stray_and_a_directory_is_left() {
+    let l = lab(
+        "stray-pinned",
+        "[tools.lpoco-extra]\ngit = \"https://github.com/grenudi/lab-machine\"\npath = \"bin/lpoco-extra\"\nrev = \"abc123\"\nversion = \"0.1.0\"\n",
+    );
+    let bin = l.dir.join("home/.local/bin");
+    fs::create_dir_all(bin.join("lpoco-dir")).unwrap();
+    exe(&bin.join("lpoco-extra"), "echo x");
+    let s = out(&host(&l, &["plan"]));
+    assert!(!s.lines().any(|x| x.contains("rm ")), "{s}");
+    let s = out(&host(&l, &["check"]));
+    assert!(!s.contains("stray"), "{s}");
+}

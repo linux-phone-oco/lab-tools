@@ -1879,3 +1879,26 @@ mod primary_group_tests {
         assert_eq!(primary_group("", p, "carol"), None);
     }
 }
+
+#[cfg(test)]
+mod stray_tests {
+    use super::*;
+
+    #[test]
+    fn a_stray_is_family_named_unpinned_unlisted_sorted_and_once() {
+        let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        let found = s(&[
+            "lpoco-z",
+            "lpoco-attended",
+            "lpoco-lab",
+            "lpoco-pinned",
+            "land",
+            "lpoco-z",
+            "lpoco-a.new",
+        ]);
+        assert_eq!(
+            stray_programs(&found, &s(&["lpoco-pinned"])),
+            s(&["lpoco-attended", "lpoco-z"])
+        );
+    }
+}
