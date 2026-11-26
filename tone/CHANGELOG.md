@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.53.3](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-tone-v0.53.2...lpoco-tone-v0.53.3) - 2026-11-26
+
+### Added
+
+- *(attended)* a named connection per system a phone boots ([#448](https://github.com/linux-phone-oco/lab-tools/pull/448))
+
 ## [0.53.2](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-tone-v0.53.1...lpoco-tone-v0.53.2) - 2026-11-25
 
 ### Other

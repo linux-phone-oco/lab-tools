@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.46.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-attended-v0.45.8...lpoco-attended-v0.46.0) - 2026-11-26
+
+### Added
+
+- *(attended)* a named connection per system a phone boots ([#448](https://github.com/linux-phone-oco/lab-tools/pull/448))
+
 ## [0.45.8](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-attended-v0.45.7...lpoco-attended-v0.45.8) - 2026-11-25
 
 ### Added
