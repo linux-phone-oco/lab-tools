@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.46.2](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-attended-v0.46.1...lpoco-attended-v0.46.2) - 2026-11-26
+
+### Added
+
+- *(attended)* back_to_known_good runs the declared way_back and waits on back_on ([#454](https://github.com/linux-phone-oco/lab-tools/pull/454))
+
 ## [0.46.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-attended-v0.46.0...lpoco-attended-v0.46.1) - 2026-11-26
 
 ### Fixed
