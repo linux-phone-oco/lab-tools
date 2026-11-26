@@ -93,6 +93,7 @@ fn passed_on(r: &Resolution) -> Vec<String> {
         ("--part", Contract::PART.get_from(r)),
         ("--from", Contract::FROM.get_from(r)),
         ("--call-limit", Contract::CALL_LIMIT.get_from(r)),
+        ("--tail-limit", Contract::TAIL_LIMIT.get_from(r)),
         ("--answer-limit", Contract::ANSWER_LIMIT.get_from(r)),
     ] {
         if let Some(v) = v {
@@ -211,8 +212,13 @@ const HOST_CALL_LIMIT: std::time::Duration = std::time::Duration::from_secs(30);
 fn devlab_call(devlab: &str, args: &[&std::ffi::OsStr]) -> Result<std::process::Output, String> {
     let mut cmd = Command::new(devlab);
     cmd.args(args);
-    lpoco_attended::call::run_limited(cmd, "", Some(HOST_CALL_LIMIT))
-        .map_err(|e| format!("{devlab}: {e}"))
+    lpoco_attended::call::run_limited(
+        cmd,
+        "",
+        Some(HOST_CALL_LIMIT),
+        lpoco_attended::call::DEFAULT_TAIL,
+    )
+    .map_err(|e| format!("{devlab}: {e}"))
 }
 
 /// The installed devlab, run for real on this device's manifest with a read-only command: ready only when it
@@ -279,8 +285,13 @@ fn export_verb(r: &Resolution, repo: &repo::Repo, rust_script: &str) -> Result<i
         .arg("--device")
         .arg(&repo.manifest);
     // a check that never ends must not hang the export; a first build of the procedure takes minutes
-    let out = lpoco_attended::call::run_limited(cmd, "", Some(EXPORT_LIMIT))
-        .map_err(|e| format!("cannot run {rust_script}: {e}"))?;
+    let out = lpoco_attended::call::run_limited(
+        cmd,
+        "",
+        Some(EXPORT_LIMIT),
+        lpoco_attended::call::DEFAULT_TAIL,
+    )
+    .map_err(|e| format!("cannot run {rust_script}: {e}"))?;
     if !out.status.success() {
         let _ = std::fs::remove_dir_all(&dir);
         return Err(format!(

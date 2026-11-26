@@ -187,6 +187,8 @@ struct Config {
     sysfs_usb: String,
     /// the longest one call to the phone may take; none unless asked for
     call_limit: Option<std::time::Duration>,
+    /// how long the output of a call that has ended may take to end (call::DEFAULT_TAIL unless asked for)
+    tail_limit: std::time::Duration,
     /// where a pending prompt is filed and its answer file read: DIR/DEVICE
     prompt_files: prompt::Files,
     /// the longest a prompt waits for the author when the terminal has nothing to give; none unless asked for
@@ -384,6 +386,12 @@ pub fn procedure(name: &str, device: &str) -> Run {
             eprintln!("{name}: {e}");
             std::process::exit(2)
         });
+    let tail_limit = seconds("--tail-limit", cli::Contract::TAIL_LIMIT.get_from(&r))
+        .unwrap_or_else(|e| {
+            eprintln!("{name}: {e}");
+            std::process::exit(2)
+        })
+        .unwrap_or(call::DEFAULT_TAIL);
     let answer_limit = seconds("--answer-limit", cli::Contract::ANSWER_LIMIT.get_from(&r))
         .unwrap_or_else(|e| {
             eprintln!("{name}: {e}");
@@ -417,6 +425,7 @@ pub fn procedure(name: &str, device: &str) -> Run {
         bringup,
         sysfs_usb,
         call_limit,
+        tail_limit,
         prompt_files,
         answer_limit,
         name: name.to_string(),
@@ -977,8 +986,8 @@ fn call_devlab(args: &[&str], stdin: &str, reached: &str, failed: &str) -> Resul
     }
     let mut cmd = Command::new(&config().devlab);
     cmd.arg("--device").arg(&config().device).args(args);
-    let o =
-        call::run_limited(cmd, stdin, config().call_limit).map_err(|e| format!("{failed}: {e}"))?;
+    let o = call::run_limited(cmd, stdin, config().call_limit, config().tail_limit)
+        .map_err(|e| format!("{failed}: {e}"))?;
     let out = format!(
         "{}{}",
         String::from_utf8_lossy(&o.stdout),
@@ -1015,7 +1024,8 @@ pub(crate) fn ensure_image(name: &str, dry_run: bool) -> Result<String, String> 
     }
     cmd.arg("--device").arg(&config().device);
     let failed = format!("lpoco-bringup image ensure {name}");
-    let o = call::run_limited(cmd, "", None).map_err(|e| format!("{failed}: {e}"))?;
+    let o = call::run_limited(cmd, "", None, config().tail_limit)
+        .map_err(|e| format!("{failed}: {e}"))?;
     let (out, err) = (
         String::from_utf8_lossy(&o.stdout).trim().to_string(),
         String::from_utf8_lossy(&o.stderr).trim().to_string(),
