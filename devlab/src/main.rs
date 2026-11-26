@@ -46,6 +46,7 @@ use std::path::PathBuf;
 
 struct Cli {
     device: Option<PathBuf>,
+    connection: Option<String>,
     cmd: Cmd,
 }
 
@@ -467,6 +468,7 @@ fn parse() -> Cli {
     };
     Cli {
         device: C::DEVICE.get_from(&r).map(PathBuf::from),
+        connection: C::CONNECTION.get_from(&r),
         cmd,
     }
 }
@@ -502,6 +504,7 @@ fn main() -> Result<()> {
     }
     let (dev, file) = device::Device::load(cli.device.as_deref(), &std::env::current_dir()?)?;
     dev.remember_addresses();
+    let dev = dev.on(cli.connection.as_deref())?;
     // one change to the phone at a time, whoever asks: held until this command ends
     let _held = match &cli.cmd {
         Cmd::Flash { .. } | Cmd::Provision { .. } => Some(hold::hold(&dev)?),

@@ -405,3 +405,127 @@ fn root_over_a_key_is_the_login_itself_for_root_and_sudo_dash_n_for_another_user
         "{said}"
     );
 }
+
+/// walleye's shape: telnet for its test images by default, adb for its stock Android by name.
+fn two_systems(port: u16) -> String {
+    format!(
+        "{}[connections.android]\ntransport = \"adb\"\nuser = \"shell\"\naddresses = []\n[fastboot]\nserial = \"SER2\"\n",
+        telnet_device(port)
+    )
+}
+
+#[test]
+fn phone_root_on_a_named_adb_connection_runs_adb_shell_su_dash_c_and_the_default_stays_telnet() {
+    let s = Scratch::new("named-adb");
+    let calls = s.0.join("calls");
+    stand_in(
+        &s.0,
+        "adb",
+        &format!(
+            "echo \"$*\" >> {}\n[ \"$3\" = shell ] && [ \"$4\" = true ] && exit 0\nexec sh -s",
+            calls.display()
+        ),
+    );
+    let port = serve_a_shell();
+    let (code, out, err) = run(
+        &s,
+        &two_systems(port),
+        &["phone", "root", "--connection", "android"],
+        "echo on-android\n",
+    );
+    assert_eq!((code, out.as_str()), (0, "on-android\n"), "{err}");
+    let said = std::fs::read_to_string(&calls).unwrap();
+    assert!(
+        said.lines().any(|l| l == "-s SER2 shell su -c sh"),
+        "root on an adb shell that is not root's goes through su: {said}"
+    );
+    // no --connection: the default [connection], the telnet shell, adb untouched
+    std::fs::remove_file(&calls).unwrap();
+    let (code, out, err) = run(
+        &s,
+        &two_systems(port),
+        &["phone", "root"],
+        "echo on-telnet\n",
+    );
+    assert_eq!((code, out.as_str()), (0, "on-telnet\n"), "{err}");
+    assert!(!calls.exists(), "the default connection reached adb");
+}
+
+#[test]
+fn a_connection_the_device_does_not_declare_is_refused_naming_it() {
+    let s = Scratch::new("named-undeclared");
+    let (code, _, err) = run(
+        &s,
+        &telnet_device(1),
+        &["phone", "root", "--connection", "android"],
+        "true\n",
+    );
+    assert_ne!(code, 0);
+    assert!(
+        err.contains("android") && err.contains("[connections.android]"),
+        "{err}"
+    );
+}
+
+#[test]
+fn a_named_connection_that_does_not_answer_fails_naming_the_connection() {
+    let s = Scratch::new("named-silent");
+    stand_in(&s.0, "adb", "exit 1");
+    let port = serve_a_shell();
+    let (code, _, err) = run(
+        &s,
+        &two_systems(port),
+        &["phone", "root", "--connection", "android"],
+        "true\n",
+    );
+    assert_ne!(code, 0);
+    assert!(
+        err.contains("connection android") && err.contains("does not answer"),
+        "{err}"
+    );
+}
+
+#[test]
+fn root_on_a_named_adb_connection_whose_user_is_root_runs_without_su_and_the_default_adb_never_uses_su(
+) {
+    let s = Scratch::new("named-adb-root");
+    let calls = s.0.join("calls");
+    stand_in(
+        &s.0,
+        "adb",
+        &format!(
+            "echo \"$*\" >> {}\n[ \"$4\" = true ] && exit 0\nexec sh -s",
+            calls.display()
+        ),
+    );
+    let manifest = format!(
+        "{}\n",
+        two_systems(1).replace("user = \"shell\"", "user = \"root\"")
+    );
+    let (code, out, err) = run(
+        &s,
+        &manifest,
+        &["phone", "root", "--connection", "android"],
+        "echo r\n",
+    );
+    assert_eq!((code, out.as_str()), (0, "r\n"), "{err}");
+    let said = std::fs::read_to_string(&calls).unwrap();
+    assert!(!said.contains("su"), "{said}");
+    std::fs::remove_file(&calls).unwrap();
+    let adb_default = "[device]\ncodename = \"a\"\n[connection]\ntransport = \"adb\"\nuser = \"shell\"\naddresses = []\n[fastboot]\nserial = \"S\"\n";
+    let (code, _, err) = run(&s, adb_default, &["phone", "root"], "echo r\n");
+    assert_eq!(code, 0, "{err}");
+    assert!(!std::fs::read_to_string(&calls).unwrap().contains("su"));
+}
+
+#[test]
+fn a_named_ssh_connection_with_no_addresses_is_refused_naming_it() {
+    let s = Scratch::new("named-ssh-empty");
+    let m = format!(
+        "{}[connections.b]\nuser = \"u\"\naddresses = []\n",
+        telnet_device(1)
+    );
+    let (code, _, err) = run(&s, &m, &["phone", "find"], "");
+    assert_ne!(code, 0);
+    assert!(err.contains("connections.b"), "{err}");
+}

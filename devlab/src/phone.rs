@@ -125,10 +125,16 @@ impl Phone {
                 return Ok(p);
             }
         }
-        bail!(
-            "{} does not answer at any known address",
-            device.device.codename
-        )
+        match &device.connection_name {
+            Some(name) => bail!(
+                "{} does not answer on connection {name} (device.toml [connections.{name}])",
+                device.device.codename
+            ),
+            None => bail!(
+                "{} does not answer at any known address",
+                device.device.codename
+            ),
+        }
     }
 
     /// The phone as its transport reaches it, not yet asked whether it answers.
@@ -191,7 +197,7 @@ impl Phone {
             }
             Reach::Telnet { address, port } => telnet_run(address, *port, script),
             Reach::Adb { serial } => {
-                let out = adb_shell(serial, script, Stdio::inherit())?;
+                let out = adb_shell(serial, &[], script, Stdio::inherit())?;
                 Ok((
                     out.status.success(),
                     String::from_utf8_lossy(&out.stdout).into_owned(),
@@ -212,7 +218,7 @@ impl Phone {
                 .is_ok_and(|s| s.success()),
             Reach::Telnet { address, port } => telnet_connect(address, *port).is_ok(),
             Reach::Adb { serial } => {
-                adb_shell(serial, "true\n", Stdio::null()).is_ok_and(|o| o.status.success())
+                adb_shell(serial, &[], "true\n", Stdio::null()).is_ok_and(|o| o.status.success())
             }
         }
     }
@@ -229,7 +235,27 @@ impl Phone {
                 let (how, prefix) = auth.as_root(&self.device.connection.user);
                 self.run(script, how, &prefix)
             }
-            Reach::Telnet { .. } | Reach::Adb { .. } => self.run(script, "", ""),
+            Reach::Telnet { .. } => self.run(script, "", ""),
+            Reach::Adb { serial } => {
+                if let Some(no) = self.device.hazard_in(script) {
+                    bail!(no);
+                }
+                let out = adb_shell(serial, self.adb_root_shell(), script, Stdio::inherit())?;
+                Ok((
+                    out.status.success(),
+                    String::from_utf8_lossy(&out.stdout).into_owned(),
+                ))
+            }
+        }
+    }
+
+    /// What follows `adb shell` for a root script: nothing where adbd already runs as the connection's user root,
+    /// on a named connection else `su -c sh` (the script on its standard input), as Android gives root to the shell user.
+    fn adb_root_shell(&self) -> &'static [&'static str] {
+        if self.device.connection_name.is_none() || self.device.connection.user == "root" {
+            &[]
+        } else {
+            &["su", "-c", "sh"]
         }
     }
 
@@ -253,7 +279,9 @@ impl Phone {
                 drop(stdin);
                 child.wait_with_output()?
             }
-            Reach::Adb { serial } => adb_shell(serial, script, Stdio::inherit())?,
+            Reach::Adb { serial } => {
+                adb_shell(serial, self.adb_root_shell(), script, Stdio::inherit())?
+            }
             Reach::Telnet { .. } => bail!("a file is not carried over telnet: it is text only"),
         };
         if !out.status.success() {
@@ -428,9 +456,15 @@ fn telnet_answer(raw: &[u8], begin: &str, end: &str) -> Option<(bool, String)> {
 }
 
 /// `adb -s SERIAL shell` with the script on its standard input.
-fn adb_shell(serial: &str, script: &str, stderr: Stdio) -> Result<std::process::Output> {
+fn adb_shell(
+    serial: &str,
+    shell: &[&str],
+    script: &str,
+    stderr: Stdio,
+) -> Result<std::process::Output> {
     let mut child = Command::new("adb")
         .args(["-s", serial, "shell"])
+        .args(shell)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(stderr)

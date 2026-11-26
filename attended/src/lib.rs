@@ -48,8 +48,9 @@ pub mod prelude {
     pub use crate::bench::{bench, Act, ActKind, Bench};
     pub use crate::{
         ask_author, check, check_from, confirm, dev, group, hold_button, listen_for, look_for,
-        part, phone, press_power, proc, procedure, replug_usb, retry, run_group, run_step, step,
-        swipe, touch, unknown_part, unplug_usb, Group, Item, Kind, Outcome, Step, Val,
+        part, phone, phone_on, press_power, proc, procedure, replug_usb, retry, run_group,
+        run_step, step, swipe, touch, unknown_part, unplug_usb, Group, Item, Kind, Outcome, Step,
+        Val,
     };
 }
 
@@ -999,11 +1000,20 @@ pub(crate) fn ensure_image(name: &str, dry_run: bool) -> Result<String, String> 
     }
 }
 
-/// The phone, reached through devlab.
-pub struct Phone(());
+/// The phone, reached through devlab: by the device's default connection, or by one it names ([connections.NAME]).
+#[derive(Clone, Debug)]
+pub struct Phone(Option<String>);
 
+/// The phone by its default connection (device.toml [connection]).
 pub fn phone() -> Phone {
-    Phone(())
+    Phone(None)
+}
+
+/// The phone by the connection NAME the device declares ([connections.NAME]): the system that answers there, for a
+/// phone that boots more than one (walleye's Android beside its test images). A step that reaches a system not
+/// answering on it fails saying which connection it tried.
+pub fn phone_on(name: &str) -> Phone {
+    Phone(Some(name.to_string()))
 }
 
 impl Phone {
@@ -1018,7 +1028,15 @@ impl Phone {
     }
 
     fn via(&self, who: &str, script: &str) -> Result<String, String> {
-        call_devlab(&["phone", who], script, "the phone", "the phone's script")
+        match &self.0 {
+            None => call_devlab(&["phone", who], script, "the phone", "the phone's script"),
+            Some(name) => call_devlab(
+                &["phone", who, "--connection", name],
+                script,
+                "the phone",
+                &format!("the phone's script on connection {name}"),
+            ),
+        }
     }
 }
 

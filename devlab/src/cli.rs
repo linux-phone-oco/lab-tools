@@ -242,6 +242,15 @@ contract! {
         ..Input::EMPTY
     };
 
+    CONNECTION: String, Command = Input {
+        key: "connection",
+        ty: Type::String,
+        subcommands: &[Command::Phone],
+        arg: Some(Arg { value_name: "NAME", ..Arg::long("connection") }),
+        summary: "The named connection to reach the phone by ([connections.NAME] in device.toml); none: the default [connection].",
+        ..Input::EMPTY
+    };
+
     DTB: String, Command = Input {
         key: "dtb",
         ty: Type::String,
@@ -476,10 +485,10 @@ const fn n(
 /// Every command and action, as clap listed them.
 pub const TREE: &[Node] = &[
     n(&["phone"], "Reach the phone", &[], &[]),
-    n(&["phone", "find"], "Print the address that answers", &[], &[]),
-    n(&["phone", "sh"], "Run the commands on standard input as the user", &[], &[]),
-    n(&["phone", "root"], "Run the commands on standard input as root", &[], &[]),
-    n(&["phone", "put"], "Copy a local file to the phone", &["local", "remote"], &[]),
+    n(&["phone", "find"], "Print the address that answers", &[], &["connection"]),
+    n(&["phone", "sh"], "Run the commands on standard input as the user", &[], &["connection"]),
+    n(&["phone", "root"], "Run the commands on standard input as root", &[], &["connection"]),
+    n(&["phone", "put"], "Copy a local file to the phone", &["local", "remote"], &["connection"]),
     n(&["phone", "reboot"], "Reboot, and wait until the phone answers again", &[], &[]),
     n(
         &["flash"],

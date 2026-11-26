@@ -264,3 +264,55 @@ fn adb_write_partition_refuses_a_missing_partition_node_and_creates_none() {
     assert!(!o.status.success(), "{}", said(&o));
     assert!(!d.join("by-name/system_a").exists(), "no file was made");
 }
+
+#[test]
+fn read_slot_on_a_named_connection_asks_devlab_for_that_connection_and_the_default_names_none() {
+    let d = tmp("slot-named");
+    let o = run(&d, &[("CASE", "slot"), ("CONNECTION", "android")]);
+    assert!(o.status.success(), "{}", said(&o));
+    let calls = fs::read_to_string(d.join("calls")).unwrap();
+    assert!(
+        calls
+            .lines()
+            .all(|l| l.ends_with("phone root --connection android")),
+        "{calls}"
+    );
+    let d = tmp("slot-default");
+    let o = run(&d, &[("CASE", "slot")]);
+    assert!(o.status.success(), "{}", said(&o));
+    let calls = fs::read_to_string(d.join("calls")).unwrap();
+    assert!(calls.lines().all(|l| l.ends_with("phone root")), "{calls}");
+}
+
+#[test]
+fn adb_write_partition_on_a_named_connection_reads_the_slot_and_writes_through_that_connection() {
+    let d = tmp("write-named");
+    let sha = staged(&d, 3, 0xAB);
+    partition(&d, "system_a", 5, 0x11);
+    let mut envs = write_case(&d, "system_a", &sha);
+    envs.push(("CONNECTION", "android".into()));
+    let refs: Vec<(&str, &str)> = envs.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    let o = run(&d, &refs);
+    assert!(o.status.success(), "{}", said(&o));
+    let calls = fs::read_to_string(d.join("calls")).unwrap();
+    assert!(calls.lines().count() >= 2, "{calls}");
+    assert!(
+        calls
+            .lines()
+            .all(|l| l.ends_with("phone root --connection android")),
+        "{calls}"
+    );
+}
+
+#[test]
+fn a_step_on_a_connection_that_does_not_answer_fails_naming_the_connection() {
+    let d = tmp("slot-silent");
+    fs::write(
+        d.join("devlab"),
+        "#!/bin/sh\necho \"connection android does not answer\" >&2\nexit 1\n",
+    )
+    .unwrap();
+    let o = run(&d, &[("CASE", "slot"), ("CONNECTION", "android")]);
+    assert!(!o.status.success(), "{}", said(&o));
+    assert!(said(&o).contains("connection android"), "{}", said(&o));
+}
