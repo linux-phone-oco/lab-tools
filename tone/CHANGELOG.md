@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.53.6](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-tone-v0.53.5...lpoco-tone-v0.53.6) - 2026-11-26
+
+### Added
+
+- *(host)* check names a stray lpoco program no pin holds, prepare removes it ([#464](https://github.com/linux-phone-oco/lab-tools/pull/464))
+
 ## [0.53.5](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-tone-v0.53.4...lpoco-tone-v0.53.5) - 2026-11-26
 
 ### Added
