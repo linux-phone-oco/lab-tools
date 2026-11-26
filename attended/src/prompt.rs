@@ -176,6 +176,7 @@ enum Ended {
     Answered(Answer),
     TimedOut(Duration),
     NobodyAnswered,
+    Stopped(&'static str),
 }
 
 /// Ask: the terminal and the answer file, whichever answers first. At the end of the terminal's input (EOF is
@@ -201,6 +202,9 @@ pub fn ask(files: &Files, p: &Prompt, limit: Option<Duration>) -> Result<Answer,
     }
     let mut ended = false;
     let outcome = loop {
+        if let Some((_, name)) = crate::stop::came() {
+            break Ended::Stopped(name);
+        }
         if let Some(a) = id.as_deref().and_then(|id| files.take(id)) {
             break Ended::Answered(a);
         }
@@ -231,6 +235,7 @@ pub fn ask(files: &Files, p: &Prompt, limit: Option<Duration>) -> Result<Answer,
         Ended::Answered(a) => Ok(a),
         Ended::TimedOut(l) => Err(format!("nobody answered within {} s", l.as_secs())),
         Ended::NobodyAnswered => Err("nobody answered".to_string()),
+        Ended::Stopped(name) => Err(format!("stopped by {name} while waiting for an answer")),
     }
 }
 

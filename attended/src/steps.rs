@@ -381,11 +381,11 @@ fn into_fastboot(tries: u32, helper: Option<&ToBootloader>) -> Result<(), String
     // the connection ends with the reboot, so its failing is not yet the answer; it is said if fastboot never comes
     let sent = crate::phone().root(&format!("chmod 755 {} && {}\n", helper.to, helper.run));
     for turn in 0..tries.max(1) {
-        std::thread::sleep(std::time::Duration::from_secs(if turn == 0 {
+        crate::stop::sleep(std::time::Duration::from_secs(if turn == 0 {
             0
         } else {
             2
-        }));
+        }))?;
         if in_fastboot()? {
             return Ok(());
         }
@@ -459,12 +459,11 @@ fn run_argv(
     for gate in lines {
         let mut argv = gate.split_whitespace();
         let program = argv.next().ok_or(format!("{key}: a blank command"))?;
-        let out = std::process::Command::new(program)
-            .args(argv)
-            .current_dir(folder)
-            .stdin(std::process::Stdio::null())
-            .output()
-            .map_err(|e| format!("{key} command {gate:?} could not start: {e}: {then}"))?;
+        let mut cmd = std::process::Command::new(program);
+        cmd.args(argv).current_dir(folder);
+        // through the run's calls: a signal cuts a gate, and a way back's command leaves the run's process group
+        let out = crate::call::run_limited(cmd, "", None)
+            .map_err(|e| format!("{key} command {gate:?}: {e}: {then}"))?;
         if !out.status.success() {
             return Err(format!(
                 "{key} command {gate:?} failed ({}): {then}\n{}{}",

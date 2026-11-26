@@ -12,8 +12,14 @@
 use lpoco_attended::prelude::*;
 
 fn marks(word: &'static str) -> Step {
+    // with slow-back: the way back takes a while, to be signalled again while it runs
     Step::new(Kind::Do, &format!("leave the {word} mark"), move || {
-        phone().sh(&format!("echo {word} >> waybacks"))
+        let wait = if std::path::Path::new("slow-back").exists() {
+            "touch backing; sleep 2; "
+        } else {
+            ""
+        };
+        phone().sh(&format!("{wait}echo {word} >> waybacks"))
     })
 }
 
@@ -39,6 +45,15 @@ fn main() {
                     [Step::new(Kind::Do, "work unless told not to", || {
                         if std::path::Path::new("panic-here").exists() {
                             panic!("boom");
+                        }
+                        // with retry-here: the step waits as wait_for_phone does, trying again every 5 seconds
+                        if std::path::Path::new("retry-here").exists() {
+                            return retry(60, 5, || phone().sh("touch holding; false"))
+                                .map(|()| String::new());
+                        }
+                        // with hold-here: the step holds the run until a signal ends it
+                        if std::path::Path::new("hold-here").exists() {
+                            return phone().sh("touch holding; sleep 30");
                         }
                         phone().sh("test ! -e fail-here")
                     })],
