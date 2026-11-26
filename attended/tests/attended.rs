@@ -1532,7 +1532,7 @@ fn declare_fastboot_boot(dir: &Path, device_wait: u32) {
     m.push_str(&format!(
         "[fastboot]\nserial = \"FA81\"\n[[host.gadget]]\nserial = \"s\"\naccess = [\"tty\"]\nusb_id = \"1d6b:0104\"\n\
          [boot]\nkernel_offset = 0\nramdisk_offset = 0\ntags_offset = 0\npagesize = 4096\ncmdline = \"x\"\ndevice_wait = {device_wait}\n\
-         [kernels]\ntest = [\"z21\"]\nboot = \"fastboot\"\n[images]\ndir = \"build/images\"\n[images.z21]\npath = \"images-z21/boot-z21.img\"\n"
+         [kernels]\ntest = [\"z21\"]\nboot = \"fastboot\"\nway_back = [\"true\"]\n[images]\ndir = \"build/images\"\n[images.z21]\npath = \"images-z21/boot-z21.img\"\n"
     ));
     fs::write(dir.join("device.toml"), m).unwrap();
 }
@@ -1580,24 +1580,122 @@ fn boot_once_on_a_fastboot_device_boots_the_declared_image_from_memory_and_waits
 }
 
 #[test]
-fn the_way_back_of_a_fastboot_device_reboots_even_when_the_kept_kernel_runs_from_memory() {
+// Decision 2026-11-26-a-phone-s-way-back-to-its-known-good-is-declared.
+fn the_way_back_of_a_fastboot_device_runs_even_when_the_kept_kernel_runs_from_memory() {
     // a kernel booted from memory is gone at the next reboot: "kept" names the image the way back returns to, so
     // that the running kernel carries its name must not make the way back skip itself
     let dir = tmp("back-fastboot");
     declare_fastboot_boot(&dir, 4);
+    let made = dir.join("way-back-ran");
+    declare_way_back(&dir, &[format!("touch {}", made.display())], None);
     let mut m = fs::read_to_string(dir.join("device.toml")).unwrap();
     m = m.replace("boot = \"fastboot\"", "boot = \"fastboot\"\nkept = \"z21\"");
     fs::write(dir.join("device.toml"), m).unwrap();
     fs::write(dir.join("uname-release"), "6.1.0-z21\n").unwrap();
     let o = devlab_calls(&dir, "back", "", 0);
     assert_eq!(o.status.code(), Some(0), "{}", said(&o));
+    assert!(made.exists(), "the way back skipped itself: {}", said(&o));
+}
+
+fn declare_way_back(dir: &Path, way_back: &[String], back_on: Option<&str>) {
+    let list = way_back
+        .iter()
+        .map(|g| format!("{g:?}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let mut m = fs::read_to_string(dir.join("device.toml"))
+        .unwrap()
+        .replace(
+            "way_back = [\"true\"]",
+            &format!(
+                "way_back = [{list}]{}",
+                back_on.map_or(String::new(), |b| format!("\nback_on = {b:?}"))
+            ),
+        );
+    if back_on.is_some() {
+        m.push_str("[connections.android]\ntransport = \"adb\"\nuser = \"shell\"\naddresses = [\"a\"]\nlogin = \"none\"\n");
+    }
+    fs::write(dir.join("device.toml"), m).unwrap();
+}
+
+// Decision 2026-11-26-a-phone-s-way-back-to-its-known-good-is-declared: the fake devlab prints what it is asked.
+#[test]
+fn a_declared_way_back_runs_its_commands_in_order_as_argv_then_waits_on_the_back_on_connection() {
+    let dir = tmp("way-back-declared");
+    declare_fastboot_boot(&dir, 4);
+    let (a, b) = (dir.join("way-a"), dir.join("x;y"));
+    declare_way_back(
+        &dir,
+        &[
+            format!("touch {}", a.display()),
+            format!("test -e {}", a.display()),
+            format!("touch {}", b.display()),
+        ],
+        Some("android"),
+    );
+    let o = devlab_calls(&dir, "back", "", 0);
+    assert_eq!(o.status.code(), Some(0), "{}", said(&o));
     assert!(
-        fs::read_to_string(dir.join("rebooted"))
-            .unwrap()
-            .contains("systemctl reboot"),
-        "the way back skipped its reboot: {}",
+        a.exists() && b.exists(),
+        "the way back ran as argv, in order: {}",
         said(&o)
     );
+    assert!(
+        !dir.join("rebooted").exists(),
+        "a declared way back must not also systemctl reboot"
+    );
+    let args = fs::read_to_string(dir.join("args")).unwrap();
+    assert!(
+        args.contains("phone sh --connection android"),
+        "back_on was not waited on: {args}"
+    );
+}
+
+#[test]
+// Decision 2026-11-26-a-phone-s-way-back-to-its-known-good-is-declared.
+fn a_way_back_command_that_fails_stops_the_step_naming_it_and_waits_for_nothing() {
+    let dir = tmp("way-back-fails");
+    declare_fastboot_boot(&dir, 4);
+    let after = dir.join("after-the-failure");
+    declare_way_back(
+        &dir,
+        &[
+            format!("ls {}/no-such-way-back-file", dir.display()),
+            format!("touch {}", after.display()),
+        ],
+        Some("android"),
+    );
+    let o = devlab_calls(&dir, "back", "", 0);
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(1), "{t}");
+    assert!(
+        t.contains("way_back") && t.contains("no-such-way-back-file"),
+        "{t}"
+    );
+    assert!(!after.exists(), "a command ran after one had failed");
+    let args = fs::read_to_string(dir.join("args")).unwrap_or_default();
+    assert!(
+        !args.contains("--connection"),
+        "it waited after a failed way back: {args}"
+    );
+}
+
+#[test]
+// Decision 2026-11-26-a-phone-s-way-back-to-its-known-good-is-declared.
+fn a_dry_run_lists_the_way_back_and_runs_none_of_it() {
+    let dir = tmp("way-back-dry");
+    declare_fastboot_boot(&dir, 4);
+    let made = dir.join("made-in-a-dry-run");
+    declare_way_back(&dir, &[format!("touch {}", made.display())], None);
+    let o = devlab_calls(&dir, "back-dry", "", 0);
+    let t = said(&o);
+    assert_eq!(o.status.code(), Some(0), "{t}");
+    assert!(
+        t.contains("way_back") && t.contains(&format!("touch {}", made.display())),
+        "{t}"
+    );
+    assert!(!made.exists(), "a dry run ran the way back");
+    assert!(!dir.join("args").exists(), "a dry run reached devlab");
 }
 
 #[test]

@@ -445,24 +445,35 @@ fn gates_said(gates: &[String]) -> String {
 /// Each `[kernels] pre_boot` gate as argv (split on spaces: no shell, no expansion), in order, in the device's folder;
 /// the first that does not exit 0 ends the step, naming it and what it said, before the phone is touched.
 fn run_gates(gates: &[String], folder: &std::path::Path) -> Result<(), String> {
-    for gate in gates {
+    run_argv("pre_boot", gates, folder, "nothing booted")
+}
+
+/// The command lines of a `[kernels]` key (`pre_boot`, `way_back`) run as argv in order in the device's folder; the first
+/// that does not exit 0 ends the step naming the key, the line, `then` (what was left undone) and what it said.
+fn run_argv(
+    key: &str,
+    lines: &[String],
+    folder: &std::path::Path,
+    then: &str,
+) -> Result<(), String> {
+    for gate in lines {
         let mut argv = gate.split_whitespace();
-        let program = argv.next().ok_or("pre_boot: a blank gate")?;
+        let program = argv.next().ok_or(format!("{key}: a blank command"))?;
         let out = std::process::Command::new(program)
             .args(argv)
             .current_dir(folder)
             .stdin(std::process::Stdio::null())
             .output()
-            .map_err(|e| format!("pre_boot gate {gate:?} could not start: {e}: nothing booted"))?;
+            .map_err(|e| format!("{key} command {gate:?} could not start: {e}: {then}"))?;
         if !out.status.success() {
             return Err(format!(
-                "pre_boot gate {gate:?} failed ({}): nothing booted\n{}{}",
+                "{key} command {gate:?} failed ({}): {then}\n{}{}",
                 out.status,
                 String::from_utf8_lossy(&out.stdout),
                 String::from_utf8_lossy(&out.stderr)
             ));
         }
-        println!("  pre_boot gate passed: {gate}");
+        println!("  {key} command passed: {gate}");
     }
     Ok(())
 }
@@ -560,23 +571,55 @@ fn declared_test_kernel(name: &str) {
     }
 }
 
-/// Go back to the phone's known good: tell the phone, as root, to reboot, so the default entry (the stock or the
-/// kept kernel; a try is used up) boots. It does not wait: follow it with [`wait_for_phone`], after the phone
-/// has gone down, as that step says. The device declares a `[kernels]` table; its `kept` kernel is named in the
-/// step, and without one the step says stock. The name is what the device declares, not what the phone is checked to boot.
+/// Go back to the phone's known good. With `[kernels] way_back` declared, run its command lines on the host (as argv, in
+/// the device's folder), then wait until the `back_on` connection answers; the phone is not told to reboot. Without it,
+/// tell the phone, as root, to reboot, so the default entry (the stock or the kept kernel; a try is used up) boots, and
+/// do not wait: follow it with [`wait_for_phone`], after the phone has gone down, as that step says. The device declares a
+/// `[kernels]` table; its `kept` kernel is named in the step, and without one the step says stock. The name is what the
+/// device declares, not what the phone is checked to boot. A declared way back always runs: only the reboot has the
+/// already-running skip (a way back is the device's own, and the manifest asks for it of every fastboot boot).
 pub fn back_to_known_good() -> Step {
     // a kernel booted from memory is gone at the next reboot, so only an entry kept on the phone can already be the default
-    let (kept, from_memory) = crate::declared("[kernels]", "back_to_known_good", |m| {
-        m.kernels.as_ref().map(|k| {
-            (
-                k.kept.clone(),
-                k.boot == lpoco_manifest::KernelBoot::Fastboot,
-            )
-        })
-    });
+    let (kept, from_memory, way_back, back_on) =
+        crate::declared("[kernels]", "back_to_known_good", |m| {
+            m.kernels.as_ref().map(|k| {
+                (
+                    k.kept.clone(),
+                    k.boot == lpoco_manifest::KernelBoot::Fastboot,
+                    k.way_back.clone(),
+                    k.back_on.clone(),
+                )
+            })
+        });
     let default = kept
         .clone()
         .map_or("stock".to_string(), |k| format!("kept: {k}"));
+    if !way_back.is_empty() {
+        let name = format!(
+            "come back to the known good ({default}) by way_back: {}{}",
+            way_back.join("; "),
+            back_on
+                .as_ref()
+                .map_or(String::new(), |b| format!(", then wait for {b}"))
+        );
+        let folder = crate::config()
+            .device
+            .parent()
+            .unwrap_or(std::path::Path::new("."))
+            .to_path_buf();
+        return Step::new(Kind::Do, &name, move || {
+            run_argv(
+                "way_back",
+                &way_back,
+                &folder,
+                "the phone was not brought back",
+            )?;
+            let phone = back_on
+                .as_deref()
+                .map_or_else(crate::phone, crate::phone_on);
+            crate::retry(60, 5, || phone.sh("true"))
+        });
+    }
     let name = format!("reboot into the default kernel ({default})");
     Step::new(Kind::Do, &name.clone(), move || {
         // the kept kernel already runs: a reboot would only be a risk (a stock default cannot be told by name)
@@ -607,27 +650,29 @@ pub fn phone_ready(kernel: &str) -> crate::Group {
     .way_back(back_to_known_good())
 }
 
-/// Leave the phone on its known good ([`back_to_known_good`]): reboot into the default kernel, see the phone go down
-/// (the old instance still answers for a moment), then see it answer again. The group is settling: once it has passed,
-/// the way backs of the groups before it (`phone_ready`) are settled and a later failure does not reboot again.
+/// Leave the phone on its known good ([`back_to_known_good`]). By a reboot: see the phone go down (the old instance
+/// still answers for a moment), then see it answer again. By a declared `way_back`: the step itself waited for `back_on`,
+/// so nothing more is asked (the default connection need not be the system the phone comes back to). The group is
+/// settling: once it has passed, the way backs of the groups before it (`phone_ready`) are settled and a later failure
+/// does not run them again.
 pub fn leave_known_good() -> crate::Group {
-    crate::group(
-        "leave the phone on its known good",
-        [
-            back_to_known_good(),
-            Step::new(Kind::Check, "the phone goes down", || {
-                crate::retry(30, 1, || {
-                    if crate::phone().sh("true").is_err() {
-                        Ok(())
-                    } else {
-                        Err("the phone still answers")
-                    }
-                })
-            }),
-            wait_for_phone(60, 5),
-        ],
-    )
-    .settling()
+    let by_way_back = crate::declared("[kernels]", "leave_known_good", |m| {
+        m.kernels.as_ref().map(|k| !k.way_back.is_empty())
+    });
+    let mut steps = vec![back_to_known_good()];
+    if !by_way_back {
+        steps.push(Step::new(Kind::Check, "the phone goes down", || {
+            crate::retry(30, 1, || {
+                if crate::phone().sh("true").is_err() {
+                    Ok(())
+                } else {
+                    Err("the phone still answers")
+                }
+            })
+        }));
+        steps.push(wait_for_phone(60, 5));
+    }
+    crate::group("leave the phone on its known good", steps).settling()
 }
 
 /// The `vendor:product` and the serial (when it has one) of every device under a sysfs USB devices folder.
