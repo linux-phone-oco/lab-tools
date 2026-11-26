@@ -580,7 +580,7 @@ dependencies = [
 
 [[package]]
 name = "lpoco-attended"
-version = "0.46.4"
+version = "0.46.5"
 dependencies = [
  "argenv-resolve",
  "lpoco-manifest 0.51.0 (git+https://github.com/linux-phone-oco/lab-tools?tag=lpoco-manifest-v0.51.0)",

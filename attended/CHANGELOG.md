@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.46.5](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-attended-v0.46.4...lpoco-attended-v0.46.5) - 2026-11-26
+
+### Added
+
+- *(attended)* a third signal ends a way back that hangs, naming it left unfinished (exit 3) ([#462](https://github.com/linux-phone-oco/lab-tools/pull/462))
+
 ## [0.46.4](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-attended-v0.46.3...lpoco-attended-v0.46.4) - 2026-11-26
 
 ### Added
