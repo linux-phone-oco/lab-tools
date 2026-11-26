@@ -410,3 +410,20 @@ fn check_host_fails_for_a_devlab_that_is_missing_or_has_no_version() {
         text(&o)
     );
 }
+
+/// Source: walleye's coordinator, 2026-11-26 (backlog item attended-reads-connections): attended 0.46.0 pinned
+/// lpoco-manifest 0.49.1, which refuses [connections], so `attended check --host` failed on walleye's device.toml.
+/// The device.toml is read by the manifest the released attended pins, not by the checkout's own.
+#[test]
+fn check_host_reads_a_device_toml_with_a_named_connection() {
+    let d = tmp("host-connections");
+    fs::write(
+        d.join("device.toml"),
+        "[device]\ncodename = \"google-walleye\"\n\n[connections.android]\ntransport = \"adb\"\nuser = \"root\"\naddresses = []\n",
+    )
+    .unwrap();
+    proc_file(&d, "boot", "exit 0\n");
+    let ok = stand_in_devlab(&d, "0.32.1", 0, "free");
+    let o = host_check(&d, &ok, &["check", "--host"]);
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o));
+}
