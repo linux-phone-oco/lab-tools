@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.53.5](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-lab-v0.53.4...lpoco-lab-v0.53.5) - 2026-11-26
+
+### Added
+
+- *(devlab)* an adb connection with user = root runs adb root and waits once ([#456](https://github.com/linux-phone-oco/lab-tools/pull/456))
+
 ## [0.53.4](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-lab-v0.53.3...lpoco-lab-v0.53.4) - 2026-11-26
 
 ### Added
