@@ -9,6 +9,7 @@ use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::sync::{Arc, OnceLock};
 
 #[derive(Clone)]
 pub struct Phone {
@@ -17,6 +18,8 @@ pub struct Phone {
     reach: Reach,
     /// the manifest, for what must never be touched on this phone
     device: Device,
+    /// `adb root` and the wait for the phone to come back, done once for this Phone (user = root on adb)
+    rooted: Arc<OnceLock<Result<(), RootFail>>>,
 }
 
 const SSH_OPTS: [&str; 8] = [
@@ -103,6 +106,9 @@ impl Phone {
     pub fn at(device: &Device, addr: &str) -> Result<Phone> {
         let p = Phone::reaching(device, addr)?;
         if !p.answers() {
+            if let Some(no) = p.root_refusal() {
+                bail!(no);
+            }
             bail!("{} does not answer at {addr}", device.device.codename);
         }
         Ok(p)
@@ -123,6 +129,9 @@ impl Phone {
             let p = Phone::reaching(device, &addr)?;
             if p.answers() {
                 return Ok(p);
+            }
+            if let Some(no) = p.root_refusal() {
+                bail!(no);
             }
         }
         match &device.connection_name {
@@ -167,6 +176,7 @@ impl Phone {
             target,
             reach,
             device: device.clone(),
+            rooted: Arc::default(),
         })
     }
 
@@ -197,6 +207,7 @@ impl Phone {
             }
             Reach::Telnet { address, port } => telnet_run(address, *port, script),
             Reach::Adb { serial } => {
+                self.adb_ready(serial)?;
                 let out = adb_shell(serial, &[], script, Stdio::inherit())?;
                 Ok((
                     out.status.success(),
@@ -218,7 +229,9 @@ impl Phone {
                 .is_ok_and(|s| s.success()),
             Reach::Telnet { address, port } => telnet_connect(address, *port).is_ok(),
             Reach::Adb { serial } => {
-                adb_shell(serial, &[], "true\n", Stdio::null()).is_ok_and(|o| o.status.success())
+                self.adb_ready(serial).is_ok()
+                    && adb_shell(serial, &[], "true\n", Stdio::null())
+                        .is_ok_and(|o| o.status.success())
             }
         }
     }
@@ -240,12 +253,34 @@ impl Phone {
                 if let Some(no) = self.device.hazard_in(script) {
                     bail!(no);
                 }
+                self.adb_ready(serial)?;
                 let out = adb_shell(serial, self.adb_root_shell(), script, Stdio::inherit())?;
                 Ok((
                     out.status.success(),
                     String::from_utf8_lossy(&out.stdout).into_owned(),
                 ))
             }
+        }
+    }
+
+    /// Before the first adb command of a Phone whose connection says user = root: `adb root`, then
+    /// `adb wait-for-device` (adbd restarts). Done once; a refusal ("adbd cannot run as root") is kept and
+    /// every later command fails with it. user = shell is left as it is.
+    fn adb_ready(&self, serial: &str) -> Result<()> {
+        if self.device.connection.user != "root" {
+            return Ok(());
+        }
+        self.rooted
+            .get_or_init(|| adb_root(serial))
+            .clone()
+            .map_err(|e| anyhow::anyhow!(e.to_string()))
+    }
+
+    /// Why this adb phone's adbd would not run as root, when that is what it said (not the same as not answering).
+    fn root_refusal(&self) -> Option<String> {
+        match self.rooted.get()? {
+            Err(RootFail::Refused(words)) => Some(words.clone()),
+            _ => None,
         }
     }
 
@@ -280,6 +315,7 @@ impl Phone {
                 child.wait_with_output()?
             }
             Reach::Adb { serial } => {
+                self.adb_ready(serial)?;
                 adb_shell(serial, self.adb_root_shell(), script, Stdio::inherit())?
             }
             Reach::Telnet { .. } => bail!("a file is not carried over telnet: it is text only"),
@@ -299,11 +335,14 @@ impl Phone {
                 a.push(format!("{}:{remote}", self.target));
                 auth.command("scp", a).status()?.success()
             }
-            Reach::Adb { serial } => Command::new("adb")
-                .args(["-s", serial, "push", local, remote])
-                .status()
-                .context("starting adb")?
-                .success(),
+            Reach::Adb { serial } => {
+                self.adb_ready(serial)?;
+                Command::new("adb")
+                    .args(["-s", serial, "push", local, remote])
+                    .status()
+                    .context("starting adb")?
+                    .success()
+            }
             Reach::Telnet { .. } => bail!("a file is not carried over telnet: it is text only"),
         };
         if !ok {
@@ -453,6 +492,57 @@ fn telnet_answer(raw: &[u8], begin: &str, end: &str) -> Option<(bool, String)> {
         let rc: u32 = digits.parse().ok().filter(|_| whole)?;
         Some((rc == 0, body[..at].to_string()))
     })
+}
+
+/// What adbd says when it will not run as root (adb root on a production build).
+const REFUSAL: &str = "cannot run as root";
+
+/// Why `adb root` did not leave the phone ready: adbd refused (its words), or anything else.
+#[derive(Clone, Debug)]
+enum RootFail {
+    Refused(String),
+    Other(String),
+}
+
+impl std::fmt::Display for RootFail {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let (Self::Refused(w) | Self::Other(w)) = self;
+        f.write_str(w)
+    }
+}
+
+/// `adb -s SERIAL root`, then `adb -s SERIAL wait-for-device` (bounded, 30 s); adb's refusal in its own words.
+fn adb_root(serial: &str) -> Result<(), RootFail> {
+    let no_adb =
+        |e: std::io::Error| RootFail::Other(format!("starting adb (is it installed?): {e}"));
+    let said = Command::new("adb")
+        .args(["-s", serial, "root"])
+        .stdin(Stdio::null())
+        .output()
+        .map_err(no_adb)?;
+    let words = format!(
+        "{}{}",
+        String::from_utf8_lossy(&said.stdout),
+        String::from_utf8_lossy(&said.stderr)
+    );
+    let failed = format!("adb root on {serial} failed: {}", words.trim());
+    if words.contains(REFUSAL) {
+        return Err(RootFail::Refused(failed));
+    }
+    if !said.status.success() {
+        return Err(RootFail::Other(failed));
+    }
+    let waited = Command::new("timeout")
+        .args(["30", "adb", "-s", serial, "wait-for-device"])
+        .stdin(Stdio::null())
+        .status()
+        .map_err(|e| RootFail::Other(format!("starting timeout: {e}")))?;
+    if !waited.success() {
+        return Err(RootFail::Other(format!(
+            "adb wait-for-device on {serial} failed or ran past 30 s after adb root"
+        )));
+    }
+    Ok(())
 }
 
 /// `adb -s SERIAL shell` with the script on its standard input.
