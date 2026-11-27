@@ -310,3 +310,41 @@ fn a_part_of_a_nixpkgs_program_is_its_static_aarch64_build_held_to_its_sha256_an
         text(&o.stderr)
     );
 }
+
+#[test]
+fn a_nixpkgs_part_whose_package_does_not_make_the_declared_sha256_fails_naming_the_part() {
+    if !has_nix() {
+        eprintln!("not measured: no nix");
+        return;
+    }
+    let dir = tmp("nw");
+    let wrong = "2".repeat(64);
+    forget(&dir, &wrong);
+    let base = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/device.toml"),
+    )
+    .unwrap();
+    let device = dir.join("device.toml");
+    fs::write(
+        &device,
+        format!(
+            "{base}\n[part_builds.busybox]\nnixpkgs = \"busybox\"\nbin = \"busybox\"\nsha256 = \"{wrong}\"\n"
+        ),
+    )
+    .unwrap();
+    let o = Command::new(env!("CARGO_BIN_EXE_lpoco-bringup"))
+        .args(["image", "ensure", "busybox", "--device"])
+        .arg(&device)
+        .output()
+        .unwrap();
+    let said = text(&o.stderr);
+    assert!(
+        !o.status.success(),
+        "a part that is not the declared sha256 passed"
+    );
+    assert!(said.contains("busybox"), "the part is not named: {said}");
+    assert!(
+        said.contains("hash mismatch"),
+        "refused for another reason: {said}"
+    );
+}

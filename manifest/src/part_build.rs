@@ -55,16 +55,16 @@ fn word(s: &str) -> bool {
 }
 
 impl PartBuild {
-    /// The source this declaration names; `validate` has already refused one that names two or none.
-    pub fn source(&self) -> PartSource<'_> {
+    /// The source this declaration names; an error when it names none.
+    pub fn source(&self) -> Result<PartSource<'_>, String> {
         match (&self.nixpkgs, &self.repo, &self.rev) {
-            (Some(n), _, _) => PartSource::Nixpkgs(n),
-            (None, Some(repo), Some(rev)) => PartSource::Crate {
+            (Some(n), _, _) => Ok(PartSource::Nixpkgs(n)),
+            (None, Some(repo), Some(rev)) => Ok(PartSource::Crate {
                 repo,
                 rev,
                 krate: self.krate.as_deref().unwrap_or("."),
-            },
-            _ => unreachable!("validate refuses a part with no source"),
+            }),
+            _ => Err("names no source (nixpkgs, or repo with rev)".to_string()),
         }
     }
 

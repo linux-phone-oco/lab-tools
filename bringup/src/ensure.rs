@@ -723,7 +723,7 @@ fn part_wanted(p: &PartBuild) -> Wanted {
     }
 }
 
-/// The binary `[part_builds.NAME]`: its store path, held by its sha256 or built from its crate's commit in the
+/// The binary `[part_builds.NAME]`: its store path, held by its sha256 or built from its crate's commit (or taken from a nixpkgs package) in the
 /// sandbox (unit tests first). With `rebuild` the store, cache and seed are ignored, the build is held to nothing but
 /// run twice by `nix-build --check`, and its sha256 is compared to the declared one (decision
 /// 2026-11-24-a-recipe-sha-is-proved-by-a-rebuild); nothing is published. Any failure names the part.
@@ -745,7 +745,7 @@ fn ensure_part(
         ("sha256", p.sha256.clone()),
         ("bin", p.bin.clone()),
     ];
-    let from = match p.source() {
+    let from = match p.source().map_err(|e| format!("{name}: {e}"))? {
         PartSource::Crate { repo, rev, krate } => {
             args.push(("repo", repo.to_string()));
             args.push(("rev", rev.to_string()));

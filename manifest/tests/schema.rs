@@ -548,6 +548,10 @@ fn a_part_build_of_a_nixpkgs_program_names_the_package_and_the_binary_and_has_no
             "nixpkgs = \"a/b\"\nbin = \"busybox\"\n",
         ),
         ("neither a package nor a repository", "bin = \"busybox\"\n"),
+        ("a package with a commit alone", "nixpkgs = \"busybox\"\nbin = \"busybox\"\nrev = \"0e20c7a89ac5748fbd38f59a2b66324aad84cbbb\"\n"),
+        ("an empty package", "nixpkgs = \"\"\nbin = \"busybox\"\n"),
+        ("a package with a dot", "nixpkgs = \"a.b\"\nbin = \"busybox\"\n"),
+        ("a package named ..", "nixpkgs = \"..\"\nbin = \"busybox\"\n"),
         (
             "a repository without its commit",
             "repo = \"https://x.org/r.git\"\nbin = \"busybox\"\n",
