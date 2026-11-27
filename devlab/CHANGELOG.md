@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.53.8](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-lab-v0.53.7...lpoco-lab-v0.53.8) - 2026-11-27
+
+### Added
+
+- *(bringup)* a part can be a nixpkgs program (busybox), proved by --rebuild ([#470](https://github.com/linux-phone-oco/lab-tools/pull/470))
+
 ## [0.53.7](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-lab-v0.53.6...lpoco-lab-v0.53.7) - 2026-11-27
 
 ### Added
