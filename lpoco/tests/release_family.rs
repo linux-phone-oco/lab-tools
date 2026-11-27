@@ -8,7 +8,7 @@ use std::fs;
 use std::path::PathBuf;
 
 /// The packages released on their own, outside the family (release-plz.toml).
-const OWN: &[&str] = &["lpoco-attended", "lpoco-manifest"];
+const OWN: &[&str] = &["lpoco-attended", "lpoco-manifest", "osfact"];
 /// Of those, the ones the family members depend on by path: their changelogs still list them.
 const IN_CHANGELOGS: &[&str] = &["lpoco-manifest"];
 

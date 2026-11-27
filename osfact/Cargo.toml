@@ -1,0 +1,14 @@
+[package]
+name = "osfact"
+# released on its own, tag prefix osfact-v (release-plz.toml); not released until its first build lands
+version = "0.0.0"
+edition = "2021"
+description = "osfact (os-factory): a device's installable image and its install command, from the device's declaration, a distro profile and the proven parts - any distro, any device"
+license = "MIT OR Apache-2.0"
+
+[lib]
+name = "osfact"
+
+# The boundary (decision 2026-11-27-osfact-own-rust-in-lab-tools): no lpoco crate here, in any section, ever.
+# lab-tools depends on osfact, never the reverse; tests/boundary.rs refuses one.
+[dependencies]
