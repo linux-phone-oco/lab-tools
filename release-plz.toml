@@ -99,3 +99,13 @@ name = "lpoco-attended"
 changelog_include = []
 git_tag_name = "lpoco-attended-v{{ version }}"
 git_release_enable = true
+
+# osfact (os-factory): a device's installable image from its declaration, a distro profile and the proven parts -
+# depends on no lpoco crate, extractable to its own repository (decision 2026-11-27-osfact-own-rust-in-lab-tools).
+# Not in the family: its own version and its own tag prefix, osfact-v*. Not released until its first build lands
+# (item osfact-walleye-two-distros): today it is a home and a failing test.
+[[package]]
+name = "osfact"
+changelog_include = []
+git_tag_name = "osfact-v{{ version }}"
+release = false

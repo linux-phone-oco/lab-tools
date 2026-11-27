@@ -1,0 +1,10 @@
+# A distro profile: data, not code (see alpine.toml). Debian is the second distro: the format after apk in decision
+# 2026-11-19-device-layer-declared-once (deb second, the author's leaning), and the base its fallback names first.
+[distro]
+name = "debian"
+format = "deb"
+release = "trixie"
+mirror = "https://deb.debian.org/debian"
+repositories = ["main", "non-free-firmware"]
+init = "systemd"
+packages = ["systemd-sysv", "openssh-server", "e2fsprogs"]

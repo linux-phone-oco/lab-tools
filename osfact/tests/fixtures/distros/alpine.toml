@@ -1,0 +1,12 @@
+# A distro profile: data, not code - osfact names a package format, never a distro (decision
+# 2026-11-27-osfact-own-rust-in-lab-tools). Alpine as walleye's root filesystem has it today (google-walleye-lab
+# tools/walleye-rootfs and rootfs/pins: apk-tools-static 3.0.9, so Alpine 3.23). The fields are the test's proposal;
+# item osfact-distro-profile settles them.
+[distro]
+name = "alpine"
+format = "apk"
+release = "3.23"
+mirror = "https://dl-cdn.alpinelinux.org/alpine"
+repositories = ["main", "community"]
+init = "openrc"
+packages = ["alpine-base", "openssh", "e2fsprogs"]

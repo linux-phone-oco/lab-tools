@@ -25,6 +25,7 @@ them live in its lab (linux-phone-oco/surya-lab).
 | `host/` | `lpoco host`: the lab machine prepared from declarations |
 | `layer/` | `lpoco layer`: a phone's device layer packed as distribution packages |
 | `tone/` | `lpoco tone`: a test tone made, and found in a recording |
+| `osfact/` | osfact (os-factory): a device's installable image from its declaration, a distro profile and the proven parts - depends on no lpoco crate, extractable (its own docs/) |
 | `ffs-acm/` | phone-side helpers: a serial console through FunctionFS (`ffs-acm`), and `restart2`, which restarts the phone into its bootloader |
 | `packaging/` | the Alpine package and signed repository key; the release conveyor |
 

@@ -1,5 +1,5 @@
 [workspace]
-members = ["attended", "manifest", "layer", "tone", "devlab", "health", "lpoco", "bringup", "host", "ffs-acm"]
+members = ["attended", "manifest", "layer", "tone", "devlab", "health", "lpoco", "bringup", "host", "ffs-acm", "osfact"]
 resolver = "2"
 
 # the health runner ships to phones: small

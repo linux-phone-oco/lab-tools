@@ -1,0 +1,67 @@
+# google-walleye's declaration as osfact reads it: the tables of google-walleye-lab's device.toml at 6ab243c5 that
+# are the device's (device, layer, boot), copied as they are, and the [install] table that is not there yet -
+# proposed here, made real by item osfact-device-declaration (in this fixture and in walleye's device.toml).
+# The lab's tables (connections, procedures, health, images) are not osfact's.
+
+[device]
+codename = "google-walleye"        # the Pixel 2; fastboot serial FA81N1A00790; until Linux runs it speaks only fastboot
+
+[layer]
+name = "google-walleye"            # the packages' stem: google-walleye-config, google-walleye-boot, linux-google-walleye
+needs = []                         # none yet: no userland of ours runs on walleye (it has only the bring-up init); not invented
+
+[layer.kernel]
+tree = "https://github.com/linux-phone-oco/linux"
+tag = "topic/pmic-wdt-wake-in-suspend"   # kernel.org v7.3 plus this topic (our dts needs its &pm8998_wdt); a branch until a release is tagged
+config = "build/walleye.config"          # over the arm64 defconfig; build/build-kernel.sh merges it
+dtbs = ["qcom/msm8998-google-walleye.dtb"]   # from dt/msm8998-google-walleye.dts (UFS off, by decision 2026-11-19-walleye-ufs-off-by-a-gate)
+
+[layer.boot]
+method = "android-bootimg"         # an Android boot.img rewritten per kernel, the addresses from [boot] below; AVB footer, algorithm NONE
+
+[layer.firmware]
+# The Pixel 2's own firmware is read from its vendor partitions (modem, adsp, slpi, venus, wifi), never packaged and
+# never put in a repository: they are named here as sources only. Nothing reads them yet (walleye-wifi-wcn3990 will).
+method = "extract-from-partitions"
+
+# No UCM files and no udev files yet: walleye has no sound card and no udev userland of ours. Not invented.
+
+# The boot glue for [layer.boot]: header v0 as the recorded boot images carry it (z21; its diagnostic dyndbg words left out of the cmdline).
+[boot]
+header_version = 0
+base = 0x0
+kernel_offset = 0x8000
+ramdisk_offset = 0x1000000
+second_offset = 0x0
+tags_offset = 0x100
+pagesize = 4096
+os_version = "15.0.0"
+os_patch_level = "2026-11"
+cmdline = "clk_ignore_unused ignore_loglevel panic=5 androidboot.hardware=walleye androidboot.console=ttyMSM0 androidboot.dtbo_idx=3"
+partition_size = 33554432          # the boot partition, 32 MiB: an image with its AVB footer must fit
+msm_id = [0x124, 0x20001]          # qcom,msm-id of dt/msm8998-google-walleye.dts
+dtb = "qcom/msm8998-google-walleye.dtb"   # appended to the kernel
+kernel_compression = "gzip"
+ramdisk_compression = "xz"
+avb_footer = true
+device_wait = 170                   # seconds to wait for a test image's device nodes after its shell answers (attended tries)
+back_wait = 240                     # seconds to wait for the phone to be back on Android after a try
+
+# Proposed (item osfact-device-declaration): how an image of this device reaches it - each step one write of one
+# output to one named place by one transport, in order. As walleye's install procedures do it today
+# (install-rootfs-on-the-pixel-2: the root filesystem by dd from Android to the system partition of the slot Android
+# is not on; install-boot-on-the-pixel-2: boot.img by fastboot to that slot's boot partition, then set_active).
+# {other} is that slot, read at the run, never typed.
+[[install.step]]
+write = "rootfs"
+to = "system_{other}"
+via = "android-dd"
+
+[[install.step]]
+write = "boot"
+to = "boot_{other}"
+via = "fastboot"
+
+[[install.step]]
+activate = "{other}"
+via = "fastboot"
