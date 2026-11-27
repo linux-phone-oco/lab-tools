@@ -359,6 +359,19 @@ a workspace), with crates.io dependencies only (a git dependency fails offline, 
 `nixpkgs.nix` pin changes the bytes, so every declared part sha256 is re-proved then. Not yet measured: a real crate with
 dependencies, LTO and `panic = "abort"` (walleye-reboot) - the first lab run of `--rebuild` on it is the proof.
 
+A program that is not a crate (busybox is C) is a part of the other form: `nixpkgs` names a package of the pinned `nixpkgs.nix`
+(its `pkgsCross.aarch64-multiplatform.pkgsStatic` set) and `bin` the file of its `bin/` that is the part, with no `repo`, `rev`
+or `crate` beside it (the manifest refuses a second source). The file is copied, its one store path overwritten as above, and
+held to the declared `sha256` the same way; `--rebuild` proves it the same way:
+
+    [part_builds.busybox]
+    nixpkgs = "busybox"          # the pinned nixpkgs' static aarch64 busybox (1.37.0, musl at the pin of 2026-11)
+    bin = "busybox"
+    sha256 = "7593d31b..."       # busybox's own bytes, as Nix measured them; a pin bump changes them, as for a crate
+
+Proof: `a_part_of_a_nixpkgs_program_...` in `bringup/tests/ensure_part.rs`. This is not walleye's `build-busybox.sh` (1.36.1,
+glibc, a defconfig): the ramdisk's busybox changes with the declaration, and walleye adopts it in its own item.
+
 ### lpoco bringup kernel: a phone's test kernel from its named list
 
     lpoco bringup kernel assemble LIST --lists kernel/topics.toml --repo CLONE --records DOCS [--reproduces COMMIT]

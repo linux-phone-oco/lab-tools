@@ -249,3 +249,102 @@ fn a_part_whose_unit_test_fails_is_not_built() {
         "stopped for another reason than the unit test: {said}"
     );
 }
+
+/// The sha256 of the pinned nixpkgs' static aarch64 busybox 1.37.0 (musl) at bin/busybox, its one store path scrubbed
+/// as a part's is. Taken once from the "hash mismatch" Nix printed for a zero sha256 (2026-11-27, bringup/src/part.nix),
+/// not from a build of this run; the test's `--rebuild` finds the same bytes again.
+const BUSYBOX: &str = "7593d31b555f67d197296966c05f8474be4e8f073ff4e39ba72aa50476d32ad2";
+
+#[test]
+fn a_part_of_a_nixpkgs_program_is_its_static_aarch64_build_held_to_its_sha256_and_proved_by_a_rebuild(
+) {
+    if !has_nix() {
+        eprintln!("not measured: no nix");
+        return;
+    }
+    let dir = tmp("n");
+    forget(&dir, BUSYBOX);
+    let base = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/device.toml"),
+    )
+    .unwrap();
+    let device = dir.join("device.toml");
+    fs::write(
+        &device,
+        format!(
+            "{base}\n[part_builds.busybox]\nnixpkgs = \"busybox\"\nbin = \"busybox\"\nsha256 = \"{BUSYBOX}\"\n"
+        ),
+    )
+    .unwrap();
+    let run_ensure = |extra: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_lpoco-bringup"))
+            .args(["image", "ensure", "busybox", "--device"])
+            .arg(&device)
+            .args(extra)
+            .output()
+            .unwrap()
+    };
+    let o = run_ensure(&[]);
+    assert!(
+        o.status.success(),
+        "ensure (build): {}{}",
+        text(&o.stdout),
+        text(&o.stderr)
+    );
+    let bytes = fs::read(text(&o.stdout).trim()).unwrap();
+    let (machine, interp) = elf(&bytes);
+    assert_eq!(machine, 0xb7, "EM_AARCH64 is 183 (0xb7)");
+    assert!(!interp, "the binary names a loader: it is not static");
+    assert!(
+        text(&bytes)
+            .split("/nix/store/")
+            .skip(1)
+            .all(|rest| rest.starts_with(&"e".repeat(32))),
+        "a store path with a real hash is left in a file that runs on a phone"
+    );
+    let o = run_ensure(&["--rebuild"]);
+    assert!(
+        o.status.success() && text(&o.stderr).contains("rebuilt from its recipe, equal"),
+        "{}{}",
+        text(&o.stdout),
+        text(&o.stderr)
+    );
+}
+
+#[test]
+fn a_nixpkgs_part_whose_package_does_not_make_the_declared_sha256_fails_naming_the_part() {
+    if !has_nix() {
+        eprintln!("not measured: no nix");
+        return;
+    }
+    let dir = tmp("nw");
+    let wrong = "2".repeat(64);
+    forget(&dir, &wrong);
+    let base = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/device.toml"),
+    )
+    .unwrap();
+    let device = dir.join("device.toml");
+    fs::write(
+        &device,
+        format!(
+            "{base}\n[part_builds.busybox]\nnixpkgs = \"busybox\"\nbin = \"busybox\"\nsha256 = \"{wrong}\"\n"
+        ),
+    )
+    .unwrap();
+    let o = Command::new(env!("CARGO_BIN_EXE_lpoco-bringup"))
+        .args(["image", "ensure", "busybox", "--device"])
+        .arg(&device)
+        .output()
+        .unwrap();
+    let said = text(&o.stderr);
+    assert!(
+        !o.status.success(),
+        "a part that is not the declared sha256 passed"
+    );
+    assert!(said.contains("busybox"), "the part is not named: {said}");
+    assert!(
+        said.contains("hash mismatch"),
+        "refused for another reason: {said}"
+    );
+}
