@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.52.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-manifest-v0.51.0...lpoco-manifest-v0.52.0) - 2026-11-27
+
+### Added
+
+- *(bringup)* image ensure builds a static aarch64 binary from a crate at a commit ([#466](https://github.com/linux-phone-oco/lab-tools/pull/466))
+
 ## [0.51.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-manifest-v0.50.0...lpoco-manifest-v0.51.0) - 2026-11-26
 
 ### Added
