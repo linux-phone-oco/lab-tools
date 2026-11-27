@@ -12,7 +12,7 @@
 //!                                                the control with those parts replaced, its AVB hash footer rebuilt (by lpoco-bringup itself),
 //!                                                and what differs said
 //!   lpoco-bringup image ensure NAME [--device device.toml] [--cache DIR] [--seed DIR] [--source DIR] [--dry-run | --rebuild]
-//!                                                (NAME may also be a [kernel_builds.NAME] or a [part_builds.NAME], a binary built from a crate at a commit)
+//!                                                (NAME may also be a [kernel_builds.NAME] or a [part_builds.NAME], a binary built from a crate at a commit, or a nixpkgs program)
 //!                                                (--dry-run: only say which of these it would be, changing nothing)
 //!                                                (--rebuild: build the recipe ignoring those, and fail unless it equals the declared sha256, naming both)
 //!                                                the image [images.NAME] by its sha256:its Nix store path, from the store, else the file:// cache, else the seed, else built from its [images.NAME.recipe] in Nix's sandbox (the build is held to the declared sha256 by Nix)

@@ -5,7 +5,7 @@
 //! 2026-11-23-image-recipes-on-nix-fixed-output-paths). What is built or seeded is copied to the cache.
 //! The path an image has in the store is computed from its sha256 and name alone (`nix-store --print-fixed-path`).
 
-use lpoco_manifest::{images::Recipe, KernelBuild, Manifest, PartBuild};
+use lpoco_manifest::{images::Recipe, KernelBuild, Manifest, PartBuild, PartSource};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -743,11 +743,20 @@ fn ensure_part(
     let mut args: Vec<(&str, String)> = vec![
         ("name", wanted.name.clone()),
         ("sha256", p.sha256.clone()),
-        ("repo", p.repo.clone()),
-        ("rev", p.rev.clone()),
-        ("crate", p.krate.clone()),
         ("bin", p.bin.clone()),
     ];
+    let from = match p.source() {
+        PartSource::Crate { repo, rev, krate } => {
+            args.push(("repo", repo.to_string()));
+            args.push(("rev", rev.to_string()));
+            args.push(("crate", krate.to_string()));
+            format!("crate {krate} at {}", &rev[..12])
+        }
+        PartSource::Nixpkgs(attr) => {
+            args.push(("nixpkgs", attr.to_string()));
+            format!("nixpkgs {attr}")
+        }
+    };
     if rebuild {
         args.push(("rebuild", "1".to_string()));
     }
@@ -759,8 +768,8 @@ fn ensure_part(
         let built = sum(&path).map_err(|e| format!("{name}: {e}"))?;
         if built != p.sha256 {
             return Err(format!(
-                "{name}: its crate at {} makes sha256 {built}, not the declared {}",
-                p.rev, p.sha256
+                "{name}: its {from} makes sha256 {built}, not the declared {}",
+                p.sha256
             ));
         }
         say(format!(
@@ -770,9 +779,7 @@ fn ensure_part(
     }
     publish(&path, sources.cache).map_err(|e| format!("{name}: {e}"))?;
     say(format!(
-        "{name}: built from its recipe (crate {} at {}), equal to its declared sha256",
-        p.krate,
-        &p.rev[..12]
+        "{name}: built from its recipe ({from}), equal to its declared sha256",
     ));
     Ok(path)
 }

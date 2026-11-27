@@ -1514,20 +1514,35 @@
       "type": "object",
       "properties": {
         "repo": {
-          "description": "the git repository holding the crate (an https://, file:// or ssh:// address)",
-          "type": "string"
+          "description": "the git repository holding the crate (an https://, file:// or ssh:// address); with `rev`, the crate form",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "rev": {
           "description": "the commit the crate is read at, 40 lowercase hex digits (a tag can be moved, a commit cannot)",
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "crate": {
           "description": "the crate's folder in the repository, holding its Cargo.toml and Cargo.lock (the repository's root when none)",
-          "type": "string",
-          "default": "."
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "nixpkgs": {
+          "description": "the nixpkgs package (one attribute of the pinned nixpkgs' static aarch64 set) whose binary this is: the form\nfor a program that is not a crate, such as busybox; instead of `repo`, `rev` and `crate`",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "bin": {
-          "description": "the name of the binary the crate builds",
+          "description": "the name of the binary the crate builds, or the file the package leaves in its bin/",
           "type": "string"
         },
         "sha256": {
@@ -1537,8 +1552,6 @@
       },
       "additionalProperties": false,
       "required": [
-        "repo",
-        "rev",
         "bin",
         "sha256"
       ]

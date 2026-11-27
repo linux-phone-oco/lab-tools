@@ -3,9 +3,10 @@
 # then built for aarch64-unknown-linux-gnu with the C library linked static (+crt-static) so it runs in a ramdisk with
 # no libraries. The std library is built from the pinned toolchain's own source (-Zbuild-std), the crates from the
 # vendored Cargo.lock, the paths remapped: the same declaration gives the same bytes on any machine, and Nix refuses
-# a result whose sha256 is not the declared one (outputHash). With `rebuild` set it is held to nothing: `image ensure
+# a result whose sha256 is not the declared one (outputHash). With `nixpkgs` set the part is instead one file of a
+# package of the pinned nixpkgs, built static for aarch64 (busybox). With `rebuild` set it is held to nothing: `image ensure
 # --rebuild` compares the result itself. Written beside nixpkgs.nix by `image ensure`.
-{ name, sha256, repo, rev, crate ? ".", bin, rebuild ? null }:
+{ name, sha256, repo ? null, rev ? null, crate ? ".", nixpkgs ? null, bin, rebuild ? null }:
 let
   pkgs = import ./nixpkgs.nix;
   cross = pkgs.pkgsCross.aarch64-multiplatform;
@@ -21,7 +22,20 @@ let
     allowBuiltinFetchGit = true;
   };
   libSrc = pkgs.rustPlatform.rustLibSrc;
+  # held to the declared sha256, or to nothing when `image ensure --rebuild` compares the result itself
+  held = if rebuild != null then { } else {
+    outputHashMode = "flat";
+    outputHashAlgo = "sha256";
+    outputHash = sha256;
+  };
+  # a program that is not a crate (busybox): the pinned nixpkgs' own static aarch64 build of it, one file of its bin/,
+  # its one reference to itself overwritten as below
+  packaged = pkgs.runCommand name held ''
+    install -m 0644 ${cross.pkgsStatic.${nixpkgs}}/bin/${bin} $out
+    LC_ALL=C sed -i -E 's|/nix/store/[a-z0-9]{32}-|/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-|g' $out
+  '';
 in
+if nixpkgs != null then packaged else
 pkgs.stdenv.mkDerivation ({
   inherit name;
   nativeBuildInputs = [ pkgs.cargo pkgs.rustc cross.stdenv.cc ];
@@ -55,8 +69,4 @@ pkgs.stdenv.mkDerivation ({
     # may not refer to the store: the hashes are overwritten in place, same length, as nixpkgs' remove-references-to does
     LC_ALL=C sed -i -E 's|/nix/store/[a-z0-9]{32}-|/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-|g' $out
   '';
-} // (if rebuild != null then { } else {
-  outputHashMode = "flat";
-  outputHashAlgo = "sha256";
-  outputHash = sha256;
-}))
+} // held)

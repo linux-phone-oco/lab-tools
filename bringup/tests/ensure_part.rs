@@ -249,3 +249,64 @@ fn a_part_whose_unit_test_fails_is_not_built() {
         "stopped for another reason than the unit test: {said}"
     );
 }
+
+/// The sha256 of the pinned nixpkgs' static aarch64 busybox 1.37.0 (musl) at bin/busybox, its one store path scrubbed
+/// as a part's is. Taken once from the "hash mismatch" Nix printed for a zero sha256 (2026-11-27, bringup/src/part.nix),
+/// not from a build of this run; the test's `--rebuild` finds the same bytes again.
+const BUSYBOX: &str = "7593d31b555f67d197296966c05f8474be4e8f073ff4e39ba72aa50476d32ad2";
+
+#[test]
+fn a_part_of_a_nixpkgs_program_is_its_static_aarch64_build_held_to_its_sha256_and_proved_by_a_rebuild(
+) {
+    if !has_nix() {
+        eprintln!("not measured: no nix");
+        return;
+    }
+    let dir = tmp("n");
+    forget(&dir, BUSYBOX);
+    let base = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/device.toml"),
+    )
+    .unwrap();
+    let device = dir.join("device.toml");
+    fs::write(
+        &device,
+        format!(
+            "{base}\n[part_builds.busybox]\nnixpkgs = \"busybox\"\nbin = \"busybox\"\nsha256 = \"{BUSYBOX}\"\n"
+        ),
+    )
+    .unwrap();
+    let run_ensure = |extra: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_lpoco-bringup"))
+            .args(["image", "ensure", "busybox", "--device"])
+            .arg(&device)
+            .args(extra)
+            .output()
+            .unwrap()
+    };
+    let o = run_ensure(&[]);
+    assert!(
+        o.status.success(),
+        "ensure (build): {}{}",
+        text(&o.stdout),
+        text(&o.stderr)
+    );
+    let bytes = fs::read(text(&o.stdout).trim()).unwrap();
+    let (machine, interp) = elf(&bytes);
+    assert_eq!(machine, 0xb7, "EM_AARCH64 is 183 (0xb7)");
+    assert!(!interp, "the binary names a loader: it is not static");
+    assert!(
+        text(&bytes)
+            .split("/nix/store/")
+            .skip(1)
+            .all(|rest| rest.starts_with(&"e".repeat(32))),
+        "a store path with a real hash is left in a file that runs on a phone"
+    );
+    let o = run_ensure(&["--rebuild"]);
+    assert!(
+        o.status.success() && text(&o.stderr).contains("rebuilt from its recipe, equal"),
+        "{}{}",
+        text(&o.stdout),
+        text(&o.stderr)
+    );
+}

@@ -517,3 +517,42 @@ fn a_part_build_names_its_repository_commit_crate_and_binary_and_the_sha256_it_m
     let e = Manifest::parse(&twice).unwrap_err();
     assert!(e.contains("same sha256"), "{e}");
 }
+
+/// `[part_builds.NAME]` with `nixpkgs` (item part-busybox-recipe): a program that is not a crate, as busybox is not,
+/// is the pinned nixpkgs' own static aarch64 build of it. It names the package and the file it leaves, and the sha256
+/// it must have; a repository, a commit or a crate folder next to it would be a second source and is refused.
+#[test]
+fn a_part_build_of_a_nixpkgs_program_names_the_package_and_the_binary_and_has_no_repository() {
+    let sha = "cd".repeat(32);
+    let one = |body: &str| {
+        Manifest::parse(&format!(
+            "{HEAD}[part_builds.busybox]\n{body}sha256 = \"{sha}\"\n"
+        ))
+    };
+    assert!(one("nixpkgs = \"busybox\"\nbin = \"busybox\"\n").is_ok());
+    for (what, body) in [
+        (
+            "a repository beside the package",
+            "nixpkgs = \"busybox\"\nbin = \"busybox\"\nrepo = \"https://x.org/r.git\"\n",
+        ),
+        (
+            "a crate folder beside the package",
+            "nixpkgs = \"busybox\"\nbin = \"busybox\"\ncrate = \"a\"\n",
+        ),
+        (
+            "a package named like an option",
+            "nixpkgs = \"-x\"\nbin = \"busybox\"\n",
+        ),
+        (
+            "a package that is a path",
+            "nixpkgs = \"a/b\"\nbin = \"busybox\"\n",
+        ),
+        ("neither a package nor a repository", "bin = \"busybox\"\n"),
+        (
+            "a repository without its commit",
+            "repo = \"https://x.org/r.git\"\nbin = \"busybox\"\n",
+        ),
+    ] {
+        assert!(one(body).is_err(), "{what} was accepted");
+    }
+}
