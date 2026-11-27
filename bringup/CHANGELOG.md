@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.53.9](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.53.8...lpoco-bringup-v0.53.9) - 2026-11-27
+
+### Other
+
+- *(osfact)* the home of os-factory and its failing test - one walleye declaration, two distros ([#473](https://github.com/linux-phone-oco/lab-tools/pull/473))
+
 ## [0.53.8](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.53.7...lpoco-bringup-v0.53.8) - 2026-11-27
 
 ### Added
