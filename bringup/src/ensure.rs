@@ -5,7 +5,7 @@
 //! 2026-11-23-image-recipes-on-nix-fixed-output-paths). What is built or seeded is copied to the cache.
 //! The path an image has in the store is computed from its sha256 and name alone (`nix-store --print-fixed-path`).
 
-use lpoco_manifest::{images::Recipe, KernelBuild, Manifest};
+use lpoco_manifest::{images::Recipe, KernelBuild, Manifest, PartBuild};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -13,6 +13,7 @@ use std::process::Command;
 
 const GENERIC_DERIVATION: &str = include_str!("ensure.nix");
 const KERNEL_DERIVATION: &str = include_str!("kernel.nix");
+const PART_DERIVATION: &str = include_str!("part.nix");
 const KERNEL_REPO: &str = "https://github.com/linux-phone-oco/linux.git";
 const NIXPKGS_PIN: &str = include_str!("../../nixpkgs.nix");
 const NIX: [&str; 2] = ["--extra-experimental-features", "nix-command"];
@@ -58,6 +59,9 @@ pub fn ensure(
     {
         if let Some(k) = manifest.kernel_builds.get(name) {
             return ensure_kernel(name, k, sources, say);
+        }
+        if let Some(p) = manifest.part_builds.get(name) {
+            return ensure_part(name, p, sources, say, false);
         }
     }
     let (wanted, recipe) = image(manifest, name)?;
@@ -115,15 +119,19 @@ fn rebuild_one(
     say: &mut dyn FnMut(String),
     proving: &mut Proving,
 ) -> Result<PathBuf, String> {
-    if !manifest
+    let named = manifest
         .images
         .as_ref()
-        .is_some_and(|i| i.named.contains_key(name))
-        && manifest.kernel_builds.contains_key(name)
-    {
+        .is_some_and(|i| i.named.contains_key(name));
+    if !named && manifest.kernel_builds.contains_key(name) {
         return Err(format!(
             "{name}: --rebuild is for an image with a recipe; {name} is a kernel build"
         ));
+    }
+    if let Some(p) = manifest.part_builds.get(name).filter(|_| !named) {
+        let path = ensure_part(name, p, sources, say, true)?;
+        proving.done.push(name.to_string());
+        return Ok(path);
     }
     let (wanted, recipe) = image(manifest, name)?;
     let recipe = recipe.ok_or_else(|| format!("{name}: no recipe to rebuild it from"))?;
@@ -301,7 +309,20 @@ pub fn plan(
     if !named && manifest.kernel_builds.contains_key(name) {
         return Ok((Origin::Build, PathBuf::new()));
     }
+    if let Some(p) = manifest.part_builds.get(name).filter(|_| !named) {
+        return plan_held(name, &part_wanted(p), true, sources);
+    }
     let (wanted, recipe) = image(manifest, name)?;
+    plan_held(name, &wanted, recipe.is_some(), sources)
+}
+
+/// [`plan`] of something wanted by content: the store, the cache, the seed, else a build when it has a recipe.
+fn plan_held(
+    name: &str,
+    wanted: &Wanted,
+    has_recipe: bool,
+    sources: &Sources,
+) -> Result<(Origin, PathBuf), String> {
     let path = wanted.path()?;
     if valid(&path) {
         return Ok((Origin::Store, path));
@@ -330,7 +351,7 @@ pub fn plan(
             return Ok((Origin::Seed, path));
         }
     }
-    if recipe.is_some() {
+    if has_recipe {
         return Ok((Origin::Build, path));
     }
     Err(format!(
@@ -690,6 +711,68 @@ fn ensure_kernel(
     say(format!(
         "{name}: built from its recipe (tag {}), equal to its declared sha256",
         k.tag
+    ));
+    Ok(path)
+}
+
+/// The name a part's binary has in the store: by its sha256, as a kernel file is.
+fn part_wanted(p: &PartBuild) -> Wanted {
+    Wanted {
+        sha256: p.sha256.clone(),
+        name: format!("part-{}", &p.sha256[..12]),
+    }
+}
+
+/// The binary `[part_builds.NAME]`: its store path, held by its sha256 or built from its crate's commit in the
+/// sandbox (unit tests first). With `rebuild` the store, cache and seed are ignored, the build is held to nothing but
+/// run twice by `nix-build --check`, and its sha256 is compared to the declared one (decision
+/// 2026-11-24-a-recipe-sha-is-proved-by-a-rebuild); nothing is published. Any failure names the part.
+fn ensure_part(
+    name: &str,
+    p: &PartBuild,
+    sources: &Sources,
+    say: &mut dyn FnMut(String),
+    rebuild: bool,
+) -> Result<PathBuf, String> {
+    let wanted = part_wanted(p);
+    if !rebuild {
+        if let Some(path) = held(&wanted, sources, say, name).map_err(|e| format!("{name}: {e}"))? {
+            return Ok(path);
+        }
+    }
+    let mut args: Vec<(&str, String)> = vec![
+        ("name", wanted.name.clone()),
+        ("sha256", p.sha256.clone()),
+        ("repo", p.repo.clone()),
+        ("rev", p.rev.clone()),
+        ("crate", p.krate.clone()),
+        ("bin", p.bin.clone()),
+    ];
+    if rebuild {
+        args.push(("rebuild", "1".to_string()));
+    }
+    let scratch = scratch(name)?;
+    let result = nix_build(&scratch, "part.nix", PART_DERIVATION, &args);
+    let _ = fs::remove_dir_all(&scratch);
+    let path = PathBuf::from(result.map_err(|e| format!("{name}: {e}"))?);
+    if rebuild {
+        let built = sum(&path).map_err(|e| format!("{name}: {e}"))?;
+        if built != p.sha256 {
+            return Err(format!(
+                "{name}: its crate at {} makes sha256 {built}, not the declared {}",
+                p.rev, p.sha256
+            ));
+        }
+        say(format!(
+            "{name}: rebuilt from its recipe, equal to its declared sha256"
+        ));
+        return Ok(path);
+    }
+    publish(&path, sources.cache).map_err(|e| format!("{name}: {e}"))?;
+    say(format!(
+        "{name}: built from its recipe (crate {} at {}), equal to its declared sha256",
+        p.krate,
+        &p.rev[..12]
     ));
     Ok(path)
 }

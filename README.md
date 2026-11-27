@@ -336,6 +336,29 @@ image-recipes-how-it-stands, measurement 4). A recipe whose `kernel` sha256 a `[
 when nothing holds it. Proof: `bringup/tests/ensure_kernel.rs` (a stand-in tree with the kernel's make interface; the real
 tree is measured on the lab and recorded as research).
 
+A program for the phone is a part: `[part_builds.NAME]` makes a static aarch64 binary from a crate at a commit, and `image
+ensure NAME` takes it the same ways (store, cache, seed) before building it. `--rebuild NAME` builds it again, ignoring
+those, runs `nix-build --check` on it and fails unless it is the declared sha256:
+
+    [part_builds.walleye-reboot]
+    repo = "https://github.com/linux-phone-oco/google-walleye-lab.git"
+    rev = "41f3b5fd..."          # the commit the crate is read at (on a branch or tag of the repo): a tag can move
+    crate = "tools/walleye-reboot"  # the folder with its Cargo.toml and Cargo.lock; "." when none
+    bin = "walleye-reboot"       # the binary the crate builds
+    sha256 = "..."               # what the build must be: Nix refuses any other bytes
+
+`bringup/src/part.nix` runs the crate's unit tests first (a failing one stops the build), then builds it for
+`aarch64-unknown-linux-gnu` with `+crt-static` and `-Zbuild-std` (the std library from the pinned toolchain's own source),
+the crates vendored from the crate's `Cargo.lock`, the paths remapped, and the store paths the static glibc carries
+overwritten in place, so the file refers to nothing. The result is a plain, non-executable file: the ramdisk that packs it
+gives the mode. A failure names the part. Proof: `bringup/tests/ensure_part.rs` (a stand-in crate; the compiler, std and
+linker are the real ones). Whether the ramdisk that packs such binaries is itself a recipe is not decided here (backlog).
+Limits, measured by reading nixpkgs' `importCargoLock`: the crate is a standalone one (its own `Cargo.lock`; not a member of
+a workspace), with crates.io dependencies only (a git dependency fails offline, loudly, naming the part). `--rebuild
+--changed-since` chooses images only: a part is proved by naming it (`image ensure --rebuild NAME`). A bump of the
+`nixpkgs.nix` pin changes the bytes, so every declared part sha256 is re-proved then. Not yet measured: a real crate with
+dependencies, LTO and `panic = "abort"` (walleye-reboot) - the first lab run of `--rebuild` on it is the proof.
+
 ### lpoco bringup kernel: a phone's test kernel from its named list
 
     lpoco bringup kernel assemble LIST --lists kernel/topics.toml --repo CLONE --records DOCS [--reproduces COMMIT]

@@ -8,6 +8,7 @@ pub mod boot;
 pub mod images;
 pub mod kernel_build;
 pub mod layer;
+pub mod part_build;
 
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -19,6 +20,7 @@ pub use layer::{
     BootMethod, FileKind, FirmwareFile, FirmwareMethod, FirmwareSource, Layer, LayerBoot,
     LayerFile, LayerFirmware, LayerInitramfs, LayerKernel,
 };
+pub use part_build::PartBuild;
 
 /// The whole manifest. A program asks for the tables it needs; a table nobody declared is an error.
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, JsonSchema)]
@@ -64,6 +66,9 @@ pub struct Manifest {
     /// The kernel files made from int/ tags in the sandbox, by name
     #[serde(default)]
     pub kernel_builds: std::collections::BTreeMap<String, KernelBuild>,
+    /// The static aarch64 binaries made from a crate at a commit in the sandbox, by name
+    #[serde(default)]
+    pub part_builds: std::collections::BTreeMap<String, PartBuild>,
     /// The images a procedure puts on the phone, by name
     pub images: Option<Images>,
     /// Values only one procedure uses, per procedure (a free table of numbers and words)
@@ -127,6 +132,25 @@ impl Manifest {
             {
                 return Err(format!(
                     "kernel_builds.{n} and kernel_builds.{o} declare the same sha256"
+                ));
+            }
+        }
+        for (n, p) in &m.part_builds {
+            p.validate(n)?;
+            if m.images.as_ref().is_some_and(|i| i.named.contains_key(n))
+                || m.kernel_builds.contains_key(n)
+            {
+                return Err(format!(
+                    "part_builds.{n} and an image or kernel build of the same name: one name, two meanings (image ensure {n} would take one of them)"
+                ));
+            }
+            if let Some((o, _)) = m
+                .part_builds
+                .iter()
+                .find(|(o, q)| *o != n && q.sha256 == p.sha256)
+            {
+                return Err(format!(
+                    "part_builds.{n} and part_builds.{o} declare the same sha256"
                 ));
             }
         }
