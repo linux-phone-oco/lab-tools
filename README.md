@@ -353,6 +353,11 @@ the crates vendored from the crate's `Cargo.lock`, the paths remapped, and the s
 overwritten in place, so the file refers to nothing. The result is a plain, non-executable file: the ramdisk that packs it
 gives the mode. A failure names the part. Proof: `bringup/tests/ensure_part.rs` (a stand-in crate; the compiler, std and
 linker are the real ones). Whether the ramdisk that packs such binaries is itself a recipe is not decided here (backlog).
+Limits, measured by reading nixpkgs' `importCargoLock`: the crate is a standalone one (its own `Cargo.lock`; not a member of
+a workspace), with crates.io dependencies only (a git dependency fails offline, loudly, naming the part). `--rebuild
+--changed-since` chooses images only: a part is proved by naming it (`image ensure --rebuild NAME`). A bump of the
+`nixpkgs.nix` pin changes the bytes, so every declared part sha256 is re-proved then. Not yet measured: a real crate with
+dependencies, LTO and `panic = "abort"` (walleye-reboot) - the first lab run of `--rebuild` on it is the proof.
 
 ### lpoco bringup kernel: a phone's test kernel from its named list
 

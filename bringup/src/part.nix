@@ -40,14 +40,14 @@ pkgs.stdenv.mkDerivation ({
     [source.vendored-sources]
     directory = "$PWD/vendor"
     EOF
-    # build-std is a nightly flag; the stable compiler takes it with RUSTC_BOOTSTRAP, and the std source from this root
-    export RUSTC_BOOTSTRAP=1 __CARGO_TESTS_ONLY_SRC_ROOT=${libSrc}
+    # build-std is a nightly flag (the build line sets RUSTC_BOOTSTRAP for it alone); the std source is read from this root
+    export __CARGO_TESTS_ONLY_SRC_ROOT=${libSrc}
     export CARGO_HOME=$PWD/cargo-home
     cd crate
     # the unit tests run first, on this machine, and stop the build when one fails
     cargo test --locked --offline --quiet
     CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-unknown-linux-gnu-gcc \
-    RUSTFLAGS="-C target-feature=+crt-static --remap-path-prefix=$PWD=/src --remap-path-prefix=$NIX_BUILD_TOP=/build --remap-path-prefix=${pkgs.rustc}=/rustc --remap-path-prefix=${libSrc}=/rustc-src" \
+    RUSTC_BOOTSTRAP=1 RUSTFLAGS="-C target-feature=+crt-static --remap-path-prefix=$NIX_BUILD_TOP=/build --remap-path-prefix=${pkgs.rustc}=/rustc --remap-path-prefix=${libSrc}=/rustc-src" \
       cargo build --locked --offline --release --target aarch64-unknown-linux-gnu -Zbuild-std=std,panic_abort --target-dir $NIX_BUILD_TOP/target
     # a flat fixed-output file is not executable: the ramdisk's builder gives the mode
     install -m 0644 $NIX_BUILD_TOP/target/aarch64-unknown-linux-gnu/release/${bin} $out

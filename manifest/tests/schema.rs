@@ -482,6 +482,7 @@ fn a_part_build_names_its_repository_commit_crate_and_binary_and_the_sha256_it_m
         ("a crate folder that leaves the repo", "crate = \"../x\"\n"),
         ("a crate folder with a dot segment", "crate = \"a/./b\"\n"),
         ("a misspelt key", "target = \"x\"\n"),
+        ("a binary named ..", "bin = \"..\"\n"),
     ] {
         assert!(one(extra).is_err(), "{what} was accepted");
     }

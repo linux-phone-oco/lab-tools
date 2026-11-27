@@ -736,7 +736,7 @@ fn ensure_part(
 ) -> Result<PathBuf, String> {
     let wanted = part_wanted(p);
     if !rebuild {
-        if let Some(path) = held(&wanted, sources, say, name)? {
+        if let Some(path) = held(&wanted, sources, say, name).map_err(|e| format!("{name}: {e}"))? {
             return Ok(path);
         }
     }
@@ -756,7 +756,7 @@ fn ensure_part(
     let _ = fs::remove_dir_all(&scratch);
     let path = PathBuf::from(result.map_err(|e| format!("{name}: {e}"))?);
     if rebuild {
-        let built = sum(&path)?;
+        let built = sum(&path).map_err(|e| format!("{name}: {e}"))?;
         if built != p.sha256 {
             return Err(format!(
                 "{name}: its crate at {} makes sha256 {built}, not the declared {}",
@@ -768,7 +768,7 @@ fn ensure_part(
         ));
         return Ok(path);
     }
-    publish(&path, sources.cache)?;
+    publish(&path, sources.cache).map_err(|e| format!("{name}: {e}"))?;
     say(format!(
         "{name}: built from its recipe (crate {} at {}), equal to its declared sha256",
         p.krate,

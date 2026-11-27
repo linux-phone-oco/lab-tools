@@ -84,7 +84,7 @@ impl PartBuild {
                 self.krate
             ));
         }
-        if !word(&self.bin) {
+        if !word(&self.bin) || self.bin == "." || self.bin == ".." {
             return Err(format!(
                 "{at} bin {:?} is not one binary name (letters, digits and . _ - +)",
                 self.bin
