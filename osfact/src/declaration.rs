@@ -82,6 +82,9 @@ pub struct Root {
 #[serde(deny_unknown_fields)]
 pub struct WayBackCommand {
     pub command: String,
+    /// The host command, as argv (`{serial}` is the device's serial), that ends with status 0 once the device is on its
+    /// known good again: the way back is confirmed by it. Needed: a restart that is only sent is never known to have worked.
+    pub back_on: Option<Vec<String>>,
 }
 
 /// The device's own keys of `[device]`: its name, the machine kind of its packages and the variable that holds its

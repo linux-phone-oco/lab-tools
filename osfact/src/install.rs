@@ -65,11 +65,12 @@ pub enum Compression {
 
 impl Compression {
     /// The device's command that writes the unpacked tar to its stdout.
-    fn unpack(self, file: &str) -> String {
-        match self {
+    fn unpack(self, file: &str) -> Result<String, String> {
+        let file = path(file).map_err(|e| format!("{file:?}: {e}"))?;
+        Ok(match self {
             Compression::Gzip => format!("gzip -dc {file}"),
             Compression::Xz => format!("xz -dc {file}"),
-        }
+        })
     }
 }
 
@@ -161,6 +162,12 @@ pub struct WayBack {
     /// via shell: the command the booted image is told to restart the device with.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
+    /// What the way back is confirmed by: a command run on the host, as argv (`{serial}` is the device's serial),
+    /// that ends with status 0 once the device is on its known good again - and only then: the image it came
+    /// from must not answer it. Needed when the way back is sent through the shell (a shell that is told to
+    /// restart the device says nothing of whether it did).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub back_on: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -232,6 +239,44 @@ pub fn read(text: &str) -> Result<Plan, String> {
     if i.way_back.via == Transport::Shell && i.way_back.command.is_none() {
         return refuse("the way back via shell needs a command".into());
     }
+    if i.way_back.via == Transport::Shell && i.way_back.back_on.is_none() {
+        return refuse(
+            "the way back via shell needs back_on (the host command that ends with status 0 once the device is on its known good: a restart that is only sent is never known to have worked)".into(),
+        );
+    }
+    if i.way_back.back_on.as_ref().is_some_and(|c| {
+        c.is_empty() || c[0].is_empty() || c.iter().any(|w| w.chars().any(char::is_control))
+    }) {
+        return refuse(
+            "the way back's back_on is empty (it names a command and its arguments)".into(),
+        );
+    }
+    // every value that reaches a shell line of the device must be sayable as one literal: refused here, naming it
+    let mut quoted = Vec::new();
+    for (n, s) in i.step.iter().enumerate() {
+        let at = format!("step {} ({:?} {})", n + 1, s.action, s.write);
+        let mut say = |key: &str, v: &Option<String>, argv: bool| {
+            if let Some(v) = v {
+                let r = if argv { command_line(v) } else { path(v) };
+                if let Err(why) = r {
+                    quoted.push(format!("{at}: {key} = {v:?}: {why}"));
+                }
+            }
+        };
+        say("to", &s.to, false);
+        say("root", &s.root, false);
+        say("receive", &s.receive, true);
+        say("command", &s.command, true);
+        say("check", &s.check, true);
+    }
+    if let Some(c) = &i.way_back.command {
+        if c.chars().any(char::is_control) {
+            quoted.push(format!("way_back command = {c:?}: it is one shell line"));
+        }
+    }
+    if let Some(first) = quoted.first() {
+        return refuse(first.clone());
+    }
     if i.connection.is_some() && i.way_back.via != Transport::Shell {
         return refuse(
             "with a connection the way back is via shell: after the boot the device is not in fastboot".into(),
@@ -241,6 +286,35 @@ pub fn read(text: &str) -> Result<Plan, String> {
         return refuse("the way back cannot be via network".into());
     }
     Ok(plan)
+}
+
+/// One value as one literal word of a device shell line. A newline would end the line the shell reads and a NUL
+/// cannot be said: both are refused.
+fn word(v: &str) -> Result<String, String> {
+    if v.is_empty() {
+        return Err("it is empty".into());
+    }
+    if v.chars().any(char::is_control) {
+        return Err("it holds a control character (a line break, ^C, NUL ...)".into());
+    }
+    shlex::try_quote(v)
+        .map(|q| q.into_owned())
+        .map_err(|e| format!("it cannot be quoted: {e}"))
+}
+
+/// A command of the plan (the receiver, the entered root's command, a check) as a device shell line: split into
+/// words by the shell's own quoting rules (the author quotes a word that holds a space) and every word quoted again,
+/// so a `;`, a `$(...)` or a redirection in it is an argument, never shell syntax.
+fn command_line(v: &str) -> Result<String, String> {
+    let words = shlex::split(v).ok_or("its quotes do not close")?;
+    if words.is_empty() {
+        return Err("it is empty".into());
+    }
+    words
+        .iter()
+        .map(|w| word(w))
+        .collect::<Result<Vec<_>, _>>()
+        .map(|w| w.join(" "))
 }
 
 fn image<'a>(i: &'a Install, name: &str) -> &'a Image {
@@ -305,6 +379,13 @@ pub fn commands(plan: &Plan) -> Result<Vec<String>, String> {
             i.serial_env, i.way_back.wait, i.device
         ),
     });
+    if let Some(argv) = &i.way_back.back_on {
+        out.push(format!(
+            "way back confirmed by: {} (until it ends with status 0, {} s)",
+            argv.join(" "),
+            i.way_back.wait
+        ));
+    }
     Ok(out)
 }
 
@@ -325,8 +406,40 @@ pub trait Device {
     /// The file's bytes to the device's `port`, the stream closed after the last: the bytes sent. The receiver
     /// may start a moment after the call is made: it is tried for `wait_s` seconds.
     fn send(&mut self, port: u16, file: &str, wait_s: u32) -> Result<u64, String>;
-    /// The declared way back.
+    /// The declared way back, sent.
     fn way_back(&mut self, back: &WayBack) -> Result<(), String>;
+    /// The way back worked: the host command `argv` (`{serial}` the device's serial) ends with status 0 within
+    /// `wait_s` seconds, tried again until it does.
+    fn back_on(&mut self, argv: &[String], wait_s: u32) -> Result<(), String>;
+}
+
+/// The way back sent, then confirmed by its declared `back_on` within its `wait`: what the error line says of it.
+fn go_back(back: &WayBack, device: &mut dyn Device) -> String {
+    // a send that failed may still have restarted the device (the shell dies with it): confirm either way
+    let sent = device.way_back(back);
+    match &back.back_on {
+        None => match sent {
+            Ok(()) => "the way back was run".into(),
+            Err(why) => format!("the way back failed too: {why}"),
+        },
+        Some(argv) => {
+            let said = match sent {
+                Ok(()) => "the way back was sent".to_string(),
+                Err(why) => format!("sending the way back failed ({why})"),
+            };
+            match device.back_on(argv, back.wait) {
+                Ok(()) => format!(
+                    "the way back was run; {said}, and `{}` answered: the device is back",
+                    argv.join(" ")
+                ),
+                Err(why) => format!(
+                    "{said} but `{}` did not answer within {} s: {why}",
+                    argv.join(" "),
+                    back.wait
+                ),
+            }
+        }
+    }
 }
 
 /// Runs the plan's steps in order. A failing step runs the way back and the error names the step and why.
@@ -337,13 +450,8 @@ pub fn run(plan: &Plan, device: &mut dyn Device, say: &mut dyn FnMut(&str)) -> R
         let at = format!("step {} ({})", n + 1, step_name(s));
         say(&at);
         if let Err(why) = step(i, s, device) {
-            let mut e = format!("{at} failed: {why}");
-            if let Err(back) = device.way_back(&i.way_back) {
-                e.push_str(&format!("; the way back failed too: {back}"));
-            } else {
-                e.push_str("; the way back was run");
-            }
-            return Err(e);
+            let back = go_back(&i.way_back, device);
+            return Err(format!("{at} failed: {why}; {back}"));
         }
     }
     Ok(())
@@ -389,10 +497,13 @@ fn push(s: &Step, m: &Image, d: &mut dyn Device) -> Result<(), String> {
             m.file, m.sha256
         ));
     }
-    let status = format!("{to}.status");
-    d.shell(&format!("rm -f {status} {to}"), 5)?;
+    let say = |what: &str, v: Result<String, String>| v.map_err(|e| format!("{what}: {e}"));
+    let to_q = say("to", path(to))?;
+    let status = say("to", path(&format!("{to}.status")))?;
+    let receive = say("receive", command_line(receive))?;
+    d.shell(&format!("rm -f {status} {to_q}"), 5)?;
     d.shell(
-        &format!("( {receive} > {to}; echo $? > {status} ) > /dev/null 2>&1 &"),
+        &format!("( {receive} > {to_q}; echo $? > {status} ) > /dev/null 2>&1 &"),
         5,
     )?;
     d.send(port, &m.file, wait)?;
@@ -410,7 +521,7 @@ fn push(s: &Step, m: &Image, d: &mut dyn Device) -> Result<(), String> {
             None => std::thread::sleep(Duration::from_secs(1)),
         }
     }
-    let got = d.shell(&format!("sha256sum {to}"), 60)?;
+    let got = d.shell(&format!("sha256sum {to_q}"), 60)?;
     let there = digest_in(&got.text).ok_or_else(|| {
         format!(
             "sha256sum on the device said no digest: {}",
@@ -450,30 +561,39 @@ fn enter(i: &Install, s: &Step, d: &mut dyn Device) -> Result<(), String> {
             ))
         }
     };
-    ok(d, &format!("mkdir -p {root}"))?;
-    if d.shell(&format!("mountpoint -q {root}"), 10)?.status == 0 {
+    let say = |what: &str, v: Result<String, String>| v.map_err(|e| format!("{what}: {e}"));
+    let (from_q, root_q) = (say("to", path(from))?, say("root", path(root))?);
+    let command = say(
+        "command",
+        command_line(s.command.as_deref().expect("read checked")),
+    )?;
+    let check = s
+        .check
+        .as_deref()
+        .map(|c| say("check", command_line(c)))
+        .transpose()?;
+    ok(d, &format!("mkdir -p {root_q}"))?;
+    if d.shell(&format!("mountpoint -q {root_q}"), 10)?.status == 0 {
         return Err(format!("{root} is already mounted: a root is entered once"));
     }
     ok(
         d,
         &format!(
-            "mount -t tmpfs -o size={}m tmpfs {root}",
+            "mount -t tmpfs -o size={}m tmpfs {root_q}",
             s.size_mib.expect("read checked")
         ),
     )?;
-    let unpack = m
-        .compression
-        .map_or(format!("cat {from}"), |c| c.unpack(from));
-    ok(d, &format!("{unpack} | tar -x -C {root}"))?;
-    ok(d, &format!("rm -f {from}"))?;
+    let unpack = match m.compression {
+        Some(c) => c.unpack(from)?,
+        None => format!("cat {from_q}"),
+    };
+    ok(d, &format!("{unpack} | tar -x -C {root_q}"))?;
+    ok(d, &format!("rm -f {from_q}"))?;
     ok(
         d,
-        &format!(
-            "setsid chroot {root} {} > /dev/null 2>&1 &",
-            s.command.as_deref().expect("read checked")
-        ),
+        &format!("setsid chroot {root_q} {command} > /dev/null 2>&1 &"),
     )?;
-    if let Some(check) = &s.check {
+    if let Some(check) = &check {
         let mut tries = 0;
         while ok(d, check).is_err() {
             tries += 1;
@@ -498,4 +618,14 @@ fn digest_in(text: &str) -> Option<String> {
     text.split_whitespace()
         .find(|w| w.len() == 64 && w.bytes().all(|b| b.is_ascii_hexdigit()))
         .map(str::to_lowercase)
+}
+
+/// A path on the device: absolute, so no plan value can be read by a command as an option (`-rf`), and one word.
+fn path(v: &str) -> Result<String, String> {
+    if !v.starts_with('/') {
+        return Err(
+            "it is not an absolute path (a value that starts with `-` would be an option)".into(),
+        );
+    }
+    word(v)
 }

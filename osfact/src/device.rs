@@ -80,6 +80,38 @@ impl Live {
     }
 }
 
+/// Seconds one try of the way back's `back_on` command may take before it is killed (adb waits for ever otherwise).
+const TRY_S: u64 = 10;
+
+/// The `back_on` command's words with `{serial}` replaced by the device's serial: argv, never a shell line.
+pub fn back_on_argv(argv: &[String], serial: &str) -> Vec<String> {
+    argv.iter().map(|a| a.replace("{serial}", serial)).collect()
+}
+
+/// One run of a host command: ended with status 0 within `limit_s` seconds, or why not.
+fn try_once(program: &str, args: &[String], limit_s: u64) -> Result<(), String> {
+    let mut child = Command::new(program)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("{program}: {e}"))?;
+    let until = Instant::now() + Duration::from_secs(limit_s);
+    loop {
+        match child.try_wait().map_err(|e| format!("{program}: {e}"))? {
+            Some(s) if s.success() => return Ok(()),
+            Some(s) => return Err(format!("{program} ended with {s}")),
+            None if Instant::now() >= until => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!("{program} did not end within {limit_s} s"));
+            }
+            None => std::thread::sleep(Duration::from_millis(200)),
+        }
+    }
+}
+
 /// fastboot's arguments for one call: the serial always named, so a second device on the bus is never touched.
 pub fn fastboot_args<'a>(serial: &'a str, args: &[&'a str]) -> Vec<&'a str> {
     let mut v = vec!["-s", serial];
@@ -231,6 +263,26 @@ impl Device for Live {
             }
             // not booted yet: the device is still in the bootloader, whatever the plan's way back says
             _ => self.fastboot(&["reboot"]),
+        }
+    }
+
+    fn back_on(&mut self, argv: &[String], wait_s: u32) -> Result<(), String> {
+        let argv = back_on_argv(argv, &self.serial);
+        let (program, args) = argv.split_first().ok_or("back_on names no command")?;
+        let until = Instant::now() + Duration::from_secs(wait_s.into());
+        loop {
+            let left = until
+                .saturating_duration_since(Instant::now())
+                .as_secs()
+                .max(1);
+            let why = match try_once(program, args, TRY_S.min(left)) {
+                Ok(()) => return Ok(()),
+                Err(why) => why,
+            };
+            if Instant::now() >= until {
+                return Err(format!("the last try: {why}"));
+            }
+            std::thread::sleep(Duration::from_secs(2));
         }
     }
 }

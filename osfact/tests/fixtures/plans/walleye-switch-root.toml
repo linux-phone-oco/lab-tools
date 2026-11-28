@@ -56,3 +56,5 @@ via = "shell"
 do = "reboot"
 wait = 240
 command = "sync; echo b > /proc/sysrq-trigger"
+# the known good is Android: it answers adb (google-walleye-lab device.toml [connections.android] transport = "adb"); a test image does not
+back_on = ["adb", "-s", "{serial}", "get-state"]

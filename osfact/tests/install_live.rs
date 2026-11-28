@@ -157,6 +157,9 @@ impl Device for NoFastboot {
     fn way_back(&mut self, _b: &install::WayBack) -> Result<(), String> {
         Ok(())
     }
+    fn back_on(&mut self, a: &[String], w: u32) -> Result<(), String> {
+        self.0.back_on(a, w)
+    }
 }
 
 #[test]
@@ -193,4 +196,52 @@ fn a_whole_run_over_the_loopback_pushes_checks_and_enters() {
     .unwrap_or_else(|e| panic!("{e}\n{said:?}"));
     t.join().unwrap();
     assert_eq!(said.len(), 3, "{said:?}");
+}
+
+/// The way back's `back_on` against real host commands (the phone's own answer is the keeper's, witnessed).
+#[test]
+fn back_on_is_a_host_command_tried_until_it_ends_with_status_zero_and_names_the_serial() {
+    let mut d = live(0);
+    let argv = |w: &[&str]| w.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    d.back_on(&argv(&["true"]), 5).expect("true answers");
+    d.back_on(&argv(&["test", "{serial}", "=", "SERIAL"]), 5)
+        .expect("the serial is the device's");
+    let e = d.back_on(&argv(&["false"]), 1).unwrap_err();
+    assert!(e.contains("false ended with"), "{e}");
+    let e = d
+        .back_on(&argv(&["no-such-program-osfact"]), 1)
+        .unwrap_err();
+    assert!(e.contains("no-such-program-osfact"), "{e}");
+}
+
+#[test]
+fn back_on_is_tried_again_until_it_answers_and_a_hanging_try_is_killed_at_the_bound() {
+    let mut d = live(0);
+    let dir = std::env::temp_dir().join(format!("osfact-backon-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let flag = dir.join("back");
+    let later = flag.clone();
+    // the device "comes back" about 3 s after the first try: the first tries fail, a later one passes
+    let t = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(3));
+        std::fs::write(later, b"up").unwrap();
+    });
+    let argv = vec!["test".to_string(), "-e".into(), flag.display().to_string()];
+    let started = std::time::Instant::now();
+    d.back_on(&argv, 20).expect("answers once the file exists");
+    assert!(
+        started.elapsed().as_secs() >= 2,
+        "it did not wait for the answer"
+    );
+    t.join().unwrap();
+    // a command that never ends is killed and the wait ends near its bound, not 10 s per try beyond it
+    let hang = vec!["sleep".to_string(), "30".into()];
+    let started = std::time::Instant::now();
+    let e = d.back_on(&hang, 1).unwrap_err();
+    assert!(e.contains("did not end"), "{e}");
+    assert!(
+        started.elapsed().as_secs() < 6,
+        "overran: {:?}",
+        started.elapsed()
+    );
 }

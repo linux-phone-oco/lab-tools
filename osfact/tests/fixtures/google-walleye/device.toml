@@ -90,3 +90,4 @@ check = "test -e /mm/sbin/init"    # must succeed once it is started
 
 [install.way_back]
 command = "sync; echo b > /proc/sysrq-trigger"   # the booted image restarts the phone (its init ends its window with sync and sysrq b)
+back_on = ["adb", "-s", "{serial}", "get-state"]   # the known good is Android, which answers adb (google-walleye-lab device.toml [connections.android] transport = "adb"); a test image does not

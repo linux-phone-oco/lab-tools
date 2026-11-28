@@ -32,6 +32,12 @@ Its stages, each a format- or device-neutral step with one adapter per format or
    from RAM, the push of `root.tar.gz` (its sha256 checked on the device) and its entry by chroot, nothing written to the
    device; without them the boot alone. Each step a write of one output to one named place by one transport, the
    device's `[install]` with the output's sha256 - and the command that runs it.
+   The way back is confirmed, not only sent: `[install.way_back] back_on` is a host command (argv, `{serial}` the
+   device's serial) tried until it ends with status 0 within the way back's `wait`; a run whose way back was sent and
+   not answered says so, naming it. Every value that reaches a device shell line is one literal word: paths are
+   quoted, a command (`receive`, `command`, `check`) is split by shell quoting rules and each word quoted (a `;` or
+   `$(...)` in it is an argument), and a value that cannot be quoted (a line break, a NUL, an unclosed quote) does not
+   read. The one shell line left is the way back's own `command` (it is a restart line, `sync; echo b > ...`).
 
 ## The boundary
 
