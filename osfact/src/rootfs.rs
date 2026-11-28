@@ -5,6 +5,7 @@
 
 use crate::distro::{self, Profile};
 use crate::pkgformat::{self, PackageFormat, Tools};
+use crate::root_links;
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -107,12 +108,35 @@ fn build_image(
     sh.run(&["chmod", "0755", path(&tree)], &[])?;
     let install = format.root_tree(profile, tools, &tree, &req.arch);
     sh.run_all(&install, &[])?;
+    link_what_the_scripts_would(sh, profile, &tree)?;
     for record in format.build_records() {
         sh.run(&["rm", "-f", path(&tree.join(record))], &[])?;
     }
     say(&format!("build {n}: make the ext4 image"));
     make_image(sh, format, profile, &tree, &img, req.size_mib, n)?;
     Ok(img)
+}
+
+/// The install ran without the packages' scripts: make the links the profile names, then require the paths it names.
+fn link_what_the_scripts_would(sh: &Shell, profile: &Profile, tree: &Path) -> Result<(), String> {
+    for spec in &profile.link_list {
+        if sh.dry {
+            say(&format!(
+                "link every path of {} to {}",
+                spec.list, spec.target
+            ));
+        } else {
+            let made = root_links::apply(tree, spec)?;
+            say(&format!(
+                "linked {made} paths of {} to {}",
+                spec.list, spec.target
+            ));
+        }
+    }
+    sh.check(
+        &format!("the root has {}", profile.distro.required_paths.join(", ")),
+        || root_links::require(tree, &profile.distro.required_paths),
+    )
 }
 
 /// ext4 from the tree, every file root's (fakeroot), every time fixed: the same bytes twice.

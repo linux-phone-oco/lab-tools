@@ -62,6 +62,9 @@ fn a_dry_run_lists_the_rootless_apk_commands_and_runs_none() {
         "--mtime=@1767225600",
         "chmod 0755",
         "check: the two builds are the same bytes",
+        // the profile's link list and required paths (tests/root_links.rs)
+        "link every path of etc/busybox-paths.d/busybox to /bin/busybox",
+        "check: the root has sbin/init",
         "-sSfL",
     ] {
         assert!(said.contains(want), "the dry run lacks `{want}`:\n{said}");
@@ -105,6 +108,16 @@ fn file_in_image(img: &Path, file: &str) -> String {
     String::from_utf8_lossy(&out.stdout).into_owned()
 }
 
+/// What `debugfs stat` says of one path inside an ext4 image.
+fn stat_in_image(img: &Path, file: &str) -> String {
+    let out = Command::new("debugfs")
+        .args(["-R", &format!("stat {file}")])
+        .arg(img)
+        .output()
+        .expect("debugfs runs");
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
 fn sha256(file: &Path) -> String {
     let out = Command::new("sha256sum")
         .arg(file)
@@ -137,6 +150,12 @@ fn the_profile_builds_an_ext4_root_image_twice_with_the_same_bytes() {
     // /etc/os-release is a symlink to ../usr/lib/os-release (read with debugfs stat on a real image, 2026-11-28)
     let os = file_in_image(&img, "/usr/lib/os-release");
     assert!(os.lines().any(|l| l == "ID=alpine"), "os-release: {os}");
+    // busybox's post-install links every applet to /bin/busybox; /sbin/init is one (debugfs stat on the real image)
+    let init = stat_in_image(&img, "/sbin/init");
+    assert!(
+        init.contains("Type: symlink") && init.contains("/bin/busybox"),
+        "/sbin/init: {init}"
+    );
     let db = file_in_image(&img, "/lib/apk/db/installed");
     assert!(
         db.lines().any(|l| l == "P:alpine-base"),

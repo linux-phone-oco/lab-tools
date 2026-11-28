@@ -24,8 +24,7 @@ Its stages, each a format- or device-neutral step with one adapter per format or
 1. **root tree**: the format's own installer, run rootless into a directory - `apk --root --initdb --usermode`
    (apk.static), `mmdebstrap --mode=unshare`, `pacman --root`, `dnf5 --installroot` - with the profile's set and
    the parts in one transaction from a local repository of the parts;
-2. **glue**: what the skipped install scripts would have done, written by osfact per format (service links,
-   inittab or presets);
+2. **glue**: what the skipped install scripts would have done: the profile names each list of links a package ships (`[[link_list]]`) and the paths the root must have (`required_paths`), osfact links and checks (`root_links`); service links, inittab or presets are still to come;
 3. **file system**: `mke2fs -d` under fakeroot, fixed times and UUID, built twice and compared;
 4. **boot artifact**: the device's boot format - `android-bootimg` (header, appended dtb, AVB footer), `efi`;
 5. **install**: `install.toml` - with `[install.connection]`, `[install.root]` and `[install.way_back]` declared: the boot
