@@ -15,17 +15,20 @@ release_commits = '^((feat|fix|perf|refactor|docs|test|build|ci)(\([^)]*\))?|cho
 # the conveyor reads lpoco-health-v* for the phone package; the dispatcher is lab-side only.
 # every member lists the others in changelog_include: a package changed only by the family bump gets
 # no changelog entry otherwise, and main is red between two release PRs (proof:
-# release-pr-writes-every-changelog, lpoco/tests/release_family.rs)
+# release-pr-writes-every-changelog, lpoco/tests/release_family.rs).
+# Each also lists osfact: release-plz bumps a version_group member only for a commit of its own or of a package it
+# includes, so a release that reached the family only through osfact -> lpoco-manifest -> its dependents left
+# lpoco, lpoco-health, lpoco-tone and lpoco-ffs-acm behind (release #499; proof: a_release_moves_lpoco_manifest_only_when_manifest_changed)
 [[package]]
 name = "lpoco"
-changelog_include = ["lpoco-health", "lpoco-bringup", "lpoco-lab", "lpoco-tone", "lpoco-host", "lpoco-manifest", "lpoco-ffs-acm", "lpoco-layer"]
+changelog_include = ["lpoco-health", "lpoco-bringup", "lpoco-lab", "lpoco-tone", "lpoco-host", "lpoco-manifest", "lpoco-ffs-acm", "lpoco-layer", "osfact"]
 version_group = "lpoco"
 git_tag_name = "lpoco-v{{ version }}"
 git_release_enable = true
 
 [[package]]
 name = "lpoco-health"
-changelog_include = ["lpoco", "lpoco-bringup", "lpoco-lab", "lpoco-tone", "lpoco-host", "lpoco-manifest", "lpoco-ffs-acm", "lpoco-layer"]
+changelog_include = ["lpoco", "lpoco-bringup", "lpoco-lab", "lpoco-tone", "lpoco-host", "lpoco-manifest", "lpoco-ffs-acm", "lpoco-layer", "osfact"]
 version_group = "lpoco"
 # the conveyor reads this prefix (packaging/conveyor.toml)
 git_tag_name = "lpoco-health-v{{ version }}"
@@ -33,7 +36,7 @@ git_release_enable = true
 
 [[package]]
 name = "lpoco-bringup"
-changelog_include = ["lpoco", "lpoco-health", "lpoco-lab", "lpoco-tone", "lpoco-host", "lpoco-manifest", "lpoco-ffs-acm", "lpoco-layer"]
+changelog_include = ["lpoco", "lpoco-health", "lpoco-lab", "lpoco-tone", "lpoco-host", "lpoco-manifest", "lpoco-ffs-acm", "lpoco-layer", "osfact"]
 version_group = "lpoco"
 git_tag_name = "lpoco-bringup-v{{ version }}"
 git_release_enable = true
@@ -41,14 +44,14 @@ git_release_enable = true
 # lpoco-lab (also devlab) and lpoco-tone (also tone) join the family: one version, tags per package
 [[package]]
 name = "lpoco-lab"
-changelog_include = ["lpoco", "lpoco-health", "lpoco-bringup", "lpoco-tone", "lpoco-host", "lpoco-manifest", "lpoco-ffs-acm", "lpoco-layer"]
+changelog_include = ["lpoco", "lpoco-health", "lpoco-bringup", "lpoco-tone", "lpoco-host", "lpoco-manifest", "lpoco-ffs-acm", "lpoco-layer", "osfact"]
 version_group = "lpoco"
 git_tag_name = "lpoco-lab-v{{ version }}"
 git_release_enable = true
 
 [[package]]
 name = "lpoco-tone"
-changelog_include = ["lpoco", "lpoco-health", "lpoco-bringup", "lpoco-lab", "lpoco-host", "lpoco-manifest", "lpoco-ffs-acm", "lpoco-layer"]
+changelog_include = ["lpoco", "lpoco-health", "lpoco-bringup", "lpoco-lab", "lpoco-host", "lpoco-manifest", "lpoco-ffs-acm", "lpoco-layer", "osfact"]
 version_group = "lpoco"
 git_tag_name = "lpoco-tone-v{{ version }}"
 git_release_enable = true
@@ -56,7 +59,7 @@ git_release_enable = true
 # lpoco-host prepares the lab host (udev access, modules, the host's tools at pins)
 [[package]]
 name = "lpoco-host"
-changelog_include = ["lpoco", "lpoco-health", "lpoco-bringup", "lpoco-lab", "lpoco-tone", "lpoco-manifest", "lpoco-ffs-acm", "lpoco-layer"]
+changelog_include = ["lpoco", "lpoco-health", "lpoco-bringup", "lpoco-lab", "lpoco-tone", "lpoco-manifest", "lpoco-ffs-acm", "lpoco-layer", "osfact"]
 version_group = "lpoco"
 git_tag_name = "lpoco-host-v{{ version }}"
 git_release_enable = true
@@ -74,7 +77,7 @@ git_release_enable = true
 # lpoco-ffs-acm: the FunctionFS serial console a phone's init can run (moved from google-walleye-lab)
 [[package]]
 name = "lpoco-ffs-acm"
-changelog_include = ["lpoco", "lpoco-health", "lpoco-bringup", "lpoco-lab", "lpoco-tone", "lpoco-host", "lpoco-manifest", "lpoco-layer"]
+changelog_include = ["lpoco", "lpoco-health", "lpoco-bringup", "lpoco-lab", "lpoco-tone", "lpoco-host", "lpoco-manifest", "lpoco-layer", "osfact"]
 version_group = "lpoco"
 git_tag_name = "lpoco-ffs-acm-v{{ version }}"
 git_release_enable = false
@@ -82,7 +85,7 @@ git_release_enable = false
 # lpoco-layer packs a phone's device layer ([layer] in device.toml) into apk, deb, rpm and archlinux packages
 [[package]]
 name = "lpoco-layer"
-changelog_include = ["lpoco", "lpoco-health", "lpoco-bringup", "lpoco-lab", "lpoco-tone", "lpoco-host", "lpoco-manifest", "lpoco-ffs-acm"]
+changelog_include = ["lpoco", "lpoco-health", "lpoco-bringup", "lpoco-lab", "lpoco-tone", "lpoco-host", "lpoco-manifest", "lpoco-ffs-acm", "osfact"]
 version_group = "lpoco"
 git_tag_name = "lpoco-layer-v{{ version }}"
 git_release_enable = true
