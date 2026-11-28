@@ -105,3 +105,17 @@ pub struct Identity {
     /// (the codename vendor-model gives VENDOR_MODEL_SERIAL)
     pub serial_env: Option<String>,
 }
+
+/// The tables of a declaration that are the device's: the lab's own tables are not osfact's and are not read.
+#[derive(Debug, Deserialize)]
+pub struct Declaration {
+    pub device: Identity,
+    pub install: Option<InstallTables>,
+}
+
+/// Whether the tables osfact owns in a declaration (device.toml) are ones it reads: every key spelled as osfact
+/// spells it, every value of its kind. The one reader of these tables - a program that reads the rest of the file
+/// keeps them unread and calls this (decision 2026-11-28-osfact-s-tables-in-device-toml-are-read-and).
+pub fn check(text: &str) -> Result<Declaration, String> {
+    toml::from_str(text).map_err(|e| format!("the declaration: {e}"))
+}

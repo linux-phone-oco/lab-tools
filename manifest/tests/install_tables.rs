@@ -1,80 +1,67 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! What osfact reads from a device.toml - [device] arch and [install.connection], [install.root], [install.way_back] -
-//! the manifest reads too, from osfact's own types (item manifest-device-arch): the one definition.
+//! What osfact owns in a device.toml - [device] arch and serial_env, the [install] tables - lpoco-manifest's reader
+//! keeps unread (decision 2026-11-28-osfact-s-tables-in-device-toml-are-read-and): osfact alone reads and checks
+//! them (`osfact::declaration::check`, called by `lpoco-lab manifest check`), so a key osfact adds after this
+//! release needs no manifest release. The generated schema still embeds osfact's types.
 
 use lpoco_manifest::{schema, Manifest};
-use osfact::install::Bind;
 
 const FIXTURE: &str = include_str!("fixtures/install-tables.toml");
 
-#[test]
-fn the_arch_and_the_install_tables_osfact_reads_are_read() {
-    let m = Manifest::parse(FIXTURE).unwrap();
-    assert_eq!(m.device.unwrap().arch.unwrap().as_str(), "aarch64");
-    let i = m.install.unwrap();
-    assert_eq!(i.connection.unwrap().shell_port, 23);
-    let root = i.root.unwrap();
-    assert_eq!(root.path, "/mm");
-    assert_eq!(root.check_wait, Some(120));
-    assert_eq!(
-        root.binds,
-        [Bind::Proc, Bind::Sys, Bind::Dev],
-        "binds are read in the declared order"
-    );
-    assert!(i.way_back.unwrap().command.starts_with("sync;"));
+/// A key that osfact adds after this release: no type of lpoco-manifest has ever seen it.
+fn with_future_keys() -> String {
+    FIXTURE
+        .replace(
+            "arch = \"aarch64\"",
+            "arch = \"aarch64\"\nserial_env = \"WALLEYE_SERIAL\"\nfuture_device_key = 1",
+        )
+        .replace(
+            "size_mib = 400",
+            "size_mib = 400\nfuture_root_key = \"x\"\n[install.future_table]\nk = 1",
+        )
 }
 
 #[test]
-fn a_misspelled_arch_is_refused_naming_it() {
-    let e = Manifest::parse(&FIXTURE.replace("aarch64", "arm65")).unwrap_err();
-    assert!(e.contains("arm65"), "the refusal names the value: {e}");
+fn a_key_osfact_adds_later_is_read_without_error() {
+    let m = Manifest::parse(&with_future_keys()).unwrap();
+    assert_eq!(m.device.unwrap().codename, "google-walleye");
+    assert!(m.install.is_some(), "the install tables are kept, unread");
 }
 
 #[test]
-fn a_misspelled_install_key_is_refused_naming_it() {
+fn a_misspelled_osfact_key_is_not_this_readers_to_refuse() {
+    // osfact refuses these (osfact/tests/declaration_check.rs, devlab/tests/manifest_check.rs); here they pass
     for (from, to) in [
         ("shell_port", "shell_prot"),
-        ("size_mib", "size_mb"),
         ("binds", "bindz"),
-        ("[install.way_back]", "[install.wayback]"),
+        ("aarch64", "arm65"),
     ] {
-        let e = Manifest::parse(&FIXTURE.replace(from, to)).unwrap_err();
-        assert!(e.contains(to), "the refusal names {to}: {e}");
+        Manifest::parse(&FIXTURE.replace(from, to))
+            .unwrap_or_else(|e| panic!("{to} is refused by the manifest reader: {e}"));
     }
 }
 
 #[test]
-fn the_generated_schema_names_them() {
+fn the_generated_schema_still_names_osfacts_keys() {
     let s = schema();
     for word in [
         "\"arch\"",
+        "\"serial_env\"",
         "\"install\"",
         "\"way_back\"",
+        "\"back_on\"",
         "\"shell_port\"",
         "\"size_mib\"",
         "\"check_wait\"",
         "\"binds\"",
+        "\"aarch64\"",
     ] {
         assert!(s.contains(word), "the schema lacks {word}");
     }
 }
 
-#[test]
-fn the_serial_env_osfact_reads_is_read() {
-    let with = FIXTURE.replace(
-        "arch = \"aarch64\"",
-        "arch = \"aarch64\"\nserial_env = \"WALLEYE_SERIAL\"",
-    );
-    let m = Manifest::parse(&with).unwrap();
-    assert_eq!(m.device.unwrap().serial_env.unwrap(), "WALLEYE_SERIAL");
-    assert!(
-        schema().contains("\"serial_env\""),
-        "the schema lacks serial_env"
-    );
-}
-
-/// The keys of [device] that osfact reads (osfact/src/pack.rs, `Declaration`, and its fixture
-/// osfact/tests/fixtures/google-walleye/device.toml): each is accepted by the manifest.
+/// The keys of [device] that osfact reads (its fixture osfact/tests/fixtures/google-walleye/device.toml): the
+/// manifest reader accepts each, whatever osfact's types are.
 #[test]
 fn every_device_key_osfact_pack_reads_is_accepted() {
     const OSFACT_FIXTURE: &str =

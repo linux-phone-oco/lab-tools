@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// SPDX-Liclllet decl = declaration::check(declaration)?;t d = declaration::check(&text).map_err(|e| format!("{}: {e}", file.display()))?;t d = declaration::check(&text).map_err(|e| format!("{}: {e}", file.display()))?;nse-Identifier: MIT OR Apache-2.0
 //! The pack: one device's declaration and one distro profile become the images and the plan that installs them -
 //! the root file system (`rootfs`), the boot image (`boot`, in the format the declaration names) and install.toml
 //! (`install`), each stage the module that already proves it. The images' sha256 are printed and written into
@@ -6,13 +6,12 @@
 //! `--dry-run` says each step and writes nothing.
 
 use crate::boot::{self, Boot};
-use crate::declaration::{Arch, Identity, InstallTables, Root};
+use crate::declaration::{self, Arch, Root};
 use crate::install::{
     self, Compression, Enter, Image, Install, Plan, Step, StepAction, Transport, WayBack,
     WayBackAction,
 };
 use crate::rootfs;
-use serde::Deserialize;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -24,13 +23,6 @@ pub struct Request {
     pub out: PathBuf,
     pub size_mib: u64,
     pub dry_run: bool,
-}
-
-/// The tables of a declaration that are the device's: the lab's own tables are not osfact's and are not read.
-#[derive(Deserialize)]
-struct Declaration {
-    device: Identity,
-    install: Option<InstallTables>,
 }
 
 struct Declared {
@@ -63,8 +55,7 @@ pub fn make(req: &Request) -> Result<(), String> {
 
 fn read_declaration(file: &Path) -> Result<Declared, String> {
     let text = fs::read_to_string(file).map_err(|e| format!("{}: {e}", file.display()))?;
-    let d: Declaration =
-        toml::from_str(&text).map_err(|e| format!("{}: the declaration: {e}", file.display()))?;
+    let d = declaration::check(&text).map_err(|e| format!("{}: {e}", file.display()))?;
     let arch = d.device.arch.ok_or_else(|| {
         format!(
             "{}: the declaration's [device] says no arch (the machine kind of its packages, e.g. arch = \"aarch64\")",
@@ -216,8 +207,7 @@ fn write_plan(req: &Request, d: &Declared, packed: &Packed) -> Result<(), String
 
 /// The text of install.toml for one declaration and the images made: what is returned is what `install::read` accepts.
 pub fn plan_text(declaration: &str, packed: &Packed) -> Result<String, String> {
-    let decl: Declaration =
-        toml::from_str(declaration).map_err(|e| format!("the declaration: {e}"))?;
+    let decl = declaration::check(declaration)?;
     let boot = Boot::from_declaration(declaration)?;
     let back_wait = boot
         .back_wait

@@ -117,3 +117,28 @@ fn a_missing_file_fails_naming_it() {
     assert_eq!(code, 1, "{err}");
     assert!(err.contains("absent.toml"), "{err}");
 }
+
+const ROOT: &str = "[install.root]\nport = 9001\nreceive = \"nc -l -p 9001\"\nto = \"/tmp/root.tar.gz\"\nwait = 60\npath = \"/mm\"\nsize_mib = 400\ncommand = \"/sbin/init\"\n";
+
+#[test]
+fn an_osfact_table_osfact_reads_passes() {
+    let s = Scratch::new("osfact-ok");
+    let f = s.file(&format!("{CONNECTED}{ROOT}"));
+    let (code, out, err) = with_device(&s, &f);
+    assert_eq!(code, 0, "{out}{err}");
+}
+
+#[test]
+fn a_misspelled_osfact_key_is_refused_through_osfact_naming_it() {
+    let s = Scratch::new("osfact-bad");
+    let f = s.file(&format!(
+        "{CONNECTED}{}",
+        ROOT.replace("size_mib", "size_mb")
+    ));
+    let (code, out, err) = with_device(&s, &f);
+    assert_eq!(code, 1, "{out}{err}");
+    assert!(
+        err.contains("device.toml") && err.contains("size_mb"),
+        "{err}"
+    );
+}
