@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1](https://github.com/linux-phone-oco/lab-tools/compare/osfact-v0.1.0...osfact-v0.1.1) - 2026-11-28
+
+### Fixed
+
+- *(osfact)* a relative --out gave apk a relative keys dir, so every index was untrusted ([#498](https://github.com/linux-phone-oco/lab-tools/pull/498))
+
 ## [0.1.0] - 2026-11-28
 
 ### Added
