@@ -384,4 +384,7 @@ impl BootFormat for AndroidBootimg {
     fn check(&self, image: &[u8], boot: &Boot) -> Vec<Finding> {
         check(image, boot)
     }
+    fn cmdline_room(&self) -> usize {
+        CMDLINE_MAX
+    }
 }

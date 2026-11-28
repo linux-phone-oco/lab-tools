@@ -55,6 +55,9 @@ pub struct InstallTables {
     #[serde(default)]
     #[schemars(with = "Vec<BTreeMap<String, String>>")]
     pub step: Vec<toml::Value>,
+    /// The pieces of the kernel command line the parts declare, added to [boot] cmdline in this order.
+    #[serde(default)]
+    pub cmdline_piece: Vec<crate::cmdline::Piece>,
 }
 
 /// The push of the root image and its entry.

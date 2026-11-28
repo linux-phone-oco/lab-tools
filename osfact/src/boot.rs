@@ -138,6 +138,8 @@ pub trait BootFormat {
     fn pack(&self, boot: &Boot, kernel: &[u8], ramdisk: &[u8]) -> Result<Vec<u8>, String>;
     /// What an image must be for the device whose declaration says `boot`, counted fact by fact.
     fn check(&self, image: &[u8], boot: &Boot) -> Vec<Finding>;
+    /// The bytes of command line the format's header holds.
+    fn cmdline_room(&self) -> usize;
 }
 
 /// The adapters there are, by the name a declaration gives.

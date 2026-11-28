@@ -14,6 +14,9 @@ Three inputs, one output:
 - **the device's declaration** - the tables osfact reads of a device.toml: `[layer]` (kernel, dtbs, firmware,
   initramfs modules, files), `[boot]` (the boot format and its values), `[install]` (the steps that put an image on
   the device). The lab's own tables (connections, procedures, health) are not osfact's and it ignores them.
+  The one image's kernel command line is `[boot] cmdline` plus the pieces parts declare, `[[install.cmdline_piece]]`
+  (`owner`, `piece`): two owners setting one key differently, or a line over the header's room, fail the pack naming them;
+  install.toml lists each piece with its owner.
 - **a distro profile** - data, not code: the base's name, its package format (apk, deb, rpm, archlinux), its
   repositories and keys, its init and its package set. No distro is named in osfact's code; a format is.
 - **the proven parts** - the packages and files that have passed on the device: the device layer as packages

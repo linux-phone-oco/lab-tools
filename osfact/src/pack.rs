@@ -6,6 +6,7 @@
 //! `--dry-run` says each step and writes nothing.
 
 use crate::boot::{self, Boot};
+use crate::cmdline;
 use crate::declaration::{self, Arch, Root};
 use crate::install::{
     self, Compression, Enter, Image, Install, Plan, Step, StepAction, Transport, WayBack,
@@ -62,7 +63,7 @@ fn read_declaration(file: &Path) -> Result<Declared, String> {
             file.display()
         )
     })?;
-    let boot = Boot::from_declaration(&text).map_err(|e| format!("{}: {e}", file.display()))?;
+    let boot = boot_of(&text).map_err(|e| format!("{}: {e}", file.display()))?;
     boot.back_wait.ok_or_else(|| {
         format!(
             "{}: [boot] says no back_wait (seconds the way back waits)",
@@ -85,6 +86,16 @@ fn read_declaration(file: &Path) -> Result<Declared, String> {
     })
 }
 
+/// The `[boot]` table with the command line the image carries: the base and the parts' pieces, composed.
+pub fn boot_of(declaration: &str) -> Result<Boot, String> {
+    let mut boot = Boot::from_declaration(declaration)?;
+    let decl = declaration::check(declaration)?;
+    let pieces = decl.install.map(|i| i.cmdline_piece).unwrap_or_default();
+    let room = boot::format(&boot.format)?.cmdline_room();
+    boot.cmdline = cmdline::compose(&boot.cmdline, &pieces, room)?;
+    Ok(boot)
+}
+
 /// The boot image: the parts packed in the declared format, counted back against the declaration.
 fn pack_boot(req: &Request, d: &Declared) -> Result<(PathBuf, String), String> {
     let image = req.out.join("boot.img");
@@ -100,6 +111,7 @@ fn pack_boot(req: &Request, d: &Declared) -> Result<(PathBuf, String), String> {
             .unwrap_or_default(),
         image.display()
     ));
+    say_pieces(&d.text)?;
     if req.dry_run {
         say("check: the boot image is counted back against the declaration's [boot]");
         return Ok((image, String::new()));
@@ -209,6 +221,11 @@ fn write_plan(req: &Request, d: &Declared, packed: &Packed) -> Result<(), String
 pub fn plan_text(declaration: &str, packed: &Packed) -> Result<String, String> {
     let decl = declaration::check(declaration)?;
     let boot = Boot::from_declaration(declaration)?;
+    let pieces = decl
+        .install
+        .as_ref()
+        .map(|i| i.cmdline_piece.clone())
+        .unwrap_or_default();
     let back_wait = boot
         .back_wait
         .ok_or("[boot] says no back_wait (seconds the way back waits)")?;
@@ -238,6 +255,7 @@ pub fn plan_text(declaration: &str, packed: &Packed) -> Result<String, String> {
             device: decl.device.codename.clone(),
             serial_env,
             connection: None,
+            cmdline_piece: pieces,
             image: vec![
                 image("rootfs", &packed.rootfs, None),
                 image("boot", &packed.boot, None),
@@ -265,6 +283,7 @@ pub fn plan_text(declaration: &str, packed: &Packed) -> Result<String, String> {
                 device: decl.device.codename.clone(),
                 serial_env,
                 connection: Some(connection),
+                cmdline_piece: pieces,
                 image: vec![
                     image("boot", &packed.boot, None),
                     image("root", &packed.root, Some(Compression::Gzip)),
@@ -355,4 +374,20 @@ impl Packed {
             root: named("root.tar.gz"),
         }
     }
+}
+
+/// The command line the image carries, and each piece with the part that declared it.
+fn say_pieces(declaration_text: &str) -> Result<(), String> {
+    let pieces = declaration::check(declaration_text)?
+        .install
+        .map(|i| i.cmdline_piece)
+        .unwrap_or_default();
+    for p in &pieces {
+        say(&format!("command line piece of {}: {}", p.owner, p.piece));
+    }
+    say(&format!(
+        "command line: {}",
+        boot_of(declaration_text)?.cmdline
+    ));
+    Ok(())
 }

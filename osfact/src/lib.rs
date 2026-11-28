@@ -10,6 +10,7 @@ pub mod android_bootimg;
 pub mod apk;
 pub mod avb;
 pub mod boot;
+pub mod cmdline;
 pub mod declaration;
 pub mod device;
 pub mod distro;

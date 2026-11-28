@@ -31,6 +31,9 @@ pub struct Install {
     /// How the host reaches the booted image (a root shell and a port to push to); needed by `push` and `enter`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub connection: Option<Connection>,
+    /// The pieces of the image's kernel command line, each with the part that declared it (after [boot] cmdline).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cmdline_piece: Vec<crate::cmdline::Piece>,
     pub image: Vec<Image>,
     pub step: Vec<Step>,
     pub way_back: WayBack,

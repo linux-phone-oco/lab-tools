@@ -451,3 +451,119 @@ fn the_binds_a_declaration_makes_reach_the_enter_step_in_order() {
         ]
     );
 }
+
+// The proof of item osfact-cmdline-by-part. Where each expected value comes from:
+// the base command line: tests/fixtures/google-walleye/device.toml [boot] cmdline;
+// the display piece `iommu.passthrough=1`: the item's note (walleye's lit display image needed it, decision
+//   2026-11-19-walleye-display-iommu-reading in google-walleye-lab); an owner is the part that declares the piece;
+// the header's room for a command line: 1535 bytes, the 512 + 1024 bytes of the Android v0 header's cmdline and
+//   extra_cmdline minus the closing NUL (src/android_bootimg.rs CMDLINE_MAX, read back from an image's header below).
+
+const BASE_CMDLINE: &str = "clk_ignore_unused ignore_loglevel panic=5 androidboot.hardware=walleye androidboot.console=ttyMSM0 androidboot.dtbo_idx=3";
+
+fn with_pieces(pieces: &[(&str, &str)]) -> String {
+    let mut text = fs::read_to_string(device()).expect("fixture");
+    for (owner, piece) in pieces {
+        text += &format!("\n[[install.cmdline_piece]]\nowner = \"{owner}\"\npiece = \"{piece}\"\n");
+    }
+    text
+}
+
+fn refusal_of(pieces: &[(&str, &str)], name: &str) -> String {
+    let dir = scratch(name);
+    fs::create_dir_all(&dir).expect("dir");
+    let file = dir.join("device.toml");
+    fs::write(&file, with_pieces(pieces)).expect("write");
+    let run = pack(&file, &dir.join("parts"), &dir.join("out"), &["--dry-run"]);
+    assert!(!run.status.success(), "the pieces {pieces:?} were packed");
+    let _ = fs::remove_dir_all(&dir);
+    String::from_utf8_lossy(&run.stderr).into_owned()
+}
+
+#[test]
+fn a_part_piece_is_added_to_the_base_command_line_in_the_one_image_header() {
+    let text = with_pieces(&[("display", "iommu.passthrough=1")]);
+    let boot = osfact::pack::boot_of(&text).expect("the declaration composes");
+    let want = format!("{BASE_CMDLINE} iommu.passthrough=1");
+    assert_eq!(boot.cmdline, want);
+    let kernel = fs::read(fixtures().join("boot/kernel")).expect("kernel");
+    let ramdisk = fs::read(fixtures().join("boot/ramdisk")).expect("ramdisk");
+    let image = osfact::boot::format(&boot.format)
+        .expect("format")
+        .pack(&boot, &kernel, &ramdisk)
+        .expect("packs");
+    let info = osfact::android_bootimg::read(&image).expect("reads").info();
+    assert!(
+        info.contains(&format!("cmdline = {want:?}")),
+        "the header's command line is not base + piece:\n{info}"
+    );
+}
+
+#[test]
+fn a_declaration_without_pieces_keeps_the_base_command_line_as_it_is() {
+    let boot = osfact::pack::boot_of(&with_pieces(&[])).expect("composes");
+    assert_eq!(boot.cmdline, BASE_CMDLINE);
+}
+
+#[test]
+fn the_plan_lists_each_piece_with_its_owner_in_order() {
+    let text = with_pieces(&[("display", "iommu.passthrough=1"), ("modem", "ipa.debug=1")]);
+    let plan = osfact::pack::plan_text(&text, &files_named(&"0".repeat(64), &"1".repeat(64)))
+        .expect("plan");
+    let owners: Vec<usize> = ["owner = \"display\"", "owner = \"modem\""]
+        .iter()
+        .map(|w| {
+            plan.find(w)
+                .unwrap_or_else(|| panic!("no `{w}` in:\n{plan}"))
+        })
+        .collect();
+    assert!(owners[0] < owners[1], "pieces out of order:\n{plan}");
+    assert!(
+        plan.contains("piece = \"iommu.passthrough=1\"")
+            && plan.contains("piece = \"ipa.debug=1\"")
+    );
+}
+
+#[test]
+fn two_parts_setting_one_key_differently_are_refused_naming_both() {
+    let said = refusal_of(
+        &[
+            ("display", "iommu.passthrough=1"),
+            ("modem", "iommu.passthrough=0"),
+        ],
+        "pack-key-clash",
+    );
+    for want in ["iommu.passthrough", "display", "modem", "=1", "=0"] {
+        assert!(said.contains(want), "the refusal lacks `{want}`: {said}");
+    }
+}
+
+#[test]
+fn a_piece_that_changes_a_base_key_is_refused_naming_the_piece_and_the_base() {
+    let said = refusal_of(&[("display", "panic=0")], "pack-base-clash");
+    for want in ["panic", "display", "[boot] cmdline"] {
+        assert!(said.contains(want), "the refusal lacks `{want}`: {said}");
+    }
+}
+
+#[test]
+fn the_same_setting_from_two_parts_is_written_once() {
+    let boot = osfact::pack::boot_of(&with_pieces(&[
+        ("display", "iommu.passthrough=1"),
+        ("modem", "iommu.passthrough=1"),
+    ]))
+    .expect("composes");
+    assert_eq!(boot.cmdline, format!("{BASE_CMDLINE} iommu.passthrough=1"));
+}
+
+#[test]
+fn a_piece_over_the_headers_room_is_refused_naming_it_and_the_room() {
+    let long = format!("big.one={}", "x".repeat(1500));
+    let said = refusal_of(
+        &[("display", "iommu.passthrough=1"), ("modem", &long)],
+        "pack-over",
+    );
+    for want in ["modem", "1535", "command line"] {
+        assert!(said.contains(want), "the refusal lacks `{want}`: {said}");
+    }
+}
