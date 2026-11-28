@@ -15,6 +15,9 @@ on:
       tag:
         description: Family tag to attach assets to (default - the lpoco-v tag on main's head)
         required: false
+      osfact_tag:
+        description: osfact tag to attach its binary to (default - the osfact-v tag on main's head)
+        required: false
 
 permissions:
   contents: write
@@ -79,3 +82,56 @@ jobs:
             gh release upload "$p-v$v" "dist/$f.sha256" --clobber
             gh release upload "$p-v$v" "dist/$f" --clobber
           done
+
+  # osfact is released on its own (release-plz.toml): when the commit carries an osfact-vX.Y.Z tag, its binary is
+  # attached to that release as osfact-x86_64 with osfact-x86_64.sha256 beside it (decision
+  # 2026-11-28-osfact-is-first-released-with-the-walking-skeleton-s; install: osfact/docs/README.md).
+  osfact:
+    name: osfact build and attach
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TARGET: x86_64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - name: which osfact release?
+        id: tag
+        env:
+          TAG_IN: ${{ inputs.osfact_tag }}
+        run: |
+          tag="$TAG_IN"
+          if [ -z "$tag" ]; then
+            tag=$(git tag --points-at HEAD --list 'osfact-v*' | head -n 1)
+          fi
+          if [ -z "$tag" ]; then
+            echo "no osfact-v tag on this commit: nothing released, nothing to attach"
+            echo "version=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! printf '%s\n' "$tag" | grep -Eqx 'osfact-v[0-9]+\.[0-9]+\.[0-9]+'; then
+            echo "not an osfact tag: $tag"
+            exit 1
+          fi
+          git checkout --quiet "$tag"
+          echo "version=${tag#osfact-v}" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.tag.outputs.version != ''
+      - name: build
+        if: steps.tag.outputs.version != ''
+        run: cargo build --release --locked --target "$TARGET" -p osfact
+      - name: attach
+        if: steps.tag.outputs.version != ''
+        env:
+          V: ${{ steps.tag.outputs.version }}
+        run: |
+          mkdir -p dist
+          cp "target/$TARGET/release/osfact" dist/osfact-x86_64
+          (cd dist && sha256sum osfact-x86_64 > osfact-x86_64.sha256)
+          # the hash first: a host that fetches between the two sees a missing hash, never a stale one
+          gh release upload "osfact-v$V" dist/osfact-x86_64.sha256 --clobber
+          gh release upload "osfact-v$V" dist/osfact-x86_64 --clobber
