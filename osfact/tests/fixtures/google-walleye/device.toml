@@ -5,6 +5,7 @@
 
 [device]
 codename = "google-walleye"        # the Pixel 2; fastboot serial FA81N1A00790; until Linux runs it speaks only fastboot
+arch = "aarch64"                    # the machine kind of the device's packages (proposed by item osfact-device-declaration)
 
 [layer]
 name = "google-walleye"            # the packages' stem: google-walleye-config, google-walleye-boot, linux-google-walleye

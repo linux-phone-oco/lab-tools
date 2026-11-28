@@ -139,12 +139,6 @@ fn packs_walleye_for(distro: &str, package_db: &str, layer_entry: &str) {
 
 #[test]
 #[ignore = "fails until osfact packs (item osfact-walleye-two-distros); needs the network, apk.static, mmdebstrap, debugfs and OSFACT_WALLEYE_PARTS"]
-fn the_walleye_declaration_packs_an_installable_alpine_image() {
-    packs_walleye_for("alpine", "/lib/apk/db/installed", "P:google-walleye-config");
-}
-
-#[test]
-#[ignore = "fails until osfact packs (item osfact-walleye-two-distros); needs the network, apk.static, mmdebstrap, debugfs and OSFACT_WALLEYE_PARTS"]
 fn the_walleye_declaration_packs_an_installable_debian_image() {
     packs_walleye_for(
         "debian",

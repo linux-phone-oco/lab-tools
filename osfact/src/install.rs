@@ -4,15 +4,15 @@
 //! back. What it does not allow (a write to the device, an unknown transport) does not parse: a refused plan
 //! fails at `read`, naming the value (a later item, osfact-install-flash, adds the writes).
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Plan {
     pub install: Install,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Install {
     pub device: String,
@@ -23,7 +23,7 @@ pub struct Install {
     pub way_back: WayBack,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Image {
     pub name: String,
@@ -32,7 +32,7 @@ pub struct Image {
     pub sha256: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Step {
     #[serde(rename = "do")]
@@ -41,19 +41,19 @@ pub struct Step {
     pub via: Transport,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum StepAction {
     BootFromRam,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Transport {
     Fastboot,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct WayBack {
     pub via: Transport,
@@ -62,7 +62,7 @@ pub struct WayBack {
     pub wait: u32,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum WayBackAction {
     Reboot,

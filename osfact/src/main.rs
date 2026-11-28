@@ -15,7 +15,7 @@ fn main() {
             "{}",
             cli::usage(
                 "osfact",
-                "os-factory: a device's installable image. Commands: install now --plan FILE --dry-run; rootfs now --distro FILE --arch ARCH --out DIR."
+                "os-factory: a device's installable image. Commands: install now --plan FILE --dry-run; rootfs now --distro FILE --arch ARCH --out DIR; pack now --device FILE --distro FILE --parts DIR --out DIR."
             )
         );
         return;
@@ -40,6 +40,7 @@ fn run(r: &Resolution) -> Result<(), String> {
     match command {
         Command::Install => install(r),
         Command::Rootfs => rootfs(r),
+        Command::Pack => pack(r),
     }
 }
 
@@ -59,6 +60,20 @@ fn install(r: &Resolution) -> Result<(), String> {
         println!("{line}");
     }
     Ok(())
+}
+
+fn pack(r: &Resolution) -> Result<(), String> {
+    let need = |v: Option<String>, flag: &str| v.ok_or(format!("pack needs {flag}"));
+    osfact::pack::make(&osfact::pack::Request {
+        device_file: need(Contract::DEVICE.get_from(r), "--device FILE")?.into(),
+        distro_file: need(Contract::DISTRO.get_from(r), "--distro FILE")?.into(),
+        parts: need(Contract::PARTS.get_from(r), "--parts DIR")?.into(),
+        out: need(Contract::OUT.get_from(r), "--out DIR")?.into(),
+        size_mib: Contract::SIZE_MIB
+            .get_from(r)
+            .ok_or("pack needs --size-mib (declared with a default)")?,
+        dry_run: Contract::DRY_RUN.get_from(r).unwrap_or(false),
+    })
 }
 
 fn rootfs(r: &Resolution) -> Result<(), String> {

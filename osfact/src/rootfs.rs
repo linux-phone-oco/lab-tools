@@ -305,7 +305,7 @@ fn path(p: &Path) -> &str {
     p.to_str().unwrap_or("")
 }
 
-fn sha256(file: &Path) -> Result<String, String> {
+pub(crate) fn sha256(file: &Path) -> Result<String, String> {
     let bytes = fs::read(file).map_err(|e| format!("{}: {e}", file.display()))?;
     Ok(Sha256::digest(bytes)
         .iter()

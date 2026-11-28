@@ -8,9 +8,10 @@
 //! parts - and the padding after the last part, which the crate's full_write only seeks to.
 
 use crate::boot::{os_words, Boot, BootFormat, Finding, Verdict};
-use crate::fdt;
+use crate::{avb, fdt};
 use abootimg_oxide::{Header, HeaderV0, HeaderV0Versioned, OsVersionPatch};
 use sha1::{Digest, Sha1};
+use sha2::Digest as _;
 use std::io::Cursor;
 
 pub const MAGIC: &[u8; 8] = b"ANDROID!";
@@ -78,7 +79,32 @@ pub fn pack(boot: &Boot, kernel: &[u8], ramdisk: &[u8]) -> Result<Vec<u8>, Strin
     out.extend_from_slice(ramdisk);
     pad_to(&mut out, page);
     debug_assert_eq!(out.len(), header.boot_image_size());
+    if boot.avb_footer {
+        return with_footer(out, boot);
+    }
     Ok(out)
+}
+
+/// The image grown to the boot partition with the AVB hash footer (algorithm NONE, sha256 digest). The salt is the
+/// image's own digest, so the same inputs give the same bytes (avbtool draws a random one).
+fn with_footer(image: Vec<u8>, boot: &Boot) -> Result<Vec<u8>, String> {
+    let partition = boot
+        .partition_size
+        .ok_or("avb_footer = true needs partition_size: the footer sits at the partition's end")?;
+    let salt = sha2::Sha256::digest(&image).to_vec();
+    let footer = avb::Footer {
+        original: image.len(),
+        partition: "boot".into(),
+        salt,
+        hash_algorithm: "sha256".into(),
+        rollback_index: 0,
+        do_not_use_ab: false,
+        props: vec![],
+        held: vec![],
+        described: 0,
+        release: "osfact".into(),
+    };
+    avb::add_footer(&image, partition as usize, &footer)
 }
 
 /// A boot image read back: its header and its parts.
@@ -288,6 +314,22 @@ pub fn check(bytes: &[u8], boot: &Boot) -> Vec<Finding> {
     out.push(eq("cmdline", cmdline_of(h), boot.cmdline.clone(), |s| {
         format!("{s:?}")
     }));
+    if boot.avb_footer {
+        out.push(match avb::verify(bytes) {
+            Ok(true) => Finding {
+                name: "avb footer",
+                verdict: Verdict::Ok("the hash descriptor matches the image".into()),
+            },
+            Ok(false) => Finding {
+                name: "avb footer",
+                verdict: Verdict::Fail("the hash descriptor does not match the image".into()),
+            },
+            Err(e) => Finding {
+                name: "avb footer",
+                verdict: Verdict::Fail(e),
+            },
+        });
+    }
     match img.dtb() {
         Some(dtb) => {
             out.push(Finding {
