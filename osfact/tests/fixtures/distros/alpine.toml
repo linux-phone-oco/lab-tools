@@ -1,12 +1,26 @@
 # A distro profile: data, not code - osfact names a package format, never a distro (decision
 # 2026-11-27-osfact-own-rust-in-lab-tools). Alpine as walleye's root filesystem has it today (google-walleye-lab
-# tools/walleye-rootfs and rootfs/pins: apk-tools-static 3.0.9, so Alpine 3.23). The fields are the test's proposal;
+# tools/walleye-rootfs and rootfs/pins: apk-tools-static 3.0.9, release 3.24: the default of its cli.rs; the pinned sha256 is the v3.24 file). The fields are the test's proposal;
 # item osfact-distro-profile settles them.
 [distro]
 name = "alpine"
 format = "apk"
-release = "3.23"
+release = "3.24"
 mirror = "https://dl-cdn.alpinelinux.org/alpine"
 repositories = ["main", "community"]
 init = "openrc"
 packages = ["alpine-base", "openssh", "e2fsprogs"]
+# The package that carries the distro's signing keys; the format's tool checks every other package against them.
+keys_package = "alpine-keys"
+
+# The two downloads nothing can check before they run (apk checks every other package against the keys), so the
+# build checks them: a download whose sha256 is not here stops the build. Source: google-walleye-lab rootfs/pins.
+[[pin]]
+name = "apk-tools-static"
+version = "3.0.9-r0"
+sha256 = "0a1a0682375f66a83b7b903f6e4638ccfe312547d50d336b5f2be9fc391281be"
+
+[[pin]]
+name = "alpine-keys"
+version = "2.6-r0"
+sha256 = "dd211936d544f4050924ce8aec078d24e7b1b036ae70b30bd07867349587c708"

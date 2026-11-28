@@ -8,7 +8,7 @@ version = 1
 
 # Our manifests, prose, data and fixtures, by kind and by place. A source file is not here: it carries its header.
 [[annotations]]
-path = [".gitattributes", "*.md", "**/*.md", "*.toml", "**/*.toml", "*.lock", "*.nix", "*.json", "**/*.json", "*.yml", "**/*.yml", "*.regex", "**/*.regex", "*.service", "**/*.service", "*.timer", "**/*.timer", "*.conf", "**/*.conf", "*.script", "**/*.script", "*.txt", "**/*.txt", "*.wav", "**/*.wav", "**/*.pub", ".gitignore", ".github/licence-check", "bringup/tests/fixtures/**", "osfact/tests/fixtures/boot/**", "ffs-acm/tests/c-probe-blobs.bin", "packaging/alpine/**"]
+path = [".gitattributes", "*.md", "**/*.md", "*.toml", "**/*.toml", "*.lock", "*.nix", "*.json", "**/*.json", "*.yml", "**/*.yml", "*.regex", "**/*.regex", "*.service", "**/*.service", "*.timer", "**/*.timer", "*.conf", "**/*.conf", "*.script", "**/*.script", "*.txt", "**/*.txt", "*.wav", "**/*.wav", "**/*.pub", ".gitignore", ".github/licence-check", "bringup/tests/fixtures/**", "osfact/tests/fixtures/boot/**", "osfact/tests/fixtures/apk/**", "ffs-acm/tests/c-probe-blobs.bin", "packaging/alpine/**"]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 grenudi"
 SPDX-License-Identifier = "MIT OR Apache-2.0"
