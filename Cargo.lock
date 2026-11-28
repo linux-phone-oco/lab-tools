@@ -570,7 +570,7 @@ checksum = "5d15f86d12da44cd8d4ec3c73984537eb7f4cadcb9776a575a0a8a05ca11005c"
 
 [[package]]
 name = "lpoco"
-version = "0.54.7"
+version = "0.54.8"
 dependencies = [
  "argenv-resolve",
  "regex",
@@ -592,13 +592,13 @@ dependencies = [
 
 [[package]]
 name = "lpoco-bringup"
-version = "0.54.7"
+version = "0.54.8"
 dependencies = [
  "abootimg-oxide",
  "argenv-resolve",
  "flate2",
- "lpoco-manifest 0.56.3",
- "osfact 0.1.1",
+ "lpoco-manifest 0.56.4",
+ "osfact 0.1.2",
  "serde",
  "serde_json",
  "sha2",
@@ -608,7 +608,7 @@ dependencies = [
 
 [[package]]
 name = "lpoco-ffs-acm"
-version = "0.54.7"
+version = "0.54.8"
 dependencies = [
  "argenv-resolve",
  "libc",
@@ -616,7 +616,7 @@ dependencies = [
 
 [[package]]
 name = "lpoco-health"
-version = "0.54.7"
+version = "0.54.8"
 dependencies = [
  "argenv-resolve",
  "lpoco-tone",
@@ -626,11 +626,11 @@ dependencies = [
 
 [[package]]
 name = "lpoco-host"
-version = "0.54.7"
+version = "0.54.8"
 dependencies = [
  "argenv-resolve",
  "glob",
- "lpoco-manifest 0.56.3",
+ "lpoco-manifest 0.56.4",
  "serde",
  "serde_json",
  "sha1",
@@ -640,14 +640,14 @@ dependencies = [
 
 [[package]]
 name = "lpoco-lab"
-version = "0.54.7"
+version = "0.54.8"
 dependencies = [
  "anyhow",
  "argenv-resolve",
  "hound",
  "ideal-agent",
  "lpoco-host",
- "lpoco-manifest 0.56.3",
+ "lpoco-manifest 0.56.4",
  "lpoco-tone",
  "rmcp",
  "serde",
@@ -658,10 +658,10 @@ dependencies = [
 
 [[package]]
 name = "lpoco-layer"
-version = "0.54.7"
+version = "0.54.8"
 dependencies = [
  "argenv-resolve",
- "lpoco-manifest 0.56.3",
+ "lpoco-manifest 0.56.4",
  "serde",
  "toml",
 ]
@@ -681,10 +681,10 @@ dependencies = [
 
 [[package]]
 name = "lpoco-manifest"
-version = "0.56.3"
+version = "0.56.4"
 dependencies = [
  "argenv-resolve",
- "osfact 0.1.1",
+ "osfact 0.1.2",
  "schemars",
  "serde",
  "serde_json",
@@ -693,7 +693,7 @@ dependencies = [
 
 [[package]]
 name = "lpoco-tone"
-version = "0.54.7"
+version = "0.54.8"
 dependencies = [
  "anyhow",
  "argenv-resolve",
@@ -772,7 +772,7 @@ dependencies = [
 
 [[package]]
 name = "osfact"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "abootimg-oxide",
  "argenv-resolve",

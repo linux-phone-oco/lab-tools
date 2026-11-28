@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.54.8](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-health-v0.54.7...lpoco-health-v0.54.8) - 2026-11-28
+
+### Fixed
+
+- *(osfact)* the push receiver starts with its input closed, so job control does not stop it ([#501](https://github.com/linux-phone-oco/lab-tools/pull/501))
+
 ## [0.54.7](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-health-v0.54.5...lpoco-health-v0.54.7) - 2026-11-28
 
 ### Fixed

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2](https://github.com/linux-phone-oco/lab-tools/compare/osfact-v0.1.1...osfact-v0.1.2) - 2026-11-28
+
+### Fixed
+
+- *(osfact)* the push receiver starts with its input closed, so job control does not stop it ([#501](https://github.com/linux-phone-oco/lab-tools/pull/501))
+
 ## [0.1.1](https://github.com/linux-phone-oco/lab-tools/compare/osfact-v0.1.0...osfact-v0.1.1) - 2026-11-28
 
 ### Fixed
