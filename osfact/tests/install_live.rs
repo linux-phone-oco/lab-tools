@@ -11,6 +11,7 @@ use sha2::{Digest, Sha256};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
 use std::path::Path;
+use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 
 fn hex(bytes: &[u8]) -> String {
@@ -244,4 +245,120 @@ fn back_on_is_tried_again_until_it_answers_and_a_hanging_try_is_killed_at_the_bo
         "overran: {:?}",
         started.elapsed()
     );
+}
+
+// ---- the receiver on a shell with job control -------------------------------------------------------------------
+//
+// The phone's telnetd gives busybox sh a tty with job control (osfact's first phone run):
+// a background job that reads the tty's input is stopped, so a receiver started without its input closed never ends.
+// A pipe-fed stand-in hides that. This one is `bash -i` on a pty (util-linux `script`), bridged to a socket: the
+// same job control. Its source: the stop reproduced by hand on 2026-11-28 with
+// `script -qfc "bash --norc -i" /dev/null` ("[1]+ Stopped"), and the fix a device lab's own shell
+// helper made (the command as its own line, `</dev/null`, no markers).
+
+/// A shell on a pty with job control behind a socket: its output to the socket, the socket's bytes to its input.
+fn pty_shell_server() -> u16 {
+    let l = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = l.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        let (mut c, _) = l.accept().unwrap();
+        let mut child = Command::new("script")
+            .args(["-qfc", "bash --norc -i", "/dev/null"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("util-linux `script` (a pty) is needed by this test: install it");
+        let (mut to_shell, mut from_shell) =
+            (child.stdin.take().unwrap(), child.stdout.take().unwrap());
+        let mut out = c.try_clone().unwrap();
+        std::thread::spawn(move || {
+            let mut buf = [0u8; 4096];
+            while let Ok(n) = from_shell.read(&mut buf) {
+                if n == 0 || out.write_all(&buf[..n]).is_err() {
+                    break;
+                }
+            }
+        });
+        let mut buf = [0u8; 4096];
+        while let Ok(n) = c.read(&mut buf) {
+            if n == 0 || to_shell.write_all(&buf[..n]).is_err() {
+                break;
+            }
+        }
+        let _ = child.kill();
+        let _ = child.wait();
+    });
+    port
+}
+
+/// The receiver as a program that reads its input first, as `nc -l` does, then takes what was pushed: the pushed
+/// bytes are kept by the test's socket, which marks them complete with a file.
+struct Pushed {
+    port: u16,
+    dir: std::path::PathBuf,
+    bytes: Vec<u8>,
+}
+
+fn pushed_to_a_stand_in_receiver(tag: &str) -> Pushed {
+    let dir = std::env::temp_dir().join(format!("osfact-jc-{tag}-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let (port, held, t) = receiver();
+    let (kept, done) = (dir.join("pushed"), dir.join("pushed.done"));
+    std::thread::spawn(move || {
+        t.join().unwrap();
+        std::fs::write(&kept, &*held.lock().unwrap()).unwrap();
+        std::fs::write(&done, "").unwrap();
+    });
+    let bytes = pushed_bytes(tag);
+    Pushed { port, dir, bytes }
+}
+
+/// The run's own steps against the pty shell: start the receiver with `line`, push, and read the status file.
+fn pushed_bytes(tag: &str) -> Vec<u8> {
+    let _ = tag;
+    (0..300_000u32).map(|i| (i % 241) as u8).collect()
+}
+
+fn push_through(line: &dyn Fn(&str, &str, &str) -> String, tag: &str) -> Result<String, String> {
+    let p = pushed_to_a_stand_in_receiver(tag);
+    let file = p.dir.join("root.tar");
+    std::fs::write(&file, &p.bytes).unwrap();
+    let (to, status) = (p.dir.join("received"), p.dir.join("received.status"));
+    let receive = format!(
+        "sh -c 'read x; while [ ! -e {d}/pushed.done ]; do sleep 0.1; done; cat {d}/pushed'",
+        d = p.dir.display()
+    );
+    let mut d = live(pty_shell_server());
+    d.connect(5)?;
+    d.shell("PS1='$ '", 5)?;
+    d.shell(
+        &line(&receive, to.to_str().unwrap(), status.to_str().unwrap()),
+        5,
+    )?;
+    d.send(p.port, file.to_str().unwrap(), 5)?;
+    for _ in 0..8 {
+        let got = d.shell(&format!("cat {}", status.display()), 5)?;
+        if got.text.lines().any(|l| l.trim() == "0") {
+            let sum = d.shell(&format!("sha256sum {}", to.display()), 10)?;
+            return Ok(sum.text);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
+    Err("the receiver did not end within 4 s of the push".into())
+}
+
+#[test]
+fn a_receiver_on_a_shell_with_job_control_takes_the_push() {
+    let text = push_through(&|r, to, st| install::receiver_line(r, to, st), "new")
+        .expect("the receiver was stopped by job control");
+    assert!(text.contains(&hex(&pushed_bytes("new"))), "{text}");
+}
+
+#[test]
+fn the_old_receiver_line_is_stopped_on_that_shell() {
+    let old =
+        |r: &str, to: &str, st: &str| format!("( {r} > {to}; echo $? > {st} ) > /dev/null 2>&1 &");
+    let e = push_through(&old, "old").unwrap_err();
+    assert!(e.contains("did not end"), "{e}");
 }

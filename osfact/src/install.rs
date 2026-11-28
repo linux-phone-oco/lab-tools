@@ -481,6 +481,13 @@ fn step(i: &Install, s: &Step, d: &mut dyn Device) -> Result<(), String> {
     }
 }
 
+/// The shell line that starts the receiver as a background job: its own line (no end marker rides on it), its
+/// input closed - a job that holds the tty's input is stopped by the shell's job control, as a telnet shell
+/// does (osfact's first phone run; the same fix in a device lab's `Shell::background`). Its end is noted in `status`.
+pub fn receiver_line(receive: &str, to: &str, status: &str) -> String {
+    format!("( {receive} > {to}; echo $? > {status} ) </dev/null > /dev/null 2>&1 &")
+}
+
 /// The receiver is started on the device (its end noted in a status file), the file is sent, and what the device
 /// holds is hashed on the device and compared with the packed sha256: a copy that is not the packed one is never entered.
 fn push(s: &Step, m: &Image, d: &mut dyn Device) -> Result<(), String> {
@@ -502,10 +509,7 @@ fn push(s: &Step, m: &Image, d: &mut dyn Device) -> Result<(), String> {
     let status = say("to", path(&format!("{to}.status")))?;
     let receive = say("receive", command_line(receive))?;
     d.shell(&format!("rm -f {status} {to_q}"), 5)?;
-    d.shell(
-        &format!("( {receive} > {to_q}; echo $? > {status} ) > /dev/null 2>&1 &"),
-        5,
-    )?;
+    d.shell(&receiver_line(&receive, &to_q, &status), 5)?;
     d.send(port, &m.file, wait)?;
     let until = Instant::now() + Duration::from_secs(wait.into());
     loop {

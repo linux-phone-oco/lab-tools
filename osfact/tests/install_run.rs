@@ -506,7 +506,7 @@ fn the_receiver_the_status_poll_and_the_removal_quote_the_path_too() {
         .expect("the receiver line");
     assert_eq!(
         line,
-        &format!("shell ( nc -l -p 9001 > {q}; echo $? > {qs} ) > /dev/null 2>&1 &")
+        &format!("shell ( nc -l -p 9001 > {q}; echo $? > {qs} ) </dev/null > /dev/null 2>&1 &")
     );
     assert!(shell.iter().any(|w| w == &["cat", &status]), "{shell:?}");
     let removals: Vec<_> = shell.iter().filter(|w| w[0] == "rm").collect();
