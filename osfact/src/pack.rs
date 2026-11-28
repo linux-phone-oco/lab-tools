@@ -6,7 +6,7 @@
 //! `--dry-run` says each step and writes nothing.
 
 use crate::boot::{self, Boot};
-use crate::declaration::{Arch, InstallTables, Root};
+use crate::declaration::{Arch, Identity, InstallTables, Root};
 use crate::install::{
     self, Compression, Enter, Image, Install, Plan, Step, StepAction, Transport, WayBack,
     WayBackAction,
@@ -29,17 +29,8 @@ pub struct Request {
 /// The tables of a declaration that are the device's: the lab's own tables are not osfact's and are not read.
 #[derive(Deserialize)]
 struct Declaration {
-    device: Device,
+    device: Identity,
     install: Option<InstallTables>,
-}
-
-#[derive(Deserialize)]
-struct Device {
-    codename: String,
-    /// The machine kind of the device's packages (aarch64): never the host's.
-    arch: Option<Arch>,
-    /// The environment variable that holds the device's serial; by default the codename's words and SERIAL.
-    serial_env: Option<String>,
 }
 
 struct Declared {

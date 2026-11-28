@@ -83,3 +83,17 @@ pub struct Root {
 pub struct WayBackCommand {
     pub command: String,
 }
+
+/// The device's own keys of `[device]`: its name, the machine kind of its packages and the variable that holds its
+/// serial. A key osfact does not know is refused, naming it.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Identity {
+    /// The device's codename, as its package manager names it (vendor-model)
+    pub codename: String,
+    /// The machine kind of the device's packages (osfact reads it): aarch64, armv7, armhf, x86_64, x86 or riscv64
+    pub arch: Option<Arch>,
+    /// The environment variable that holds the device's fastboot serial; by default the codename's words and SERIAL
+    /// (the codename vendor-model gives VENDOR_MODEL_SERIAL)
+    pub serial_env: Option<String>,
+}

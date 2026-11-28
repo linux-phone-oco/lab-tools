@@ -122,6 +122,28 @@ fn a_declaration_that_says_no_arch_is_refused_naming_the_key() {
 }
 
 #[test]
+fn an_unknown_device_key_is_refused_naming_it() {
+    let dir = scratch("pack-unknown-device-key");
+    fs::create_dir_all(&dir).expect("dir");
+    let file = dir.join("device.toml");
+    let text = fs::read_to_string(device())
+        .expect("fixture")
+        .replace("arch = \"aarch64\"", "arch = \"aarch64\"\nfrobnicate = 1");
+    fs::write(&file, text).expect("write");
+    let run = pack(&file, &dir.join("parts"), &dir.join("out"), &["--dry-run"]);
+    assert!(
+        !run.status.success(),
+        "a declaration with an unknown [device] key was packed"
+    );
+    let said = String::from_utf8_lossy(&run.stderr);
+    assert!(
+        said.contains("frobnicate"),
+        "the refusal does not name the key: {said}"
+    );
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
 #[ignore = "builds for real: needs the network, fakeroot, mke2fs, debugfs, gzip and sha256sum"]
 fn the_walleye_declaration_packs_an_installable_alpine_image() {
     let dir = scratch("pack-real");
