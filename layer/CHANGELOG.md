@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.54.9](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-layer-v0.54.8...lpoco-layer-v0.54.9) - 2026-11-28
+
+### Added
+
+- *(osfact)* enter logs the device's text, the dry run lists its lines, check_wait is declared ([#506](https://github.com/linux-phone-oco/lab-tools/pull/506))
+
 ## [0.54.8](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-layer-v0.54.7...lpoco-layer-v0.54.8) - 2026-11-28
 
 ### Fixed

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/linux-phone-oco/lab-tools/compare/osfact-v0.1.2...osfact-v0.2.0) - 2026-11-28
+
+### Added
+
+- *(osfact)* enter logs the device's text, the dry run lists its lines, check_wait is declared ([#506](https://github.com/linux-phone-oco/lab-tools/pull/506))
+
 ## [0.1.2](https://github.com/linux-phone-oco/lab-tools/compare/osfact-v0.1.1...osfact-v0.1.2) - 2026-11-28
 
 ### Fixed
