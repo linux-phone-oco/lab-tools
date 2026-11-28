@@ -592,13 +592,13 @@ dependencies = [
 
 [[package]]
 name = "lpoco-bringup"
-version = "0.54.5"
+version = "0.54.6"
 dependencies = [
  "abootimg-oxide",
  "argenv-resolve",
  "flate2",
- "lpoco-manifest 0.56.2",
- "osfact 0.1.0",
+ "lpoco-manifest 0.56.3",
+ "osfact 0.1.1",
  "serde",
  "serde_json",
  "sha2",
@@ -626,11 +626,11 @@ dependencies = [
 
 [[package]]
 name = "lpoco-host"
-version = "0.54.5"
+version = "0.54.6"
 dependencies = [
  "argenv-resolve",
  "glob",
- "lpoco-manifest 0.56.2",
+ "lpoco-manifest 0.56.3",
  "serde",
  "serde_json",
  "sha1",
@@ -640,14 +640,14 @@ dependencies = [
 
 [[package]]
 name = "lpoco-lab"
-version = "0.54.5"
+version = "0.54.6"
 dependencies = [
  "anyhow",
  "argenv-resolve",
  "hound",
  "ideal-agent",
  "lpoco-host",
- "lpoco-manifest 0.56.2",
+ "lpoco-manifest 0.56.3",
  "lpoco-tone",
  "rmcp",
  "serde",
@@ -658,10 +658,10 @@ dependencies = [
 
 [[package]]
 name = "lpoco-layer"
-version = "0.54.5"
+version = "0.54.6"
 dependencies = [
  "argenv-resolve",
- "lpoco-manifest 0.56.2",
+ "lpoco-manifest 0.56.3",
  "serde",
  "toml",
 ]
@@ -681,10 +681,10 @@ dependencies = [
 
 [[package]]
 name = "lpoco-manifest"
-version = "0.56.2"
+version = "0.56.3"
 dependencies = [
  "argenv-resolve",
- "osfact 0.1.0",
+ "osfact 0.1.1",
  "schemars",
  "serde",
  "serde_json",
@@ -772,7 +772,7 @@ dependencies = [
 
 [[package]]
 name = "osfact"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "abootimg-oxide",
  "argenv-resolve",

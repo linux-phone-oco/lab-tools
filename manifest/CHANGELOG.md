@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.56.3](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-manifest-v0.56.2...lpoco-manifest-v0.56.3) - 2026-11-28
+
+### Other
+
+- updated the following local packages: osfact
+
 ## [0.56.2](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-manifest-v0.56.1...lpoco-manifest-v0.56.2) - 2026-11-28
 
 ### Other
