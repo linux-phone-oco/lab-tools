@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.54.5](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-lab-v0.54.4...lpoco-lab-v0.54.5) - 2026-11-28
+
+### Added
+
+- *(osfact)* first release osfact-v0.1.0 with binary and sha256 assets ([#496](https://github.com/linux-phone-oco/lab-tools/pull/496))
+
+### Other
+
+- update Cargo.lock dependencies
+
 ## [0.54.4](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-lab-v0.54.3...lpoco-lab-v0.54.4) - 2026-11-28
 
 ### Added
