@@ -633,14 +633,8 @@ impl Default for Tests {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, PartialEq, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct Identity {
-    /// The postmarketOS-style codename, e.g. "xiaomi-surya"
-    pub codename: String,
-    /// The machine kind of the device's packages (osfact reads it): aarch64, armv7, armhf, x86_64, x86 or riscv64
-    pub arch: Option<osfact::declaration::Arch>,
-}
+/// `[device]`: osfact's own type, so a key osfact reads is spelled once.
+pub use osfact::declaration::Identity;
 
 #[derive(Debug, Clone, Deserialize, PartialEq, JsonSchema)]
 #[serde(deny_unknown_fields)]

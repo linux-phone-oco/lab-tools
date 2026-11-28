@@ -180,10 +180,11 @@
   "additionalProperties": false,
   "definitions": {
     "Identity": {
+      "description": "The device's own keys of `[device]`: its name, the machine kind of its packages and the variable that holds its\nserial. A key osfact does not know is refused, naming it.",
       "type": "object",
       "properties": {
         "codename": {
-          "description": "The postmarketOS-style codename, e.g. \"xiaomi-surya\"",
+          "description": "The device's codename, as its package manager names it (vendor-model)",
           "type": "string"
         },
         "arch": {
@@ -195,6 +196,13 @@
             {
               "type": "null"
             }
+          ]
+        },
+        "serial_env": {
+          "description": "The environment variable that holds the device's fastboot serial; by default the codename's words and SERIAL\n(the codename vendor-model gives VENDOR_MODEL_SERIAL)",
+          "type": [
+            "string",
+            "null"
           ]
         }
       },
