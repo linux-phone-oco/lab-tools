@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.54.2](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-tone-v0.54.1...lpoco-tone-v0.54.2) - 2026-11-28
+
+### Added
+
+- *(manifest)* read [device] arch and the [install] tables from osfact's own types ([#484](https://github.com/linux-phone-oco/lab-tools/pull/484))
+
 ## [0.54.1](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-tone-v0.54.0...lpoco-tone-v0.54.1) - 2026-11-28
 
 ### Added
