@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1](https://github.com/linux-phone-oco/lab-tools/compare/osfact-v0.4.0...osfact-v0.4.1) - 2026-11-28
+
+### Added
+
+- *(manifest)* osfact's tables are read by osfact alone ([#518](https://github.com/linux-phone-oco/lab-tools/pull/518))
+
 ## [0.4.0](https://github.com/linux-phone-oco/lab-tools/compare/osfact-v0.3.0...osfact-v0.4.0) - 2026-11-28
 
 ### Added

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.56.8](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-manifest-v0.56.7...lpoco-manifest-v0.56.8) - 2026-11-28
+
+### Added
+
+- *(manifest)* osfact's tables are read by osfact alone ([#518](https://github.com/linux-phone-oco/lab-tools/pull/518))
+
 ## [0.56.7](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-manifest-v0.56.6...lpoco-manifest-v0.56.7) - 2026-11-28
 
 ### Added
