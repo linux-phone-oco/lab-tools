@@ -570,7 +570,7 @@ checksum = "5d15f86d12da44cd8d4ec3c73984537eb7f4cadcb9776a575a0a8a05ca11005c"
 
 [[package]]
 name = "lpoco"
-version = "0.53.9"
+version = "0.54.0"
 dependencies = [
  "argenv-resolve",
  "regex",
@@ -592,12 +592,12 @@ dependencies = [
 
 [[package]]
 name = "lpoco-bringup"
-version = "0.53.9"
+version = "0.54.0"
 dependencies = [
  "abootimg-oxide",
  "argenv-resolve",
  "flate2",
- "lpoco-manifest 0.53.0",
+ "lpoco-manifest 0.54.0",
  "osfact",
  "serde",
  "serde_json",
@@ -608,7 +608,7 @@ dependencies = [
 
 [[package]]
 name = "lpoco-ffs-acm"
-version = "0.53.9"
+version = "0.54.0"
 dependencies = [
  "argenv-resolve",
  "libc",
@@ -616,7 +616,7 @@ dependencies = [
 
 [[package]]
 name = "lpoco-health"
-version = "0.53.9"
+version = "0.54.0"
 dependencies = [
  "argenv-resolve",
  "lpoco-tone",
@@ -626,11 +626,11 @@ dependencies = [
 
 [[package]]
 name = "lpoco-host"
-version = "0.53.9"
+version = "0.54.0"
 dependencies = [
  "argenv-resolve",
  "glob",
- "lpoco-manifest 0.53.0",
+ "lpoco-manifest 0.54.0",
  "serde",
  "serde_json",
  "sha1",
@@ -640,14 +640,14 @@ dependencies = [
 
 [[package]]
 name = "lpoco-lab"
-version = "0.53.9"
+version = "0.54.0"
 dependencies = [
  "anyhow",
  "argenv-resolve",
  "hound",
  "ideal-agent",
  "lpoco-host",
- "lpoco-manifest 0.53.0",
+ "lpoco-manifest 0.54.0",
  "lpoco-tone",
  "rmcp",
  "serde",
@@ -658,10 +658,10 @@ dependencies = [
 
 [[package]]
 name = "lpoco-layer"
-version = "0.53.9"
+version = "0.54.0"
 dependencies = [
  "argenv-resolve",
- "lpoco-manifest 0.53.0",
+ "lpoco-manifest 0.54.0",
  "serde",
  "toml",
 ]
@@ -680,7 +680,7 @@ dependencies = [
 
 [[package]]
 name = "lpoco-manifest"
-version = "0.53.0"
+version = "0.54.0"
 dependencies = [
  "argenv-resolve",
  "osfact",
@@ -692,7 +692,7 @@ dependencies = [
 
 [[package]]
 name = "lpoco-tone"
-version = "0.53.9"
+version = "0.54.0"
 dependencies = [
  "anyhow",
  "argenv-resolve",
