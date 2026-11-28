@@ -32,11 +32,12 @@ pub struct Prompt<'a> {
 /// The two files of one device, in a folder only the user may enter.
 pub struct Files {
     dir: PathBuf,
+    notify: Option<PathBuf>,
 }
 
 impl Files {
-    pub fn new(dir: PathBuf) -> Files {
-        Files { dir }
+    pub fn new(dir: PathBuf, notify: Option<PathBuf>) -> Files {
+        Files { dir, notify }
     }
 
     fn prompt(&self) -> PathBuf {
@@ -137,7 +138,7 @@ impl Files {
     }
 }
 
-fn now() -> u64 {
+pub(crate) fn now() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -194,6 +195,19 @@ pub fn ask(files: &Files, p: &Prompt, limit: Option<Duration>) -> Result<Answer,
     if no_terminal && id.is_some() {
         eprintln!("  (no terminal, waiting on the answer file)");
     }
+    // the author is also reached on his phone when a notify file says where; its absence was said at the start
+    let mut notify = files
+        .notify
+        .as_deref()
+        .and_then(|f| crate::notify::Notify::read(f).ok());
+    if let (Some(n), Some(id)) = (notify.as_mut(), id.as_deref()) {
+        let until = limit.map_or("none".to_string(), |l| {
+            format!("{} s from now", l.as_secs())
+        });
+        if let Err(e) = n.publish(id, p, &until) {
+            eprintln!("  (not published to the author: {e})");
+        }
+    }
     let began = Instant::now();
     let rx = lines().lock().unwrap_or_else(|e| e.into_inner());
     if std::io::stdin().is_terminal() {
@@ -206,6 +220,13 @@ pub fn ask(files: &Files, p: &Prompt, limit: Option<Duration>) -> Result<Answer,
             break Ended::Stopped(name);
         }
         if let Some(a) = id.as_deref().and_then(|id| files.take(id)) {
+            break Ended::Answered(a);
+        }
+        if let Some(a) = notify
+            .as_mut()
+            .zip(id.as_deref())
+            .and_then(|(n, id)| n.reply(id))
+        {
             break Ended::Answered(a);
         }
         match limit {

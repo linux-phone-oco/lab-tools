@@ -118,6 +118,14 @@ contract! {
         ..Input::EMPTY
     };
 
+    NOTIFY: String = Input {
+        key: "notify",
+        ty: Type::String,
+        env: Some(Env::new("LPOCO_ATTENDED_NOTIFY")),
+        summary: "The mode-600 file that says where the author is reached on his phone (~/.config/lpoco-attended/notify when none is given): lines server, topic, reply_topic and token (optional) of an ntfy server; a prompt is published to the topic and a reply on the reply topic that starts with the prompt id is the answer; with no such file the run says so and keeps the terminal and the answer file.",
+        ..Input::EMPTY
+    };
+
     SYSFS_USB: String = Input {
         key: "sysfs_usb",
         ty: Type::String,
