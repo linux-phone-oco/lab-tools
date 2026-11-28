@@ -56,3 +56,13 @@ It moves to its own repository, history kept (`git filter-repo --path osfact/`),
 - the author says so.
 
 Until then it lives here to use lab-tools' conveyor (CI, release-plz, land, the records) instead of a second one.
+
+## Install a release
+
+Each release `osfact-vX.Y.Z` carries the x86_64 binary and its hash (`.github/workflows/assets.yml`):
+
+    gh release download osfact-vX.Y.Z --repo linux-phone-oco/lab-tools --pattern 'osfact-x86_64*' --dir DIR
+    (cd DIR && sha256sum -c osfact-x86_64.sha256) && install -m 755 DIR/osfact-x86_64 ~/.local/bin/osfact
+    osfact install now --plan install.toml --dry-run
+
+A keeper pins the version and checks the sha256 before it runs the binary.

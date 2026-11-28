@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-28
+
+### Added
+
+- first release: the walking skeleton (pack, rootfs, install) as a prebuilt x86_64 binary with its sha256
+
 ## [0.0.0] - 2026-11-27
 
 ### Added

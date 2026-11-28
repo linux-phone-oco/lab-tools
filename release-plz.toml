@@ -102,10 +102,11 @@ git_release_enable = true
 
 # osfact (os-factory): a device's installable image from its declaration, a distro profile and the proven parts -
 # depends on no lpoco crate, extractable to its own repository (decision 2026-11-27-osfact-own-rust-in-lab-tools).
-# Not in the family: its own version and its own tag prefix, osfact-v*. Not released until its first build lands
-# (item osfact-walleye-two-distros): today it is a home and a failing test.
+# Not in the family: its own version and its own tag prefix, osfact-v*. Released since its walking skeleton's build landed
+# (decision 2026-11-28-osfact-is-first-released-with-the-walking-skeleton-s): its x86_64 binary and sha256 are attached
+# to the osfact-vX.Y.Z release by .github/workflows/assets.yml (proof: lpoco/tests/release_osfact.rs).
 [[package]]
 name = "osfact"
 changelog_include = []
 git_tag_name = "osfact-v{{ version }}"
-release = false
+git_release_enable = true
