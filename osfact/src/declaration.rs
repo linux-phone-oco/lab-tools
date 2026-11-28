@@ -2,8 +2,9 @@
 //! What osfact reads from a device's declaration (device.toml) beyond [boot]: the machine kind of the device's
 //! packages (`[device] arch`) and the tables that say how the root image reaches the booted image's RAM
 //! (`[install.connection]`, `[install.root]`, `[install.way_back]`). These types are the one definition: `pack` reads
-//! them, and a program that validates the whole device.toml (lpoco-manifest) takes them from here, so a key is
-//! spelled once. They carry a JSON Schema for that program's schema.
+//! them, and a program that validates the rest of the device.toml (lpoco-manifest) keeps them unread and calls
+//! `check`; only its JSON Schema takes these types, so editors still complete a key. The schema of `[device]` no
+//! longer refuses an unknown key (a later key of osfact's is `check`'s to refuse).
 
 use crate::install::Connection;
 use schemars::JsonSchema;

@@ -1,4 +1,4 @@
-// SPDX-Liclllet decl = declaration::check(declaration)?;t d = declaration::check(&text).map_err(|e| format!("{}: {e}", file.display()))?;t d = declaration::check(&text).map_err(|e| format!("{}: {e}", file.display()))?;nse-Identifier: MIT OR Apache-2.0
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! The pack: one device's declaration and one distro profile become the images and the plan that installs them -
 //! the root file system (`rootfs`), the boot image (`boot`, in the format the declaration names) and install.toml
 //! (`install`), each stage the module that already proves it. The images' sha256 are printed and written into
