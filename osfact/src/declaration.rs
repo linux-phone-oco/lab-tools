@@ -77,6 +77,9 @@ pub struct Root {
     pub check: Option<String>,
     /// Seconds the check may take to hold, tried every second (10 when not declared).
     pub check_wait: Option<u32>,
+    /// Kernel filesystems mounted into the root before the chroot, in this order (none when not declared).
+    #[serde(default)]
+    pub binds: Vec<crate::install::Bind>,
 }
 
 /// How the booted image restarts the device when a step fails or the run ends.

@@ -37,6 +37,7 @@ Its stages, each a format- or device-neutral step with one adapter per format or
    quoted, a command (`receive`, `command`, `check`) is split by shell quoting rules and each word quoted (a `;` or
    `$(...)` in it is an argument), and a value that cannot be quoted (a line break, a NUL, an unclosed quote) does not
    read. The one shell line left is the way back's own `command` (it is a restart line, `sync; echo b > ...`).
+   The root's kernel filesystems are declared too: `[install.root] binds = ["proc", "sys", "dev"]` (also `dev-pts`, `run`) are mounted into it, in that order, after it is unpacked and before the chroot (a services-running root needs them); a mount that fails stops the step naming it. The way back restarts the phone, which ends them.
 
 ## The boundary
 

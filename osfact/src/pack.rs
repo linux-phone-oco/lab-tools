@@ -323,6 +323,7 @@ fn enter_step(r: &Root) -> Step {
         command: Some(r.command.clone()),
         check: r.check.clone(),
         check_wait: r.check_wait,
+        binds: r.binds.clone(),
         ..Step::boot_from_ram("root")
     }
 }

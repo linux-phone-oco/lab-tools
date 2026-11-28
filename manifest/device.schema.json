@@ -352,6 +352,14 @@
           ],
           "format": "uint32",
           "minimum": 0
+        },
+        "binds": {
+          "description": "Kernel filesystems mounted into the root before the chroot, in this order (none when not declared).",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Bind"
+          },
+          "default": []
         }
       },
       "additionalProperties": false,
@@ -363,6 +371,36 @@
         "path",
         "size_mib",
         "command"
+      ]
+    },
+    "Bind": {
+      "description": "A kernel filesystem a root needs inside it (services such as a device manager, a bus or udev read them), named\nby the place it takes in the root. The device's data declares which; osfact knows how each is mounted.",
+      "oneOf": [
+        {
+          "description": "/proc, a `proc` filesystem.",
+          "type": "string",
+          "const": "proc"
+        },
+        {
+          "description": "/sys, a `sysfs` filesystem.",
+          "type": "string",
+          "const": "sys"
+        },
+        {
+          "description": "/dev, a bind of the host's /dev.",
+          "type": "string",
+          "const": "dev"
+        },
+        {
+          "description": "/dev/pts, a `devpts` filesystem (after `dev`: a bind does not carry it).",
+          "type": "string",
+          "const": "dev-pts"
+        },
+        {
+          "description": "/run, a tmpfs.",
+          "type": "string",
+          "const": "run"
+        }
       ]
     },
     "WayBackCommand": {

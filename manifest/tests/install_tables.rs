@@ -3,6 +3,7 @@
 //! the manifest reads too, from osfact's own types (item manifest-device-arch): the one definition.
 
 use lpoco_manifest::{schema, Manifest};
+use osfact::install::Bind;
 
 const FIXTURE: &str = include_str!("fixtures/install-tables.toml");
 
@@ -15,6 +16,11 @@ fn the_arch_and_the_install_tables_osfact_reads_are_read() {
     let root = i.root.unwrap();
     assert_eq!(root.path, "/mm");
     assert_eq!(root.check_wait, Some(120));
+    assert_eq!(
+        root.binds,
+        [Bind::Proc, Bind::Sys, Bind::Dev],
+        "binds are read in the declared order"
+    );
     assert!(i.way_back.unwrap().command.starts_with("sync;"));
 }
 
@@ -29,6 +35,7 @@ fn a_misspelled_install_key_is_refused_naming_it() {
     for (from, to) in [
         ("shell_port", "shell_prot"),
         ("size_mib", "size_mb"),
+        ("binds", "bindz"),
         ("[install.way_back]", "[install.wayback]"),
     ] {
         let e = Manifest::parse(&FIXTURE.replace(from, to)).unwrap_err();
@@ -46,6 +53,7 @@ fn the_generated_schema_names_them() {
         "\"shell_port\"",
         "\"size_mib\"",
         "\"check_wait\"",
+        "\"binds\"",
     ] {
         assert!(s.contains(word), "the schema lacks {word}");
     }
