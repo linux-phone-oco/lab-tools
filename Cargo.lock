@@ -570,7 +570,7 @@ checksum = "5d15f86d12da44cd8d4ec3c73984537eb7f4cadcb9776a575a0a8a05ca11005c"
 
 [[package]]
 name = "lpoco"
-version = "0.54.0"
+version = "0.54.1"
 dependencies = [
  "argenv-resolve",
  "regex",
@@ -580,7 +580,7 @@ dependencies = [
 
 [[package]]
 name = "lpoco-attended"
-version = "0.46.6"
+version = "0.46.7"
 dependencies = [
  "argenv-resolve",
  "lpoco-manifest 0.54.0 (git+https://github.com/linux-phone-oco/lab-tools?tag=lpoco-manifest-v0.54.0)",
@@ -592,7 +592,7 @@ dependencies = [
 
 [[package]]
 name = "lpoco-bringup"
-version = "0.54.0"
+version = "0.54.1"
 dependencies = [
  "abootimg-oxide",
  "argenv-resolve",
@@ -608,7 +608,7 @@ dependencies = [
 
 [[package]]
 name = "lpoco-ffs-acm"
-version = "0.54.0"
+version = "0.54.1"
 dependencies = [
  "argenv-resolve",
  "libc",
@@ -616,7 +616,7 @@ dependencies = [
 
 [[package]]
 name = "lpoco-health"
-version = "0.54.0"
+version = "0.54.1"
 dependencies = [
  "argenv-resolve",
  "lpoco-tone",
@@ -626,7 +626,7 @@ dependencies = [
 
 [[package]]
 name = "lpoco-host"
-version = "0.54.0"
+version = "0.54.1"
 dependencies = [
  "argenv-resolve",
  "glob",
@@ -640,7 +640,7 @@ dependencies = [
 
 [[package]]
 name = "lpoco-lab"
-version = "0.54.0"
+version = "0.54.1"
 dependencies = [
  "anyhow",
  "argenv-resolve",
@@ -658,7 +658,7 @@ dependencies = [
 
 [[package]]
 name = "lpoco-layer"
-version = "0.54.0"
+version = "0.54.1"
 dependencies = [
  "argenv-resolve",
  "lpoco-manifest 0.54.0",
@@ -693,7 +693,7 @@ dependencies = [
 
 [[package]]
 name = "lpoco-tone"
-version = "0.54.0"
+version = "0.54.1"
 dependencies = [
  "anyhow",
  "argenv-resolve",
