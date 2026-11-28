@@ -10,16 +10,16 @@ license = "MIT OR Apache-2.0"
 name = "lpoco_bringup"
 
 [dependencies]
-# the header layer: parse and write the Android boot image header (v0 proven byte for byte against mkbootimg,
-# tests/pack_v0.rs; research bringup-image-v0-oxide-writes-v0)
+# the header layer of the images osfact reads and writes (bringup keeps it for `image swap`, swap.rs)
 abootimg-oxide = "0.5"
-sha1 = "0.10"
 toml = "0.8"
 lpoco-manifest = { path = "../manifest" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # the command line is declared once (argenv), not parsed by hand
 argenv-resolve = "0.4"
+# the os-words rule of the boot header is osfact's (one place); osfact depends on no lpoco crate
+osfact = { path = "../osfact" }
 flate2 = "1"
 xz2 = "0.1"
 sha2 = "0.11"

@@ -10,12 +10,11 @@
 //! - [`pin::check`]: stop when the manifest pins another family version;
 //! - [`hooks::run`]: call a manifest-named step executable.
 
-pub mod avb;
+pub use osfact::{avb, fdt};
 pub mod bisect;
 pub mod boot;
 pub mod dt_check;
 pub mod ensure;
-pub mod fdt;
 pub mod hooks;
 pub mod image;
 pub mod init;
