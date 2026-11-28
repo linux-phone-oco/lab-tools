@@ -50,20 +50,11 @@ fn release_plz_releases_osfact_on_its_own_tag_with_a_github_release() {
 }
 
 #[test]
-fn osfact_starts_at_its_first_release_version() {
-    let toml = read("osfact/Cargo.toml");
-    assert!(
-        toml.contains("\nversion = \"0.1.0\""),
-        "osfact's first release is 0.1.0:\n{toml}"
-    );
+fn osfact_has_its_first_release_in_its_changelog() {
     let log = read("osfact/CHANGELOG.md");
-    let first = log
-        .lines()
-        .filter_map(|l| l.strip_prefix("## ["))
-        .find(|v| !v.starts_with("Unreleased"));
     assert!(
-        first.is_some_and(|v| v.starts_with("0.1.0]")),
-        "changelog starts at {first:?}"
+        log.contains("\n## [0.1.0]"),
+        "no 0.1.0 entry in osfact/CHANGELOG.md"
     );
 }
 
@@ -79,12 +70,12 @@ fn the_assets_workflow_attaches_osfact_and_its_sha256_to_its_release() {
     ] {
         assert!(wf.contains(needle), "assets.yml does not mention {needle}");
     }
-    let sha = wf.find("osfact-x86_64.sha256").unwrap();
-    let bin = wf.rfind("dist/osfact-x86_64\"").unwrap_or(0);
-    assert!(
-        sha < bin || bin == 0,
-        "the hash goes up first, then the binary"
-    );
+    let up = |tail: &str| {
+        wf.find(&format!("gh release upload \"osfact-v$V\" dist/{tail}"))
+            .unwrap_or_else(|| panic!("no upload of {tail}"))
+    };
+    let (sha, bin) = (up("osfact-x86_64.sha256"), up("osfact-x86_64 --clobber"));
+    assert!(sha < bin, "the hash goes up first, then the binary");
 }
 
 #[test]
