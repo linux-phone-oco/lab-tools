@@ -154,3 +154,35 @@ fn the_profile_builds_an_ext4_root_image_twice_with_the_same_bytes() {
     );
     let _ = std::fs::remove_dir_all(&out);
 }
+
+/// Found 2026-11-28 by running the release's code with a relative --out (walleye's pack, item
+/// osfact-pack-trusts-the-profile-keys): apk reads --keys-dir after it enters the root, so a relative keys path
+/// finds no key and every index is "UNTRUSTED signature". Source: that run's apk output, reproduced in this lab.
+#[test]
+fn a_relative_out_gives_apk_the_keys_by_an_absolute_path() {
+    let cwd = scratch("rootfs-relative");
+    std::fs::create_dir_all(&cwd).expect("dir");
+    let run = Command::new(env!("CARGO_BIN_EXE_osfact"))
+        .current_dir(&cwd)
+        .args(["rootfs", "now", "--distro"])
+        .arg(fixtures().join("distros/alpine.toml"))
+        .args(["--arch", "aarch64", "--dry-run", "--out", "rel"])
+        .output()
+        .expect("osfact runs");
+    assert!(
+        run.status.success(),
+        "{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    let said = String::from_utf8_lossy(&run.stdout);
+    let keys = said
+        .split("--keys-dir ")
+        .nth(1)
+        .and_then(|rest| rest.split_whitespace().next())
+        .expect("the dry run names --keys-dir");
+    assert!(
+        keys.starts_with('/') && keys.ends_with("rel/work/keys-pkg/usr/share/apk/keys"),
+        "--keys-dir is not absolute under the out dir: {keys}"
+    );
+    let _ = std::fs::remove_dir_all(&cwd);
+}
