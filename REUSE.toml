@@ -8,7 +8,7 @@ version = 1
 
 # Our manifests, prose, data and fixtures, by kind and by place. A source file is not here: it carries its header.
 [[annotations]]
-path = [".gitattributes", "*.md", "**/*.md", "*.toml", "**/*.toml", "*.lock", "*.nix", "*.json", "**/*.json", "*.yml", "**/*.yml", "*.regex", "**/*.regex", "*.service", "**/*.service", "*.timer", "**/*.timer", "*.conf", "**/*.conf", "*.script", "**/*.script", "*.txt", "**/*.txt", "*.wav", "**/*.wav", "**/*.pub", ".gitignore", ".github/licence-check", "bringup/tests/fixtures/**", "ffs-acm/tests/c-probe-blobs.bin", "packaging/alpine/**"]
+path = [".gitattributes", "*.md", "**/*.md", "*.toml", "**/*.toml", "*.lock", "*.nix", "*.json", "**/*.json", "*.yml", "**/*.yml", "*.regex", "**/*.regex", "*.service", "**/*.service", "*.timer", "**/*.timer", "*.conf", "**/*.conf", "*.script", "**/*.script", "*.txt", "**/*.txt", "*.wav", "**/*.wav", "**/*.pub", ".gitignore", ".github/licence-check", "bringup/tests/fixtures/**", "osfact/tests/fixtures/boot/**", "ffs-acm/tests/c-probe-blobs.bin", "packaging/alpine/**"]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 grenudi"
 SPDX-License-Identifier = "MIT OR Apache-2.0"
@@ -16,7 +16,7 @@ SPDX-License-Identifier = "MIT OR Apache-2.0"
 # The device-tree fixture and the image compiled from it: the dts carries its header; named here too, so the check holds
 # the texts of its licences. (They come after the fixtures above, and win where they overlap.)
 [[annotations]]
-path = ["bringup/tests/fixtures/appended.dts", "bringup/tests/fixtures/appended.dtb"]
+path = ["bringup/tests/fixtures/appended.dts", "bringup/tests/fixtures/appended.dtb", "osfact/tests/fixtures/boot/appended.dts", "osfact/tests/fixtures/boot/appended.dtb"]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 grenudi"
 SPDX-License-Identifier = "GPL-2.0-only OR BSD-2-Clause"

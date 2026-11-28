@@ -14,3 +14,5 @@ serde_json = { version = "1", features = ["preserve_order"] }
 toml = "0.8"
 schemars = "1"
 argenv-resolve = "0.4"
+# the os-words rule of the boot header is osfact's (one place); osfact depends on no lpoco crate
+osfact = { path = "../osfact" }

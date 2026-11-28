@@ -1,0 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-only OR BSD-2-Clause
+/dts-v1/;
+/ {
+	compatible = "google,walleye";
+	model = "boot image fixture";
+	qcom,msm-id = <0x124 0x20001>;
+};

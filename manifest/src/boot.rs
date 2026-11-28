@@ -201,51 +201,8 @@ impl Boot {
 
     /// The os words as the header holds them: version << 11 | patch level (0 when none is asked).
     pub fn os_word(&self) -> Result<u32, String> {
-        let v = match &self.os_version {
-            Some(s) => parse_os_version(s)?,
-            None => 0,
-        };
-        let p = match &self.os_patch_level {
-            Some(s) => parse_patch_level(s)?,
-            None => 0,
-        };
-        Ok((v << 11) | p)
+        osfact::boot::os_word(self.os_version.as_deref(), self.os_patch_level.as_deref())
     }
-}
-
-fn parse_os_version(s: &str) -> Result<u32, String> {
-    let parts: Vec<u32> = s
-        .split('.')
-        .map(|p| {
-            p.parse::<u32>()
-                .map_err(|_| format!("os_version `{s}` is not A.B.C"))
-        })
-        .collect::<Result<_, _>>()?;
-    if parts.is_empty() || parts.len() > 3 || parts.iter().any(|&p| p > 127) {
-        return Err(format!(
-            "os_version `{s}` is not A.B.C (each part below 128)"
-        ));
-    }
-    let g = |i: usize| parts.get(i).copied().unwrap_or(0);
-    Ok((g(0) << 14) | (g(1) << 7) | g(2))
-}
-
-fn parse_patch_level(s: &str) -> Result<u32, String> {
-    let bad = || format!("os_patch_level `{s}` is not YYYY-MM");
-    let (y, m) = s.split_once('-').ok_or_else(bad)?;
-    let (y, m): (u32, u32) = (y.parse().map_err(|_| bad())?, m.parse().map_err(|_| bad())?);
-    if !(2000..=2127).contains(&y) || !(1..=12).contains(&m) {
-        return Err(bad());
-    }
-    Ok(((y - 2000) << 4) | m)
-}
-
-/// The os words as `A.B.C` and `YYYY-MM` (none when the word is 0).
-pub fn os_words(word: u32) -> (Option<String>, Option<String>) {
-    let (v, p) = (word >> 11, word & 0x7ff);
-    let version = (v != 0).then(|| format!("{}.{}.{}", v >> 14, (v >> 7) & 127, v & 127));
-    let patch = (p != 0).then(|| format!("{}-{:02}", 2000 + (p >> 4), p & 15));
-    (version, patch)
 }
 
 #[cfg(test)]
@@ -259,7 +216,10 @@ mod tests {
         )
         .unwrap();
         let w = b.os_word().unwrap();
-        assert_eq!(os_words(w), (Some("8.1.0".into()), Some("2020-01".into())));
+        assert_eq!(
+            osfact::boot::os_words(w),
+            (Some("8.1.0".into()), Some("2020-01".into()))
+        );
     }
 
     #[test]

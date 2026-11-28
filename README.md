@@ -301,7 +301,7 @@ cache. A recipe is another image of the manifest with parts swapped in, each par
 
 The derivation (`bringup/src/ensure.nix`) builds `lpoco-bringup` from `--source` (`LPOCO_SOURCE`; this version's release tag
 from GitHub when none) with nixpkgs pinned in `nixpkgs.nix` (the pin `shell.nix` uses too) and runs `image swap`. The AVB footer
-is `lpoco-bringup`'s own (`bringup/src/avb.rs`, held byte for byte to avbtool 1.4.0's by `bringup/tests/avb_native.rs`): the sandbox runs no avbtool
+is osfact's own, moved from lpoco-bringup (`osfact/src/avb.rs`, held byte for byte to avbtool 1.4.0's by `bringup/tests/avb_native.rs`): the sandbox runs no avbtool
 and no Python. Proof: `bringup/tests/ensure.rs` (where nix or avbtool, which makes its control, is
 absent it says "not measured"); measured on the lab 2026-11-23 for walleye's z21 from z20 and its dtb.
 
