@@ -312,3 +312,9 @@ pub(crate) fn sha256(file: &Path) -> Result<String, String> {
         .map(|b| format!("{b:02x}"))
         .collect())
 }
+
+/// The root tree's tar that the ext4 image of the first build was made from: kept in OUT/work, it is what a device
+/// that takes its root into RAM receives (compressed by the pack).
+pub fn root_tar(out: &Path) -> PathBuf {
+    out.join("work/tree-1.tar")
+}

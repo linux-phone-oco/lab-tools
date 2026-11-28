@@ -122,7 +122,7 @@ fn a_declaration_that_says_no_arch_is_refused_naming_the_key() {
 }
 
 #[test]
-#[ignore = "builds for real: needs the network, fakeroot, mke2fs, debugfs and sha256sum"]
+#[ignore = "builds for real: needs the network, fakeroot, mke2fs, debugfs, gzip and sha256sum"]
 fn the_walleye_declaration_packs_an_installable_alpine_image() {
     let dir = scratch("pack-real");
     let _ = fs::remove_dir_all(&dir);
@@ -170,9 +170,9 @@ fn the_walleye_declaration_packs_an_installable_alpine_image() {
         "boot.img has no AVB footer"
     );
 
-    // install.toml names each image with the sha256 the pack measured, and the command is osfact's own
+    // install.toml names the boot image and the compressed root image (the file that is pushed) with the sha256 the pack measured, boot, push and enter in order, and the command is osfact's own
     let plan = fs::read_to_string(out.join("install.toml")).expect("OUT/install.toml");
-    for image in [&rootfs, &out.join("boot.img")] {
+    for image in [&out.join("root.tar.gz"), &out.join("boot.img")] {
         let sum = sha256(image);
         assert!(
             plan.contains(&sum),
@@ -185,6 +185,26 @@ fn the_walleye_declaration_packs_an_installable_alpine_image() {
             image.display()
         );
     }
+    let listed_plan =
+        osfact::install::read(&plan).expect("install.toml is one install::read accepts");
+    let order: Vec<_> = listed_plan.install.step.iter().map(|s| s.action).collect();
+    assert_eq!(
+        order,
+        [
+            osfact::install::StepAction::BootFromRam,
+            osfact::install::StepAction::Push,
+            osfact::install::StepAction::Enter
+        ]
+    );
+    let untar = Command::new("sh")
+        .arg("-c")
+        .arg(format!(
+            "gzip -dc {} | tar -t > /dev/null",
+            out.join("root.tar.gz").display()
+        ))
+        .status()
+        .expect("sh runs");
+    assert!(untar.success(), "root.tar.gz is no gzip of a tar");
     let command = said
         .lines()
         .rev()
@@ -212,7 +232,7 @@ fn the_walleye_declaration_packs_an_installable_alpine_image() {
         "{listed}"
     );
     assert!(
-        listed.contains("way back: fastboot") && listed.contains("wait 240"),
+        listed.contains("way back: in the shell") && listed.contains("wait 240"),
         "{listed}"
     );
     let _ = fs::remove_dir_all(&dir);
@@ -252,6 +272,120 @@ fn an_avb_footer_without_a_partition_size_is_refused_naming_file_and_key() {
         said.contains("device.toml")
             && said.contains("avb_footer")
             && said.contains("partition_size"),
+        "{said}"
+    );
+}
+
+/// Item osfact-pack-writes-the-ram-root-plan. Where the expected values come from (a check names its source):
+/// the plan that boots, pushes and enters is tests/fixtures/plans/walleye-root-in-ram.toml (its own header names its
+/// sources: google-walleye-lab's build/initramfs-modem and procedures/steps/src/modem_boot.rs); the declaration's
+/// [install.connection], [install.root] and [install.way_back] in tests/fixtures/google-walleye/device.toml carry
+/// those same values. The pack made from the declaration must list the same commands, in the same order.
+fn commands_of(text: &str) -> Vec<String> {
+    let plan = osfact::install::read(text).expect("install::read accepts the plan");
+    osfact::install::commands(&plan).expect("commands")
+}
+
+fn files_named(boot_sum: &str, root_sum: &str) -> osfact::pack::Packed {
+    osfact::pack::Packed {
+        rootfs: ("rootfs.img".into(), "2".repeat(64)),
+        boot: ("boot.img".into(), boot_sum.into()),
+        root: ("root.tar.gz".into(), root_sum.into()),
+    }
+}
+
+#[test]
+fn the_declaration_makes_the_plan_that_boots_pushes_and_enters_in_order() {
+    let declaration = fs::read_to_string(device()).expect("fixture");
+    let made =
+        osfact::pack::plan_text(&declaration, &files_named(&"0".repeat(64), &"1".repeat(64)))
+            .expect("the plan");
+    let want = fs::read_to_string(fixtures().join("plans/walleye-root-in-ram.toml")).expect("plan");
+    assert_eq!(
+        commands_of(&made),
+        commands_of(&want),
+        "the pack's plan lists other commands than the walleye plan of walleye-root-in-ram.toml:\n{made}"
+    );
+    let plan = osfact::install::read(&made).expect("read");
+    let order: Vec<_> = plan.install.step.iter().map(|s| s.action).collect();
+    assert_eq!(
+        order,
+        [
+            osfact::install::StepAction::BootFromRam,
+            osfact::install::StepAction::Push,
+            osfact::install::StepAction::Enter
+        ]
+    );
+    let root = plan
+        .install
+        .image
+        .iter()
+        .find(|i| i.name == "root")
+        .expect("root image");
+    assert_eq!(
+        root.sha256,
+        "1".repeat(64),
+        "the root image's sha256 is the compressed file's"
+    );
+    assert_eq!(root.compression, Some(osfact::install::Compression::Gzip));
+}
+
+#[test]
+fn a_declaration_with_a_connection_and_no_root_is_refused_naming_the_table() {
+    let declaration = fs::read_to_string(device())
+        .expect("fixture")
+        .replace("[install.root]", "[install.elsewhere]");
+    let said =
+        osfact::pack::plan_text(&declaration, &files_named(&"0".repeat(64), &"1".repeat(64)))
+            .expect_err("refused");
+    assert!(said.contains("[install.root]"), "{said}");
+}
+
+#[test]
+fn the_plan_is_the_walleye_plan_value_for_value() {
+    // Source: plans/walleye-root-in-ram.toml; commands() leaves out waits, checks and ways, so the values are compared.
+    let declaration = fs::read_to_string(device()).expect("fixture");
+    let made =
+        osfact::pack::plan_text(&declaration, &files_named(&"0".repeat(64), &"1".repeat(64)))
+            .expect("the plan");
+    let want = fs::read_to_string(fixtures().join("plans/walleye-root-in-ram.toml")).expect("plan");
+    let (made, want): (toml::Value, toml::Value) = (
+        toml::from_str(&made).expect("made"),
+        toml::from_str(&want).expect("want"),
+    );
+    assert_eq!(made, want);
+}
+
+#[test]
+fn a_declaration_without_the_install_tables_makes_the_boot_only_plan() {
+    // Source: plans/walleye-ram.toml (boot from RAM, way back fastboot reboot, wait = [boot] back_wait = 240).
+    let text = fs::read_to_string(device()).expect("fixture");
+    let cut = text
+        .find("\n# Proposed (item osfact-pack-writes")
+        .expect("the install tables");
+    let made =
+        osfact::pack::plan_text(&text[..cut], &files_named(&"0".repeat(64), &"1".repeat(64)))
+            .expect("the plan");
+    let plan = osfact::install::read(&made).expect("read");
+    assert!(plan.install.connection.is_none());
+    assert_eq!(plan.install.step.len(), 1);
+    assert_eq!(plan.install.way_back.wait, 240);
+    assert_eq!(
+        plan.install.way_back.via,
+        osfact::install::Transport::Fastboot
+    );
+}
+
+#[test]
+fn a_root_declared_without_a_connection_is_refused_naming_both_tables() {
+    let declaration = fs::read_to_string(device())
+        .expect("fixture")
+        .replace("[install.connection]", "[install.connnection]");
+    let said =
+        osfact::pack::plan_text(&declaration, &files_named(&"0".repeat(64), &"1".repeat(64)))
+            .expect_err("refused");
+    assert!(
+        said.contains("[install.root]") && said.contains("[install.connection]"),
         "{said}"
     );
 }

@@ -7,7 +7,7 @@ Decided in linux-phone-oco/docs, decision `2026-11-27-osfact-own-rust-in-lab-too
 ## What it does
 
     osfact pack now --device DEVICE.toml --distro PROFILE.toml --parts DIR --out OUT
-    -> OUT/rootfs.img, OUT/boot.img (the device's boot format), OUT/install.toml, and one install command
+    -> OUT/rootfs.img, OUT/root.tar.gz (the root tree gzipped, what a RAM install pushes), OUT/boot.img (the device's boot format), OUT/install.toml, and one install command
 
 Three inputs, one output:
 
@@ -28,7 +28,9 @@ Its stages, each a format- or device-neutral step with one adapter per format or
    inittab or presets);
 3. **file system**: `mke2fs -d` under fakeroot, fixed times and UUID, built twice and compared;
 4. **boot artifact**: the device's boot format - `android-bootimg` (header, appended dtb, AVB footer), `efi`;
-5. **install**: `install.toml` - each step a write of one output to one named place by one transport, the
+5. **install**: `install.toml` - with `[install.connection]`, `[install.root]` and `[install.way_back]` declared: the boot
+   from RAM, the push of `root.tar.gz` (its sha256 checked on the device) and its entry by chroot, nothing written to the
+   device; without them the boot alone. Each step a write of one output to one named place by one transport, the
    device's `[install]` with the output's sha256 - and the command that runs it.
 
 ## The boundary

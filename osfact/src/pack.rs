@@ -6,11 +6,15 @@
 //! `--dry-run` says each step and writes nothing.
 
 use crate::boot::{self, Boot};
-use crate::install::{self, Image, Install, Plan, Step, Transport, WayBack, WayBackAction};
+use crate::install::{
+    self, Compression, Connection, Enter, Image, Install, Plan, Step, StepAction, Transport,
+    WayBack, WayBackAction,
+};
 use crate::rootfs;
 use serde::Deserialize;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 pub struct Request {
     pub device_file: PathBuf,
@@ -25,6 +29,33 @@ pub struct Request {
 #[derive(Deserialize)]
 struct Declaration {
     device: Device,
+    install: Option<InstallDecl>,
+}
+
+/// How the packed root image reaches the booted image's RAM and is entered (nothing is written to the device):
+/// [install.connection], [install.root] and [install.way_back]; the declaration's other [install] keys are not read here.
+#[derive(Deserialize)]
+struct InstallDecl {
+    connection: Option<Connection>,
+    root: Option<RootDecl>,
+    way_back: Option<WayBackDecl>,
+}
+
+#[derive(Deserialize)]
+struct RootDecl {
+    port: u16,
+    receive: String,
+    to: String,
+    wait: u32,
+    path: String,
+    size_mib: u64,
+    command: String,
+    check: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct WayBackDecl {
+    command: String,
 }
 
 #[derive(Deserialize)]
@@ -38,10 +69,9 @@ struct Device {
 
 struct Declared {
     file: PathBuf,
-    device: Device,
+    text: String,
     arch: String,
     boot: Boot,
-    back_wait: u32,
 }
 
 /// What the pack does, in order; each step is one named call below.
@@ -55,7 +85,14 @@ pub fn make(req: &Request) -> Result<(), String> {
         dry_run: req.dry_run,
     })?;
     let (boot_image, boot_sum) = pack_boot(req, &declared)?;
-    write_plan(req, &declared, &boot_image, &boot_sum)
+    let (root_image, root_sum) = pack_root(req)?;
+    let file = |p: &Path| p.to_string_lossy().into_owned();
+    let packed = Packed {
+        rootfs: (file(&req.out.join("rootfs.img")), rootfs_sum(req)?),
+        boot: (file(&boot_image), boot_sum),
+        root: (file(&root_image), root_sum),
+    };
+    write_plan(req, &declared, &packed)
 }
 
 fn read_declaration(file: &Path) -> Result<Declared, String> {
@@ -69,7 +106,7 @@ fn read_declaration(file: &Path) -> Result<Declared, String> {
         )
     })?;
     let boot = Boot::from_declaration(&text).map_err(|e| format!("{}: {e}", file.display()))?;
-    let back_wait = boot.back_wait.ok_or_else(|| {
+    boot.back_wait.ok_or_else(|| {
         format!(
             "{}: [boot] says no back_wait (seconds the way back waits)",
             file.display()
@@ -81,12 +118,13 @@ fn read_declaration(file: &Path) -> Result<Declared, String> {
             file.display()
         ));
     }
+    // the plan is made once before any build, only to refuse a declaration it cannot plan from
+    plan_text(&text, &Packed::unmeasured()).map_err(|e| format!("{}: {e}", file.display()))?;
     Ok(Declared {
         file: file.to_path_buf(),
-        device: d.device,
+        text,
         arch,
         boot,
-        back_wait,
     })
 }
 
@@ -137,13 +175,66 @@ fn pack_boot(req: &Request, d: &Declared) -> Result<(PathBuf, String), String> {
     Ok((image, sum))
 }
 
-/// install.toml: both images with the sha256 the pack measured, the boot from RAM, the boot from RAM and the fastboot reboot are the one way osfact installs so far (the wait is the declaration's).
-fn write_plan(
-    req: &Request,
-    d: &Declared,
-    boot_image: &Path,
-    boot_sum: &str,
-) -> Result<(), String> {
+/// The root image as the device receives it: the root tree's tar (the one the ext4 image was made from), gzipped
+/// without a name or a time in it, so the same tree gives the same bytes. Returns the file and its sha256.
+fn pack_root(req: &Request) -> Result<(PathBuf, String), String> {
+    let tar = rootfs::root_tar(&req.out);
+    let image = req.out.join("root.tar.gz");
+    say(&format!(
+        "root image: gzip of {} to {}",
+        tar.display(),
+        image.display()
+    ));
+    if req.dry_run {
+        return Ok((image, String::new()));
+    }
+    // gzipped twice and compared, as the ext4 image is built twice: this host's gzip must give the same bytes
+    let (first, second) = (req.out.join("root.tar.gz.1"), req.out.join("root.tar.gz.2"));
+    gzip(&tar, &first)?;
+    gzip(&tar, &second)?;
+    let (a, b) = (rootfs::sha256(&first)?, rootfs::sha256(&second)?);
+    let _ = fs::remove_file(&second);
+    if a != b {
+        let _ = fs::remove_file(&first);
+        return Err(format!(
+            "the two gzips of {} differ: {a} and {b}",
+            tar.display()
+        ));
+    }
+    fs::rename(&first, &image).map_err(|e| format!("{}: {e}", image.display()))?;
+    say(&format!("root.tar.gz sha256 {a}"));
+    Ok((image, a))
+}
+
+/// gzip without a name or a time in it, to a file that is removed if gzip fails.
+fn gzip(tar: &Path, to: &Path) -> Result<(), String> {
+    let out = fs::File::create(to).map_err(|e| format!("{}: {e}", to.display()))?;
+    let status = Command::new("gzip")
+        .args(["-n", "-9", "-c"])
+        .arg(tar)
+        .stdout(out)
+        .status()
+        .map_err(|e| format!("gzip: {e}"))?;
+    if status.success() {
+        return Ok(());
+    }
+    let _ = fs::remove_file(to);
+    Err(format!("gzip {} ended with {status}", tar.display()))
+}
+
+/// One image the plan names: its file and the sha256 the pack measured.
+pub type Measured = (String, String);
+
+/// The images the pack made, each with the sha256 install.toml carries.
+pub struct Packed {
+    pub rootfs: Measured,
+    pub boot: Measured,
+    pub root: Measured,
+}
+
+/// install.toml: the images with the sha256 the pack measured, and the steps the declaration's [install] allows -
+/// the boot from RAM alone, or with [install.connection] the push of the root image and its entry too.
+fn write_plan(req: &Request, d: &Declared, packed: &Packed) -> Result<(), String> {
     let plan_file = req.out.join("install.toml");
     let command = format!("osfact install now --plan {}", plan_file.display());
     say(&format!("install plan: {}", plan_file.display()));
@@ -151,46 +242,120 @@ fn write_plan(
         say(&format!("install: {command}"));
         return Ok(());
     }
-    let image = |name: &str, file: &Path| -> Result<Image, String> {
-        Ok(Image {
-            name: name.into(),
-            file: file.to_string_lossy().into_owned(),
-            sha256: rootfs::sha256(file)?,
-            compression: None,
-        })
+    let text = plan_text(&d.text, packed)?;
+    fs::write(&plan_file, text).map_err(|e| format!("{}: {e}", plan_file.display()))?;
+    say(&format!("install: {command}"));
+    Ok(())
+}
+
+/// The text of install.toml for one declaration and the images made: what is returned is what `install::read` accepts.
+pub fn plan_text(declaration: &str, packed: &Packed) -> Result<String, String> {
+    let decl: Declaration =
+        toml::from_str(declaration).map_err(|e| format!("the declaration: {e}"))?;
+    let boot = Boot::from_declaration(declaration)?;
+    let back_wait = boot
+        .back_wait
+        .ok_or("[boot] says no back_wait (seconds the way back waits)")?;
+    let image = |name: &str, (file, sha256): &Measured, compression| Image {
+        name: name.into(),
+        file: file.clone(),
+        sha256: sha256.clone(),
+        compression,
     };
-    let plan = Plan {
-        install: Install {
-            device: d.device.codename.clone(),
-            serial_env: d
-                .device
-                .serial_env
-                .clone()
-                .unwrap_or_else(|| serial_env(&d.device.codename)),
+    let serial_env = decl
+        .device
+        .serial_env
+        .clone()
+        .unwrap_or_else(|| serial_env(&decl.device.codename));
+    if let Some(i) = decl.install.as_ref().filter(|i| i.connection.is_none()) {
+        for (table, declared) in [
+            ("[install.root]", i.root.is_some()),
+            ("[install.way_back]", i.way_back.is_some()),
+        ] {
+            if declared {
+                return Err(format!("{table} is declared and [install.connection] is not (the push and the entry need the connection)"));
+            }
+        }
+    }
+    let install = match decl.install.as_ref().and_then(|i| i.connection.clone()) {
+        None => Install {
+            device: decl.device.codename.clone(),
+            serial_env,
             connection: None,
             image: vec![
-                image("rootfs", &req.out.join("rootfs.img"))?,
-                Image {
-                    name: "boot".into(),
-                    file: boot_image.to_string_lossy().into_owned(),
-                    sha256: boot_sum.into(),
-                    compression: None,
-                },
+                image("rootfs", &packed.rootfs, None),
+                image("boot", &packed.boot, None),
             ],
             step: vec![Step::boot_from_ram("boot")],
             way_back: WayBack {
                 via: Transport::Fastboot,
                 action: WayBackAction::Reboot,
-                wait: d.back_wait,
+                wait: back_wait,
                 command: None,
             },
         },
+        Some(connection) => {
+            let i = decl.install.as_ref().expect("a connection came from it");
+            let root = i
+                .root
+                .as_ref()
+                .ok_or("[install.connection] is declared and [install.root] is not (the push and the entry of the root image)")?;
+            let way_back = i
+                .way_back
+                .as_ref()
+                .ok_or("[install.connection] is declared and [install.way_back] is not (its command: after the boot the device is no longer in fastboot)")?;
+            Install {
+                device: decl.device.codename.clone(),
+                serial_env,
+                connection: Some(connection),
+                image: vec![
+                    image("boot", &packed.boot, None),
+                    image("root", &packed.root, Some(Compression::Gzip)),
+                ],
+                step: vec![
+                    Step::boot_from_ram("boot"),
+                    push_step(root),
+                    enter_step(root),
+                ],
+                way_back: WayBack {
+                    via: Transport::Shell,
+                    action: WayBackAction::Reboot,
+                    wait: back_wait,
+                    command: Some(way_back.command.clone()),
+                },
+            }
+        }
     };
-    let text = toml::to_string(&plan).map_err(|e| format!("install.toml: {e}"))?;
+    let text = toml::to_string(&Plan { install }).map_err(|e| format!("install.toml: {e}"))?;
     install::read(&text)?; // what is written is what install now reads
-    fs::write(&plan_file, text).map_err(|e| format!("{}: {e}", plan_file.display()))?;
-    say(&format!("install: {command}"));
-    Ok(())
+    Ok(text)
+}
+
+/// The push of the root image: the receiver on the device, where it writes, the seconds it may take.
+fn push_step(r: &RootDecl) -> Step {
+    Step {
+        action: StepAction::Push,
+        via: Transport::Network,
+        port: Some(r.port),
+        receive: Some(r.receive.clone()),
+        to: Some(r.to.clone()),
+        wait: Some(r.wait),
+        ..Step::boot_from_ram("root")
+    }
+}
+
+/// The entry of the pushed root: a chroot in a tmpfs, the command started, the check that it runs.
+fn enter_step(r: &RootDecl) -> Step {
+    Step {
+        action: StepAction::Enter,
+        via: Transport::Shell,
+        how: Some(Enter::Chroot),
+        root: Some(r.path.clone()),
+        size_mib: Some(r.size_mib),
+        command: Some(r.command.clone()),
+        check: r.check.clone(),
+        ..Step::boot_from_ram("root")
+    }
 }
 
 /// The codename's words, upper case, then SERIAL: a codename "acme-one" gives ACME_ONE_SERIAL.
@@ -210,4 +375,24 @@ fn serial_env(codename: &str) -> String {
 
 fn say(line: &str) {
     println!("{line}");
+}
+
+/// The sha256 of rootfs.img, once it is built (a dry run builds nothing).
+fn rootfs_sum(req: &Request) -> Result<String, String> {
+    if req.dry_run {
+        return Ok(String::new());
+    }
+    rootfs::sha256(&req.out.join("rootfs.img"))
+}
+
+impl Packed {
+    /// Names and no sums: enough for `plan_text` to refuse a declaration before anything is built.
+    fn unmeasured() -> Packed {
+        let named = |f: &str| (f.to_string(), "0".repeat(64));
+        Packed {
+            rootfs: named("rootfs.img"),
+            boot: named("boot.img"),
+            root: named("root.tar.gz"),
+        }
+    }
 }
