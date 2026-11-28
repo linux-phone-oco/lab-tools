@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.54.0](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.53.9...lpoco-bringup-v0.54.0) - 2026-11-28
+
+### Added
+
+- *(osfact)* the boot-format interface and its android-bootimg adapter, moved from lpoco-bringup ([#476](https://github.com/linux-phone-oco/lab-tools/pull/476))
+
 ## [0.53.9](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-bringup-v0.53.8...lpoco-bringup-v0.53.9) - 2026-11-27
 
 ### Other
