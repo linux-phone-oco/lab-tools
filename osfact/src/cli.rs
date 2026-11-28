@@ -3,6 +3,7 @@
 //!
 //!   osfact install now --plan FILE --dry-run     list the commands of an install.toml (fastboot boot, the way back); changes nothing
 //!   osfact rootfs now --distro FILE --arch ARCH --out DIR [--size-mib N] [--dry-run]   a rootless root tree and its ext4 image, built twice and compared
+//!   osfact pack now --device FILE --distro FILE --parts DIR --out DIR [--size-mib N] [--dry-run]   the root image, the boot image and install.toml of one device and one distro
 
 use argenv_resolve::*;
 
@@ -11,6 +12,7 @@ use argenv_resolve::*;
 pub enum Command {
     Install,
     Rootfs,
+    Pack,
 }
 
 impl FromRaw for Command {
@@ -18,6 +20,7 @@ impl FromRaw for Command {
         match s.trim() {
             "install" => Some(Command::Install),
             "rootfs" => Some(Command::Rootfs),
+            "pack" => Some(Command::Pack),
             _ => None,
         }
     }
@@ -42,7 +45,7 @@ contract! {
     COMMAND: Command = Input {
         key: "command",
         ty: Type::Enum,
-        allowed: &["install", "rootfs"],
+        allowed: &["install", "rootfs", "pack"],
         arg: Some(Arg::positional(0)),
         summary: "What to do (install: put an image on the device; rootfs: make the root file system image of a distro profile).",
         ..Input::EMPTY
@@ -52,7 +55,7 @@ contract! {
         key: "verb",
         ty: Type::Enum,
         allowed: &["now"],
-        subcommands: &[Command::Install, Command::Rootfs],
+        subcommands: &[Command::Install, Command::Rootfs, Command::Pack],
         arg: Some(Arg::positional(0)),
         summary: "now: say it means to act (a command that changes state needs an explicit verb).",
         ..Input::EMPTY
@@ -71,9 +74,9 @@ contract! {
         key: "distro",
         ty: Type::String,
         required: true,
-        subcommands: &[Command::Rootfs],
+        subcommands: &[Command::Rootfs, Command::Pack],
         arg: Some(Arg { value_name: "FILE", ..Arg::long("distro") }),
-        summary: "rootfs: the distro profile (its package format, repositories and packages).",
+        summary: "rootfs, pack: the distro profile (its package format, repositories and packages).",
         ..Input::EMPTY
     };
 
@@ -91,19 +94,39 @@ contract! {
         key: "out",
         ty: Type::String,
         required: true,
-        subcommands: &[Command::Rootfs],
+        subcommands: &[Command::Rootfs, Command::Pack],
         arg: Some(Arg { value_name: "DIR", ..Arg::long("out") }),
-        summary: "rootfs: the folder that gets rootfs.img (and the work of the build).",
+        summary: "rootfs, pack: the folder that gets the images (and the work of the build).",
         ..Input::EMPTY
     };
 
     SIZE_MIB: u64, Command = Input {
         key: "size_mib",
         ty: Type::Uint,
-        subcommands: &[Command::Rootfs],
+        subcommands: &[Command::Rootfs, Command::Pack],
         default: Some(512),
         arg: Some(Arg { value_name: "N", ..Arg::long("size-mib") }),
-        summary: "rootfs: the image's size in MiB (default 512, sparse).",
+        summary: "rootfs, pack: the root image's size in MiB (default 512, sparse).",
+        ..Input::EMPTY
+    };
+
+    DEVICE: String, Command = Input {
+        key: "device",
+        ty: Type::String,
+        required: true,
+        subcommands: &[Command::Pack],
+        arg: Some(Arg { value_name: "FILE", ..Arg::long("device") }),
+        summary: "pack: the device's declaration (its [device], [boot] and the way its images are installed).",
+        ..Input::EMPTY
+    };
+
+    PARTS: String, Command = Input {
+        key: "parts",
+        ty: Type::String,
+        required: true,
+        subcommands: &[Command::Pack],
+        arg: Some(Arg { value_name: "DIR", ..Arg::long("parts") }),
+        summary: "pack: the folder of the proven parts (kernel, ramdisk and the declaration's dtb path).",
         ..Input::EMPTY
     };
 
@@ -128,9 +151,9 @@ contract! {
     DRY_RUN: bool, Command = Input {
         key: "dry_run",
         ty: Type::Bool,
-        subcommands: &[Command::Install, Command::Rootfs],
+        subcommands: &[Command::Install, Command::Rootfs, Command::Pack],
         arg: Some(Arg::long("dry-run")),
-        summary: "install, rootfs: only list the commands; nothing is run or written.",
+        summary: "install, rootfs, pack: only list the commands; nothing is run or written.",
         ..Input::EMPTY
     };
 }

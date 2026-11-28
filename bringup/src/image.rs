@@ -23,6 +23,10 @@ fn facts(boot: &Boot) -> osfact::boot::Boot {
         cmdline: boot.cmdline.clone(),
         partition_size: boot.partition_size,
         msm_id: boot.msm_id.clone(),
+        // bringup adds the footer itself, and reads the dtb and the waits from the manifest
+        dtb: None,
+        avb_footer: false,
+        back_wait: None,
     }
 }
 

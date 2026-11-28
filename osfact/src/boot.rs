@@ -34,6 +34,13 @@ pub struct Boot {
     pub partition_size: Option<u64>,
     /// the qcom,msm-id words the appended device tree must carry
     pub msm_id: Option<Vec<u32>>,
+    /// the device tree appended to the kernel, a path under the parts folder
+    pub dtb: Option<String>,
+    /// the image carries an AVB hash footer (algorithm NONE) filling the boot partition
+    #[serde(default)]
+    pub avb_footer: bool,
+    /// seconds to wait for the device to be back after a try
+    pub back_wait: Option<u32>,
 }
 
 fn default_format() -> String {
