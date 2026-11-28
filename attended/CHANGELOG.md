@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.46.7](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-attended-v0.46.6...lpoco-attended-v0.46.7) - 2026-11-28
+
+### Other
+
+- *(deps)* lpoco-manifest 0.52.0 -> 0.54.0 ([#479](https://github.com/linux-phone-oco/lab-tools/pull/479))
+
 ## [0.46.6](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-attended-v0.46.5...lpoco-attended-v0.46.6) - 2026-11-27
 
 ### Other
