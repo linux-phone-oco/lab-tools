@@ -424,3 +424,30 @@ fn a_root_declared_without_a_connection_is_refused_naming_both_tables() {
         "{said}"
     );
 }
+
+#[test]
+fn the_binds_a_declaration_makes_reach_the_enter_step_in_order() {
+    let declaration = fs::read_to_string(device()).expect("fixture");
+    let check = "check = \"test -e /mm/sbin/init\"";
+    assert!(
+        declaration.contains(check),
+        "the fixture's [install.root] moved"
+    );
+    let declaration = declaration.replace(
+        check,
+        &format!("{check}\nbinds = [\"proc\", \"sys\", \"dev\"]"),
+    );
+    let made =
+        osfact::pack::plan_text(&declaration, &files_named(&"0".repeat(64), &"1".repeat(64)))
+            .expect("the plan");
+    let plan = osfact::install::read(&made).expect("read");
+    let enter = plan.install.step.last().expect("a step");
+    assert_eq!(
+        enter.binds,
+        [
+            osfact::install::Bind::Proc,
+            osfact::install::Bind::Sys,
+            osfact::install::Bind::Dev
+        ]
+    );
+}

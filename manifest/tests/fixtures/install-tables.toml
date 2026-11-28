@@ -24,6 +24,8 @@ size_mib = 400
 command = "/sbin/init"
 check = "test -e /mm/sbin/init"
 check_wait = 120
+# binds: item osfact-enter-binds (mount(8) types proc and sysfs, a bind of /dev)
+binds = ["proc", "sys", "dev"]
 
 [install.way_back]
 command = "sync; echo b > /proc/sysrq-trigger"

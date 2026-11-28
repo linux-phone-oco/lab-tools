@@ -110,6 +110,60 @@ pub struct Step {
     /// enter: seconds the check may take to hold, tried every second ([`DEFAULT_CHECK_WAIT`] when not declared).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub check_wait: Option<u32>,
+    /// enter: the kernel's filesystems mounted into the root after it is unpacked and before the chroot, in this order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub binds: Vec<Bind>,
+}
+
+/// A kernel filesystem a root needs inside it (services such as a device manager, a bus or udev read them), named
+/// by the place it takes in the root. The device's data declares which; osfact knows how each is mounted.
+#[derive(Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Debug, schemars::JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum Bind {
+    /// /proc, a `proc` filesystem.
+    Proc,
+    /// /sys, a `sysfs` filesystem.
+    Sys,
+    /// /dev, a bind of the host's /dev.
+    Dev,
+    /// /dev/pts, a `devpts` filesystem (after `dev`: a bind does not carry it).
+    DevPts,
+    /// /run, a tmpfs.
+    Run,
+}
+
+impl Bind {
+    /// The folder in the root it is mounted on.
+    fn target(self) -> &'static str {
+        match self {
+            Bind::Proc => "proc",
+            Bind::Sys => "sys",
+            Bind::Dev => "dev",
+            Bind::DevPts => "dev/pts",
+            Bind::Run => "run",
+        }
+    }
+
+    /// The mount's arguments before the target folder.
+    fn mount_args(self) -> &'static str {
+        match self {
+            Bind::Proc => "-t proc proc",
+            Bind::Sys => "-t sysfs sysfs",
+            Bind::Dev => "--bind /dev",
+            Bind::DevPts => "-t devpts devpts",
+            Bind::Run => "-t tmpfs tmpfs",
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Bind::Proc => "proc",
+            Bind::Sys => "sys",
+            Bind::Dev => "dev",
+            Bind::DevPts => "dev-pts",
+            Bind::Run => "run",
+        }
+    }
 }
 
 impl Step {
@@ -128,6 +182,7 @@ impl Step {
             command: None,
             check: None,
             check_wait: None,
+            binds: Vec::new(),
         }
     }
 }
@@ -208,6 +263,9 @@ pub fn read(text: &str) -> Result<Plan, String> {
                 ))
             }
         };
+        if s.action != StepAction::Enter && !s.binds.is_empty() {
+            return refuse(format!("{at}: binds belong to an enter step"));
+        }
         match s.action {
             StepAction::BootFromRam => need(s.via == Transport::Fastboot, "via = \"fastboot\"")?,
             StepAction::Push => {
@@ -233,6 +291,14 @@ pub fn read(text: &str) -> Result<Plan, String> {
                         ))
                     }
                     None => need(false, "how")?,
+                }
+                for (k, b) in s.binds.iter().enumerate() {
+                    if s.binds[..k].contains(b) {
+                        return refuse(format!("{at}: binds lists \"{}\" twice", b.name()));
+                    }
+                    if *b == Bind::Dev && s.binds[..k].contains(&Bind::DevPts) {
+                        return refuse(format!("{at}: binds lists \"dev-pts\" before \"dev\" (the bind of dev would cover it)"));
+                    }
                 }
                 if s.check_wait.is_some() {
                     need(s.check.is_some(), "a check (check_wait needs a check)")?;
@@ -578,6 +644,8 @@ struct EnterLines {
     mount: String,
     unpack: String,
     remove: String,
+    /// Per declared bind: its name, the mkdir of its folder in the root and its mount.
+    binds: Vec<(&'static str, String, String)>,
     start: String,
     check: Option<String>,
     check_wait: u32,
@@ -586,16 +654,16 @@ struct EnterLines {
 impl EnterLines {
     /// The lines as the dry run says them: the check last, with how long it is tried.
     fn said(&self) -> Vec<String> {
-        let mut v: Vec<String> = [
-            &self.mkdir,
-            &self.mount,
-            &self.unpack,
-            &self.remove,
-            &self.start,
-        ]
-        .iter()
-        .map(|l| format!("on the device: {l}"))
-        .collect();
+        let binds = self
+            .binds
+            .iter()
+            .flat_map(|(_, mkdir, mount)| [mkdir, mount]);
+        let mut v: Vec<String> = [&self.mkdir, &self.mount, &self.unpack, &self.remove]
+            .into_iter()
+            .chain(binds)
+            .chain([&self.start])
+            .map(|l| format!("on the device: {l}"))
+            .collect();
         if let Some(c) = &self.check {
             v.push(format!(
                 "on the device: {c} (tried every second for {} s)",
@@ -623,6 +691,21 @@ fn enter_lines(i: &Install, s: &Step) -> Result<EnterLines, String> {
         "command",
         command_line(s.command.as_deref().expect("read checked")),
     )?;
+    let binds = s
+        .binds
+        .iter()
+        .map(|b| {
+            let target = say(
+                &format!("binds {}", b.name()),
+                path(&format!("{root}/{}", b.target())),
+            )?;
+            Ok((
+                b.name(),
+                format!("mkdir -p {target}"),
+                format!("mount {} {target}", b.mount_args()),
+            ))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
     let unpack = match m.compression {
         Some(c) => c.unpack(from)?,
         None => format!("cat {from_q}"),
@@ -636,6 +719,7 @@ fn enter_lines(i: &Install, s: &Step) -> Result<EnterLines, String> {
         ),
         unpack: format!("{unpack} | tar -x -C {root_q}"),
         remove: format!("rm -f {from_q}"),
+        binds,
         start: format!("setsid chroot {root_q} {command} > /dev/null 2>&1 &"),
         check: s
             .check
@@ -670,6 +754,11 @@ fn enter(i: &Install, s: &Step, d: &mut dyn Device) -> Result<(), String> {
     ok(d, &lines.mount)?;
     ok(d, &lines.unpack)?;
     ok(d, &lines.remove)?;
+    for (name, mkdir, mount) in &lines.binds {
+        ok(d, mkdir)
+            .and_then(|()| ok(d, mount))
+            .map_err(|e| format!("bind {name}: {e}"))?;
+    }
     ok(d, &lines.start)?;
     if let Some(check) = &lines.check {
         let until = Instant::now() + Duration::from_secs(lines.check_wait.into());
