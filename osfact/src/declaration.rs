@@ -75,6 +75,8 @@ pub struct Root {
     pub command: String,
     /// Must succeed once the command is started.
     pub check: Option<String>,
+    /// Seconds the check may take to hold, tried every second (10 when not declared).
+    pub check_wait: Option<u32>,
 }
 
 /// How the booted image restarts the device when a step fails or the run ends.

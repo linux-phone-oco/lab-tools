@@ -23,6 +23,7 @@ path = "/mm"
 size_mib = 400
 command = "/sbin/init"
 check = "test -e /mm/sbin/init"
+check_wait = 120
 
 [install.way_back]
 command = "sync; echo b > /proc/sysrq-trigger"

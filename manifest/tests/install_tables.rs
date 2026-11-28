@@ -12,7 +12,9 @@ fn the_arch_and_the_install_tables_osfact_reads_are_read() {
     assert_eq!(m.device.unwrap().arch.unwrap().as_str(), "aarch64");
     let i = m.install.unwrap();
     assert_eq!(i.connection.unwrap().shell_port, 23);
-    assert_eq!(i.root.unwrap().path, "/mm");
+    let root = i.root.unwrap();
+    assert_eq!(root.path, "/mm");
+    assert_eq!(root.check_wait, Some(120));
     assert!(i.way_back.unwrap().command.starts_with("sync;"));
 }
 
@@ -43,6 +45,7 @@ fn the_generated_schema_names_them() {
         "\"way_back\"",
         "\"shell_port\"",
         "\"size_mib\"",
+        "\"check_wait\"",
     ] {
         assert!(s.contains(word), "the schema lacks {word}");
     }

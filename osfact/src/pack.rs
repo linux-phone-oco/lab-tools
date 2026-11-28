@@ -322,6 +322,7 @@ fn enter_step(r: &Root) -> Step {
         size_mib: Some(r.size_mib),
         command: Some(r.command.clone()),
         check: r.check.clone(),
+        check_wait: r.check_wait,
         ..Step::boot_from_ram("root")
     }
 }

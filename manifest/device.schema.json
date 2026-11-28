@@ -343,6 +343,15 @@
             "string",
             "null"
           ]
+        },
+        "check_wait": {
+          "description": "Seconds the check may take to hold, tried every second (10 when not declared).",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
         }
       },
       "additionalProperties": false,
