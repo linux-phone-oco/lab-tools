@@ -6,6 +6,7 @@
 [device]
 codename = "google-walleye"        # the Pixel 2; fastboot serial FA81N1A00790; until Linux runs it speaks only fastboot
 arch = "aarch64"                    # the machine kind of the device's packages (proposed by item osfact-device-declaration)
+serial_env = "WALLEYE_SERIAL"       # the environment variable of the phone's fastboot serial (plans/walleye-ram.toml names it so)
 
 [layer]
 name = "google-walleye"            # the packages' stem: google-walleye-config, google-walleye-boot, linux-google-walleye
@@ -66,3 +67,26 @@ via = "fastboot"
 [[install.step]]
 activate = "{other}"
 via = "fastboot"
+
+# Proposed (item osfact-pack-writes-the-ram-root-plan): how the packed root image is put in the booted image's RAM
+# and entered, nothing written to the phone. Every value is the one of walleye's modem boot today (sources: the header
+# of tests/fixtures/plans/walleye-root-in-ram.toml - google-walleye-lab's build/initramfs-modem and
+# procedures/steps/src/modem_boot.rs; decisions 2026-11-27-walleye-mm-runs-in-a-pushed-alpine-rootfs and
+# 2026-11-28-walleye-modem-push-the-rootfs-compressed).
+[install.connection]
+address = "172.16.43.1"            # the USB gadget's address of the booted image
+shell_port = 23                    # telnetd, no login
+wait = 60                          # seconds the shell may take to answer after the boot
+
+[install.root]
+port = 9001                        # the device's port the receiver listens on
+receive = "nc -l -p 9001"          # the receiver, on the device
+to = "/tmp/root.tar.gz"            # where it writes the compressed root image
+wait = 60                          # seconds the whole push may take
+path = "/mm"                       # the folder the root is unpacked into (a tmpfs)
+size_mib = 400
+command = "/sbin/init"             # started in the chroot
+check = "test -e /mm/sbin/init"    # must succeed once it is started
+
+[install.way_back]
+command = "sync; echo b > /proc/sysrq-trigger"   # the booted image restarts the phone (its init ends its window with sync and sysrq b)
