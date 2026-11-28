@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.54.4](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-layer-v0.54.3...lpoco-layer-v0.54.4) - 2026-11-28
+
+### Added
+
+- *(osfact)* confirm the install way back by back_on and quote every plan value ([#492](https://github.com/linux-phone-oco/lab-tools/pull/492))
+
 ## [0.54.3](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-layer-v0.54.2...lpoco-layer-v0.54.3) - 2026-11-28
 
 ### Added
