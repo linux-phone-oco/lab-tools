@@ -33,8 +33,9 @@ pub struct Install {
     pub way_back: WayBack,
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "InstallConnection")]
 pub struct Connection {
     pub address: String,
     /// The port of a root shell with no login (telnetd); one command at a time, its end marked.

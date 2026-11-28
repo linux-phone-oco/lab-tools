@@ -27,6 +27,8 @@ pub use part_build::{PartBuild, PartSource};
 #[serde(deny_unknown_fields)]
 pub struct Manifest {
     pub device: Option<Identity>,
+    /// How osfact's packed root image reaches the booted image's RAM: osfact's own types, one definition
+    pub install: Option<osfact::declaration::InstallTables>,
     pub connection: Option<Connection>,
     /// The other ways in, by name, for a phone that boots more than one system ([connection] stays the default)
     #[serde(default)]
@@ -636,6 +638,8 @@ impl Default for Tests {
 pub struct Identity {
     /// The postmarketOS-style codename, e.g. "xiaomi-surya"
     pub codename: String,
+    /// The machine kind of the device's packages (osfact reads it): aarch64, armv7, armhf, x86_64, x86 or riscv64
+    pub arch: Option<osfact::declaration::Arch>,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq, JsonSchema)]

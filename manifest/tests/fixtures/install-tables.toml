@@ -1,0 +1,28 @@
+# [device] arch and the [install] tables as osfact reads them: copied from osfact/tests/fixtures/google-walleye/device.toml
+# (its [device], [install.connection], [install.root], [install.way_back]; its [[install.step]] is not read by osfact and
+# not declared yet). The lab's own tables are the other fixtures'.
+[device]
+codename = "google-walleye"
+arch = "aarch64"
+
+[connection]
+user = "u"
+addresses = ["a"]
+
+[install.connection]
+address = "172.16.43.1"
+shell_port = 23
+wait = 60
+
+[install.root]
+port = 9001
+receive = "nc -l -p 9001"
+to = "/tmp/root.tar.gz"
+wait = 60
+path = "/mm"
+size_mib = 400
+command = "/sbin/init"
+check = "test -e /mm/sbin/init"
+
+[install.way_back]
+command = "sync; echo b > /proc/sysrq-trigger"

@@ -761,6 +761,7 @@ version = "0.0.0"
 dependencies = [
  "abootimg-oxide",
  "argenv-resolve",
+ "schemars",
  "serde",
  "sha1",
  "sha2",
