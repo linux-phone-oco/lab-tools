@@ -1,0 +1,21 @@
+# An install.toml as osfact writes it for walleye's skeleton: the image boots from RAM, nothing is written to
+# the phone. Source of the way back: google-walleye-lab device.toml [fastboot] and [boot] (walleye boots only by
+# `fastboot boot`; both A/B slots stay as they are, so a reboot returns to Android; back_wait = 240).
+[install]
+device = "google-walleye"
+serial_env = "WALLEYE_SERIAL"
+
+[[install.image]]
+name = "boot"
+file = "boot.img"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[[install.step]]
+do = "boot-from-ram"
+write = "boot"
+via = "fastboot"
+
+[install.way_back]
+via = "fastboot"
+do = "reboot"
+wait = 240
