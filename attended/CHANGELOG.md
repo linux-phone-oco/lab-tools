@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.46.15](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-attended-v0.46.14...lpoco-attended-v0.46.15) - 2026-11-28
+
+### Added
+
+- *(attended)* ask_author also reaches the author through ntfy, his reply is the answer ([#523](https://github.com/linux-phone-oco/lab-tools/pull/523))
+
 ## [0.46.14](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-attended-v0.46.13...lpoco-attended-v0.46.14) - 2026-11-28
 
 ### Other
