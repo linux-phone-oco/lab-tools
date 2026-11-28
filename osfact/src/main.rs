@@ -69,7 +69,7 @@ fn pack(r: &Resolution) -> Result<(), String> {
         device_file: need(Contract::DEVICE.get_from(r), "--device FILE")?.into(),
         distro_file: need(Contract::DISTRO.get_from(r), "--distro FILE")?.into(),
         parts: need(Contract::PARTS.get_from(r), "--parts DIR")?.into(),
-        out: need(Contract::OUT.get_from(r), "--out DIR")?.into(),
+        out: out_dir(need(Contract::OUT.get_from(r), "--out DIR")?)?,
         size_mib: Contract::SIZE_MIB
             .get_from(r)
             .ok_or("pack needs --size-mib (declared with a default)")?,
@@ -82,10 +82,16 @@ fn rootfs(r: &Resolution) -> Result<(), String> {
     osfact::rootfs::make(&osfact::rootfs::Request {
         distro_file: need(Contract::DISTRO.get_from(r), "--distro FILE")?.into(),
         arch: need(Contract::ARCH.get_from(r), "--arch ARCH")?,
-        out: need(Contract::OUT.get_from(r), "--out DIR")?.into(),
+        out: out_dir(need(Contract::OUT.get_from(r), "--out DIR")?)?,
         size_mib: Contract::SIZE_MIB
             .get_from(r)
             .ok_or("rootfs needs --size-mib (declared with a default)")?,
         dry_run: Contract::DRY_RUN.get_from(r).unwrap_or(false),
     })
+}
+
+/// The out directory as an absolute path: apk reads its keys directory after it enters the root tree, so a
+/// relative path to it finds no key (every index "UNTRUSTED signature").
+fn out_dir(given: String) -> Result<std::path::PathBuf, String> {
+    std::path::absolute(&given).map_err(|e| format!("--out {given}: {e}"))
 }
