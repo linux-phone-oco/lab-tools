@@ -198,12 +198,15 @@ impl Device {
     pub fn check(path: &Path, version: &str) -> Result<String> {
         let text =
             std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-        Device::parse(&text).map_err(|e| {
+        let refused = |reason: String| {
             anyhow::anyhow!(
-                "{} is not read by lpoco-lab {version}: {e:#}",
+                "{} is not read by lpoco-lab {version}: {reason}",
                 path.display()
             )
-        })?;
+        };
+        Device::parse(&text).map_err(|e| refused(format!("{e:#}")))?;
+        // the tables osfact owns are unread above: osfact alone reads and refuses them
+        osfact::declaration::check(&text).map_err(refused)?;
         Ok(format!("{}: read by lpoco-lab {version}", path.display()))
     }
 

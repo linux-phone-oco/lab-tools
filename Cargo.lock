@@ -649,6 +649,7 @@ dependencies = [
  "lpoco-host",
  "lpoco-manifest 0.56.7",
  "lpoco-tone",
+ "osfact 0.4.0",
  "rmcp",
  "serde",
  "serde_json",

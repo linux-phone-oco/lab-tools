@@ -2,8 +2,9 @@
 //! What osfact reads from a device's declaration (device.toml) beyond [boot]: the machine kind of the device's
 //! packages (`[device] arch`) and the tables that say how the root image reaches the booted image's RAM
 //! (`[install.connection]`, `[install.root]`, `[install.way_back]`). These types are the one definition: `pack` reads
-//! them, and a program that validates the whole device.toml (lpoco-manifest) takes them from here, so a key is
-//! spelled once. They carry a JSON Schema for that program's schema.
+//! them, and a program that validates the rest of the device.toml (lpoco-manifest) keeps them unread and calls
+//! `check`; only its JSON Schema takes these types, so editors still complete a key. The schema of `[device]` no
+//! longer refuses an unknown key (a later key of osfact's is `check`'s to refuse).
 
 use crate::install::Connection;
 use schemars::JsonSchema;
@@ -104,4 +105,18 @@ pub struct Identity {
     /// The environment variable that holds the device's fastboot serial; by default the codename's words and SERIAL
     /// (the codename vendor-model gives VENDOR_MODEL_SERIAL)
     pub serial_env: Option<String>,
+}
+
+/// The tables of a declaration that are the device's: the lab's own tables are not osfact's and are not read.
+#[derive(Debug, Deserialize)]
+pub struct Declaration {
+    pub device: Identity,
+    pub install: Option<InstallTables>,
+}
+
+/// Whether the tables osfact owns in a declaration (device.toml) are ones it reads: every key spelled as osfact
+/// spells it, every value of its kind. The one reader of these tables - a program that reads the rest of the file
+/// keeps them unread and calls this (decision 2026-11-28-osfact-s-tables-in-device-toml-are-read-and).
+pub fn check(text: &str) -> Result<Declaration, String> {
+    toml::from_str(text).map_err(|e| format!("the declaration: {e}"))
 }

@@ -15,7 +15,7 @@
       ]
     },
     "install": {
-      "description": "How osfact's packed root image reaches the booted image's RAM: osfact's own types, one definition",
+      "description": "How osfact's packed root image reaches the booted image's RAM. osfact alone reads and checks it\n(`osfact::declaration::check`): kept here unread, its schema from osfact's own types",
       "anyOf": [
         {
           "$ref": "#/definitions/InstallTables"
@@ -180,7 +180,7 @@
   "additionalProperties": false,
   "definitions": {
     "Identity": {
-      "description": "The device's own keys of `[device]`: its name, the machine kind of its packages and the variable that holds its\nserial. A key osfact does not know is refused, naming it.",
+      "description": "`[device]`: the codename is the lab's; the keys osfact reads (`arch`, `serial_env`) are kept unread, their schema\nfrom osfact's own type (`osfact::declaration::Identity`), so a new key of osfact's needs no release here.",
       "type": "object",
       "properties": {
         "codename": {
@@ -199,14 +199,13 @@
           ]
         },
         "serial_env": {
-          "description": "The environment variable that holds the device's fastboot serial; by default the codename's words and SERIAL\n(the codename vendor-model gives VENDOR_MODEL_SERIAL)",
+          "description": "The environment variable that holds the device's fastboot serial; by default the codename's words and SERIAL",
           "type": [
             "string",
             "null"
           ]
         }
       },
-      "additionalProperties": false,
       "required": [
         "codename"
       ]

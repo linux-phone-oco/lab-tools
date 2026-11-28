@@ -27,8 +27,10 @@ pub use part_build::{PartBuild, PartSource};
 #[serde(deny_unknown_fields)]
 pub struct Manifest {
     pub device: Option<Identity>,
-    /// How osfact's packed root image reaches the booted image's RAM: osfact's own types, one definition
-    pub install: Option<osfact::declaration::InstallTables>,
+    /// How osfact's packed root image reaches the booted image's RAM. osfact alone reads and checks it
+    /// (`osfact::declaration::check`): kept here unread, its schema from osfact's own types
+    #[schemars(with = "Option<osfact::declaration::InstallTables>")]
+    pub install: Option<toml::Value>,
     pub connection: Option<Connection>,
     /// The other ways in, by name, for a phone that boots more than one system ([connection] stays the default)
     #[serde(default)]
@@ -633,8 +635,23 @@ impl Default for Tests {
     }
 }
 
-/// `[device]`: osfact's own type, so a key osfact reads is spelled once.
-pub use osfact::declaration::Identity;
+/// `[device]`: the codename is the lab's; the keys osfact reads (`arch`, `serial_env`) are kept unread, their schema
+/// from osfact's own type (`osfact::declaration::Identity`), so a new key of osfact's needs no release here.
+#[derive(Debug, Clone, Deserialize, PartialEq, JsonSchema)]
+pub struct Identity {
+    /// The device's codename, as its package manager names it (vendor-model)
+    pub codename: String,
+    /// The machine kind of the device's packages (osfact reads it): aarch64, armv7, armhf, x86_64, x86 or riscv64
+    #[schemars(with = "Option<osfact::declaration::Arch>")]
+    pub arch: Option<toml::Value>,
+    /// The environment variable that holds the device's fastboot serial; by default the codename's words and SERIAL
+    #[schemars(with = "Option<String>")]
+    pub serial_env: Option<toml::Value>,
+    /// The keys osfact adds to [device] after this release: osfact's to read and refuse (`osfact::declaration::check`)
+    #[serde(flatten)]
+    #[schemars(skip)]
+    pub osfact_later: std::collections::BTreeMap<String, toml::Value>,
+}
 
 #[derive(Debug, Clone, Deserialize, PartialEq, JsonSchema)]
 #[serde(deny_unknown_fields)]
