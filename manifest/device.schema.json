@@ -267,6 +267,14 @@
             }
           },
           "default": []
+        },
+        "cmdline_piece": {
+          "description": "The pieces of the kernel command line the parts declare, added to [boot] cmdline in this order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Piece"
+          },
+          "default": []
         }
       },
       "additionalProperties": false
@@ -423,6 +431,25 @@
       "additionalProperties": false,
       "required": [
         "command"
+      ]
+    },
+    "Piece": {
+      "description": "One piece of the command line, and the part that declares it.",
+      "type": "object",
+      "properties": {
+        "owner": {
+          "description": "The part that needs the piece (a name the lab gives its part, e.g. display)",
+          "type": "string"
+        },
+        "piece": {
+          "description": "The settings, as the kernel takes them: words separated by spaces (iommu.passthrough=1)",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "owner",
+        "piece"
       ]
     },
     "Connection": {
