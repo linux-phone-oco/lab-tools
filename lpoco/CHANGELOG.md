@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.54.11](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-v0.54.10...lpoco-v0.54.11) - 2026-11-28
+
+### Added
+
+- *(osfact)* enter mounts the declared kernel filesystems (binds) into the root before the chroot ([#515](https://github.com/linux-phone-oco/lab-tools/pull/515))
+
 ## [0.54.10](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-v0.54.9...lpoco-v0.54.10) - 2026-11-28
 
 ### Added
