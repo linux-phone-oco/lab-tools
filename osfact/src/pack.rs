@@ -6,9 +6,7 @@
 //! `--dry-run` says each step and writes nothing.
 
 use crate::boot::{self, Boot};
-use crate::install::{
-    self, Image, Install, Plan, Step, StepAction, Transport, WayBack, WayBackAction,
-};
+use crate::install::{self, Image, Install, Plan, Step, Transport, WayBack, WayBackAction};
 use crate::rootfs;
 use serde::Deserialize;
 use std::fs;
@@ -158,6 +156,7 @@ fn write_plan(
             name: name.into(),
             file: file.to_string_lossy().into_owned(),
             sha256: rootfs::sha256(file)?,
+            compression: None,
         })
     };
     let plan = Plan {
@@ -168,23 +167,22 @@ fn write_plan(
                 .serial_env
                 .clone()
                 .unwrap_or_else(|| serial_env(&d.device.codename)),
+            connection: None,
             image: vec![
                 image("rootfs", &req.out.join("rootfs.img"))?,
                 Image {
                     name: "boot".into(),
                     file: boot_image.to_string_lossy().into_owned(),
                     sha256: boot_sum.into(),
+                    compression: None,
                 },
             ],
-            step: vec![Step {
-                action: StepAction::BootFromRam,
-                write: "boot".into(),
-                via: Transport::Fastboot,
-            }],
+            step: vec![Step::boot_from_ram("boot")],
             way_back: WayBack {
                 via: Transport::Fastboot,
                 action: WayBackAction::Reboot,
                 wait: d.back_wait,
+                command: None,
             },
         },
     };

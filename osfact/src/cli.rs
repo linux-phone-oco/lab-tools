@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! osfact's invocation surface, declared once with argenv.
 //!
-//!   osfact install now --plan FILE --dry-run     list the commands of an install.toml (fastboot boot, the way back); changes nothing
+//!   osfact install now --plan FILE [--dry-run]   run an install.toml (boot from RAM, push the root compressed, enter it, the way back on a failure); --dry-run lists its commands and changes nothing
 //!   osfact rootfs now --distro FILE --arch ARCH --out DIR [--size-mib N] [--dry-run]   a rootless root tree and its ext4 image, built twice and compared
 //!   osfact pack now --device FILE --distro FILE --parts DIR --out DIR [--size-mib N] [--dry-run]   the root image, the boot image and install.toml of one device and one distro
 
