@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.54.10](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-ffs-acm-v0.54.9...lpoco-ffs-acm-v0.54.10) - 2026-11-28
+
+### Added
+
+- *(osfact)* the root gets the links the packages' install scripts would make ([#511](https://github.com/linux-phone-oco/lab-tools/pull/511))
+
 ## [0.54.9](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-ffs-acm-v0.54.8...lpoco-ffs-acm-v0.54.9) - 2026-11-28
 
 ### Added
