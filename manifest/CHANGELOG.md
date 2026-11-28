@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.56.5](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-manifest-v0.56.4...lpoco-manifest-v0.56.5) - 2026-11-28
+
+### Added
+
+- *(osfact)* enter logs the device's text, the dry run lists its lines, check_wait is declared ([#506](https://github.com/linux-phone-oco/lab-tools/pull/506))
+
 ## [0.56.4](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-manifest-v0.56.3...lpoco-manifest-v0.56.4) - 2026-11-28
 
 ### Other
