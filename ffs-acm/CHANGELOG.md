@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.54.6](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-ffs-acm-v0.54.5...lpoco-ffs-acm-v0.54.6) - 2026-11-28
+
+### Other
+
+- the family's one version: release #499 moved the members that depend on lpoco-manifest and left this one at 0.54.5 (release-plz.toml: every member includes osfact)
+
 ## [0.54.5](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-ffs-acm-v0.54.4...lpoco-ffs-acm-v0.54.5) - 2026-11-28
 
 ### Added
