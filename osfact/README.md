@@ -6,7 +6,7 @@ and its own docs folder (`docs/`). Why it is so, and when it leaves for its own 
 
 | folder | what it is |
 |---|---|
-| `src/` | the crate (no code yet) |
+| `src/` | the crate: `install` (install.toml read, its commands listed; a plan that flashes is refused), the `osfact` command (`cli.rs`, argenv) |
 | `tests/` | the boundary, and the failing walleye test the first build makes pass |
-| `tests/fixtures/` | google-walleye's declaration and two distro profiles, the test's inputs |
+| `tests/fixtures/` | google-walleye's declaration, two distro profiles, and `plans/` (install.toml cases, each refused one named so), the tests' inputs |
 | `docs/` | osfact's own docs: its shape, its boundary, its way out |

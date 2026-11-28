@@ -12,3 +12,11 @@ name = "osfact"
 # The boundary (decision 2026-11-27-osfact-own-rust-in-lab-tools): no lpoco crate here, in any section, ever.
 # lab-tools depends on osfact, never the reverse; tests/boundary.rs refuses one.
 [dependencies]
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+# the command line is declared once (argenv), not parsed by hand
+argenv-resolve = "0.4"
+
+[[bin]]
+name = "osfact"
+path = "src/main.rs"

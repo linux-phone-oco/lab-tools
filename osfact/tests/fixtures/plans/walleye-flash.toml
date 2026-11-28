@@ -1,0 +1,19 @@
+# The refused case: an install.toml whose step flashes the image (do = "flash"); osfact reads no such step.
+[install]
+device = "google-walleye"
+serial_env = "WALLEYE_SERIAL"
+
+[[install.image]]
+name = "boot"
+file = "boot.img"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[[install.step]]
+do = "flash"
+write = "boot"
+via = "fastboot"
+
+[install.way_back]
+via = "fastboot"
+do = "reboot"
+wait = 240

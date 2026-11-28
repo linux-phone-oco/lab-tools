@@ -1,0 +1,15 @@
+# The refused case: an install.toml with no boot step, only a way back (same values as walleye-ram.toml).
+[install]
+device = "google-walleye"
+serial_env = "WALLEYE_SERIAL"
+step = []
+
+[[install.image]]
+name = "boot"
+file = "boot.img"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[install.way_back]
+via = "fastboot"
+do = "reboot"
+wait = 240
