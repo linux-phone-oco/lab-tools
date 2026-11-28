@@ -18,4 +18,5 @@ pub mod install;
 pub mod log;
 pub mod pack;
 pub mod pkgformat;
+pub mod root_links;
 pub mod rootfs;
