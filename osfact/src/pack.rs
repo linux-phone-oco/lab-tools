@@ -6,9 +6,10 @@
 //! `--dry-run` says each step and writes nothing.
 
 use crate::boot::{self, Boot};
+use crate::declaration::{Arch, InstallTables, Root};
 use crate::install::{
-    self, Compression, Connection, Enter, Image, Install, Plan, Step, StepAction, Transport,
-    WayBack, WayBackAction,
+    self, Compression, Enter, Image, Install, Plan, Step, StepAction, Transport, WayBack,
+    WayBackAction,
 };
 use crate::rootfs;
 use serde::Deserialize;
@@ -29,40 +30,14 @@ pub struct Request {
 #[derive(Deserialize)]
 struct Declaration {
     device: Device,
-    install: Option<InstallDecl>,
-}
-
-/// How the packed root image reaches the booted image's RAM and is entered (nothing is written to the device):
-/// [install.connection], [install.root] and [install.way_back]; the declaration's other [install] keys are not read here.
-#[derive(Deserialize)]
-struct InstallDecl {
-    connection: Option<Connection>,
-    root: Option<RootDecl>,
-    way_back: Option<WayBackDecl>,
-}
-
-#[derive(Deserialize)]
-struct RootDecl {
-    port: u16,
-    receive: String,
-    to: String,
-    wait: u32,
-    path: String,
-    size_mib: u64,
-    command: String,
-    check: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct WayBackDecl {
-    command: String,
+    install: Option<InstallTables>,
 }
 
 #[derive(Deserialize)]
 struct Device {
     codename: String,
     /// The machine kind of the device's packages (aarch64): never the host's.
-    arch: Option<String>,
+    arch: Option<Arch>,
     /// The environment variable that holds the device's serial; by default the codename's words and SERIAL.
     serial_env: Option<String>,
 }
@@ -70,7 +45,7 @@ struct Device {
 struct Declared {
     file: PathBuf,
     text: String,
-    arch: String,
+    arch: Arch,
     boot: Boot,
 }
 
@@ -79,7 +54,7 @@ pub fn make(req: &Request) -> Result<(), String> {
     let declared = read_declaration(&req.device_file)?;
     rootfs::make(&rootfs::Request {
         distro_file: req.distro_file.clone(),
-        arch: declared.arch.clone(),
+        arch: declared.arch.as_str().to_string(),
         out: req.out.clone(),
         size_mib: req.size_mib,
         dry_run: req.dry_run,
@@ -99,7 +74,7 @@ fn read_declaration(file: &Path) -> Result<Declared, String> {
     let text = fs::read_to_string(file).map_err(|e| format!("{}: {e}", file.display()))?;
     let d: Declaration =
         toml::from_str(&text).map_err(|e| format!("{}: the declaration: {e}", file.display()))?;
-    let arch = d.device.arch.clone().ok_or_else(|| {
+    let arch = d.device.arch.ok_or_else(|| {
         format!(
             "{}: the declaration's [device] says no arch (the machine kind of its packages, e.g. arch = \"aarch64\")",
             file.display()
@@ -332,7 +307,7 @@ pub fn plan_text(declaration: &str, packed: &Packed) -> Result<String, String> {
 }
 
 /// The push of the root image: the receiver on the device, where it writes, the seconds it may take.
-fn push_step(r: &RootDecl) -> Step {
+fn push_step(r: &Root) -> Step {
     Step {
         action: StepAction::Push,
         via: Transport::Network,
@@ -345,7 +320,7 @@ fn push_step(r: &RootDecl) -> Step {
 }
 
 /// The entry of the pushed root: a chroot in a tmpfs, the command started, the check that it runs.
-fn enter_step(r: &RootDecl) -> Step {
+fn enter_step(r: &Root) -> Step {
     Step {
         action: StepAction::Enter,
         via: Transport::Shell,

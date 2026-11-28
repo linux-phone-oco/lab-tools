@@ -14,6 +14,17 @@
         }
       ]
     },
+    "install": {
+      "description": "How osfact's packed root image reaches the booted image's RAM: osfact's own types, one definition",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/InstallTables"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "connection": {
       "anyOf": [
         {
@@ -174,11 +185,180 @@
         "codename": {
           "description": "The postmarketOS-style codename, e.g. \"xiaomi-surya\"",
           "type": "string"
+        },
+        "arch": {
+          "description": "The machine kind of the device's packages (osfact reads it): aarch64, armv7, armhf, x86_64, x86 or riscv64",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Arch"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false,
       "required": [
         "codename"
+      ]
+    },
+    "Arch": {
+      "description": "The machine kind of a device's packages, as the package managers name it: never the host's.",
+      "type": "string",
+      "enum": [
+        "aarch64",
+        "armv7",
+        "armhf",
+        "x86_64",
+        "x86",
+        "riscv64"
+      ]
+    },
+    "InstallTables": {
+      "description": "How the packed root image reaches the booted image's RAM and is entered (nothing is written to the device).\nA key osfact does not know is refused, naming it.",
+      "type": "object",
+      "properties": {
+        "connection": {
+          "description": "How the host reaches the booted image: a root shell with no login, its address and port.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/InstallConnection"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "root": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Root"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "way_back": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/WayBackCommand"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "step": {
+          "description": "The steps that write an image to the device: declared by item osfact-device-declaration, not read here yet.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "default": []
+        }
+      },
+      "additionalProperties": false
+    },
+    "InstallConnection": {
+      "type": "object",
+      "properties": {
+        "address": {
+          "type": "string"
+        },
+        "shell_port": {
+          "description": "The port of a root shell with no login (telnetd); one command at a time, its end marked.",
+          "type": "integer",
+          "format": "uint16",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "wait": {
+          "description": "Seconds the shell may take to answer after the boot.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "address",
+        "shell_port",
+        "wait"
+      ]
+    },
+    "Root": {
+      "description": "The push of the root image and its entry.",
+      "type": "object",
+      "properties": {
+        "port": {
+          "description": "The device's port the receiver listens on.",
+          "type": "integer",
+          "format": "uint16",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "receive": {
+          "description": "The receiver's command, on the device.",
+          "type": "string"
+        },
+        "to": {
+          "description": "Where the receiver writes the compressed root image.",
+          "type": "string"
+        },
+        "wait": {
+          "description": "Seconds the whole push may take.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "path": {
+          "description": "The folder the root is unpacked into (a tmpfs).",
+          "type": "string"
+        },
+        "size_mib": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "command": {
+          "description": "Started in the chroot.",
+          "type": "string"
+        },
+        "check": {
+          "description": "Must succeed once the command is started.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "port",
+        "receive",
+        "to",
+        "wait",
+        "path",
+        "size_mib",
+        "command"
+      ]
+    },
+    "WayBackCommand": {
+      "description": "How the booted image restarts the device when a step fails or the run ends.",
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "command"
       ]
     },
     "Connection": {

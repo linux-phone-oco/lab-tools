@@ -13,6 +13,7 @@ name = "osfact"
 # lab-tools depends on osfact, never the reverse; tests/boundary.rs refuses one.
 [dependencies]
 serde = { version = "1", features = ["derive"] }
+schemars = "1"
 toml = "0.8"
 # the command line is declared once (argenv), not parsed by hand
 argenv-resolve = "0.4"

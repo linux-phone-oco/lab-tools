@@ -330,11 +330,25 @@ fn the_declaration_makes_the_plan_that_boots_pushes_and_enters_in_order() {
     assert_eq!(root.compression, Some(osfact::install::Compression::Gzip));
 }
 
+/// The declaration without one table: its lines up to the next table header.
+fn without_table(text: &str, header: &str) -> String {
+    let mut dropping = false;
+    let kept: Vec<&str> = text
+        .lines()
+        .filter(|l| {
+            if l.starts_with('[') {
+                dropping = l.trim() == header;
+            }
+            !dropping
+        })
+        .collect();
+    kept.join("\n")
+}
+
 #[test]
 fn a_declaration_with_a_connection_and_no_root_is_refused_naming_the_table() {
-    let declaration = fs::read_to_string(device())
-        .expect("fixture")
-        .replace("[install.root]", "[install.elsewhere]");
+    let declaration = fs::read_to_string(device()).expect("fixture");
+    let declaration = without_table(&declaration, "[install.root]");
     let said =
         osfact::pack::plan_text(&declaration, &files_named(&"0".repeat(64), &"1".repeat(64)))
             .expect_err("refused");
@@ -378,9 +392,8 @@ fn a_declaration_without_the_install_tables_makes_the_boot_only_plan() {
 
 #[test]
 fn a_root_declared_without_a_connection_is_refused_naming_both_tables() {
-    let declaration = fs::read_to_string(device())
-        .expect("fixture")
-        .replace("[install.connection]", "[install.connnection]");
+    let declaration = fs::read_to_string(device()).expect("fixture");
+    let declaration = without_table(&declaration, "[install.connection]");
     let said =
         osfact::pack::plan_text(&declaration, &files_named(&"0".repeat(64), &"1".repeat(64)))
             .expect_err("refused");
