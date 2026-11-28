@@ -2,6 +2,7 @@
 //! osfact's invocation surface, declared once with argenv.
 //!
 //!   osfact install now --plan FILE --dry-run     list the commands of an install.toml (fastboot boot, the way back); changes nothing
+//!   osfact rootfs now --distro FILE --arch ARCH --out DIR [--size-mib N] [--dry-run]   a rootless root tree and its ext4 image, built twice and compared
 
 use argenv_resolve::*;
 
@@ -9,12 +10,14 @@ use argenv_resolve::*;
 #[serde(rename_all = "snake_case")]
 pub enum Command {
     Install,
+    Rootfs,
 }
 
 impl FromRaw for Command {
     fn from_raw(s: &str) -> Option<Command> {
         match s.trim() {
             "install" => Some(Command::Install),
+            "rootfs" => Some(Command::Rootfs),
             _ => None,
         }
     }
@@ -39,9 +42,9 @@ contract! {
     COMMAND: Command = Input {
         key: "command",
         ty: Type::Enum,
-        allowed: &["install"],
+        allowed: &["install", "rootfs"],
         arg: Some(Arg::positional(0)),
-        summary: "What to do (install: put an image on the device).",
+        summary: "What to do (install: put an image on the device; rootfs: make the root file system image of a distro profile).",
         ..Input::EMPTY
     };
 
@@ -49,7 +52,7 @@ contract! {
         key: "verb",
         ty: Type::Enum,
         allowed: &["now"],
-        subcommands: &[Command::Install],
+        subcommands: &[Command::Install, Command::Rootfs],
         arg: Some(Arg::positional(0)),
         summary: "now: say it means to act (a command that changes state needs an explicit verb).",
         ..Input::EMPTY
@@ -61,6 +64,46 @@ contract! {
         subcommands: &[Command::Install],
         arg: Some(Arg { value_name: "FILE", ..Arg::long("plan") }),
         summary: "install: the install.toml of the image.",
+        ..Input::EMPTY
+    };
+
+    DISTRO: String, Command = Input {
+        key: "distro",
+        ty: Type::String,
+        required: true,
+        subcommands: &[Command::Rootfs],
+        arg: Some(Arg { value_name: "FILE", ..Arg::long("distro") }),
+        summary: "rootfs: the distro profile (its package format, repositories and packages).",
+        ..Input::EMPTY
+    };
+
+    ARCH: String, Command = Input {
+        key: "arch",
+        ty: Type::String,
+        required: true,
+        subcommands: &[Command::Rootfs],
+        arg: Some(Arg { value_name: "ARCH", ..Arg::long("arch") }),
+        summary: "rootfs: the machine kind of the image's packages (the device's, e.g. aarch64).",
+        ..Input::EMPTY
+    };
+
+    OUT: String, Command = Input {
+        key: "out",
+        ty: Type::String,
+        required: true,
+        subcommands: &[Command::Rootfs],
+        arg: Some(Arg { value_name: "DIR", ..Arg::long("out") }),
+        summary: "rootfs: the folder that gets rootfs.img (and the work of the build).",
+        ..Input::EMPTY
+    };
+
+    SIZE_MIB: u64, Command = Input {
+        key: "size_mib",
+        ty: Type::Uint,
+        subcommands: &[Command::Rootfs],
+        default: Some(512),
+        arg: Some(Arg { value_name: "N", ..Arg::long("size-mib") }),
+        summary: "rootfs: the image's size in MiB (default 512, sparse).",
         ..Input::EMPTY
     };
 
@@ -85,9 +128,9 @@ contract! {
     DRY_RUN: bool, Command = Input {
         key: "dry_run",
         ty: Type::Bool,
-        subcommands: &[Command::Install],
+        subcommands: &[Command::Install, Command::Rootfs],
         arg: Some(Arg::long("dry-run")),
-        summary: "install: only list the commands; the skeleton runs nothing else yet.",
+        summary: "install, rootfs: only list the commands; nothing is run or written.",
         ..Input::EMPTY
     };
 }
