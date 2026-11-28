@@ -28,6 +28,7 @@ pub mod call;
 mod cli;
 mod device;
 pub mod install;
+mod notify;
 pub(crate) mod prompt;
 mod source;
 pub mod steps;
@@ -404,7 +405,21 @@ pub fn procedure(name: &str, device: &str) -> Run {
             std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
                 .join(".cache/lpoco-attended")
         });
-    let prompt_files = prompt::Files::new(prompt::dir_for(&prompt_base, device));
+    let notify_file = cli::Contract::NOTIFY
+        .get_from(&r)
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
+                .join(".config/lpoco-attended/notify")
+        });
+    if !dry {
+        if let Err(e) = notify::Notify::read(&notify_file) {
+            eprintln!(
+                "{name}: the author is reached by the terminal and the answer file only: {e}"
+            );
+        }
+    }
+    let prompt_files = prompt::Files::new(prompt::dir_for(&prompt_base, device), Some(notify_file));
     // a signal ends the run through its way backs (a dry run owes none and is cut as it was)
     if !dry {
         stop::catch().unwrap_or_else(|e| {

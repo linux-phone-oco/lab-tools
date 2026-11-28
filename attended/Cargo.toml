@@ -18,6 +18,7 @@ argenv-resolve = "0.4"
 lpoco-manifest = { git = "https://github.com/linux-phone-oco/lab-tools", tag = "lpoco-manifest-v0.56.8" }
 # a signal ends the run through its way backs: the handler only sets a flag the run reads between its calls
 signal-hook = "0.3"
+serde_json = "1"
 serde = { version = "1", features = ["derive"] }
 # the checksum an image is declared with is checked before it is booted
 sha2 = "0.11"
