@@ -60,7 +60,10 @@ fn install(r: &Resolution) -> Result<(), String> {
     let serial = std::env::var(&i.serial_env)
         .map_err(|_| format!("install now needs the device's serial in ${}", i.serial_env))?;
     let mut device = osfact::device::Live::new(serial, i.connection.clone());
-    osfact::install::run(&plan, &mut device, &mut |line| println!("{line}"))
+    // the run's log lies beside its plan: what the device said is read there when a step fails
+    let log = std::path::Path::new(&plan_file).with_file_name("install.log");
+    println!("the run's log: {}", log.display());
+    osfact::install::run_logged(&plan, &mut device, &log, &mut |line| println!("{line}"))
 }
 
 fn pack(r: &Resolution) -> Result<(), String> {

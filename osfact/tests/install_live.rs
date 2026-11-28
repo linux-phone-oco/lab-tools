@@ -362,3 +362,190 @@ fn the_old_receiver_line_is_stopped_on_that_shell() {
     let e = push_through(&old, "old").unwrap_err();
     assert!(e.contains("did not end"), "{e}");
 }
+
+/// The walleye fixture plan, pointed at the loopback stand-ins and a work folder with images of known bytes;
+/// `edit` changes the text first (the check, its wait).
+fn loopback_plan(
+    tag: &str,
+    push_port: u16,
+    shell_port: u16,
+    edit: impl Fn(String) -> String,
+) -> (install::Plan, std::path::PathBuf) {
+    let dir = std::env::temp_dir().join(format!("osfact-live-{tag}-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let root: Vec<u8> = (0..100_000u32).map(|i| (i % 247) as u8).collect();
+    std::fs::write(dir.join("root.tar.gz"), &root).unwrap();
+    std::fs::write(dir.join("boot.img"), b"boot").unwrap();
+    let text = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/plans/walleye-root-in-ram.toml"),
+    )
+    .unwrap()
+    .replace("172.16.43.1", "127.0.0.1")
+    // the way back is confirmed by a command that answers at once (the fixture asks adb)
+    .replace("\"adb\", \"-s\", \"{serial}\", \"get-state\"", "\"true\"")
+    .replace("shell_port = 23", &format!("shell_port = {shell_port}"))
+    .replace("port = 9001", &format!("port = {push_port}"))
+    .replace(
+        "file = \"boot.img\"",
+        &format!("file = \"{}/boot.img\"", dir.display()),
+    )
+    .replace(
+        "file = \"root.tar.gz\"",
+        &format!("file = \"{}/root.tar.gz\"", dir.display()),
+    )
+    .replace(&"0".repeat(64), &hex(b"boot"))
+    .replace(&"1".repeat(64), &hex(&root));
+    (install::read(&edit(text)).unwrap(), dir)
+}
+
+#[test]
+fn a_run_writes_every_line_it_sends_and_every_answer_to_its_log() {
+    let (push_port, held, t) = receiver();
+    let shell_port = shell_server(held);
+    let (plan, dir) = loopback_plan("log", push_port, shell_port, |t| t);
+    let log = dir.join("install.log");
+    install::run_logged(&plan, &mut NoFastboot(live(shell_port)), &log, &mut |_| {})
+        .unwrap_or_else(|e| panic!("{e}"));
+    t.join().unwrap();
+    let text = std::fs::read_to_string(&log).unwrap();
+    for line in [
+        "> mkdir -p /mm",
+        "> mount -t tmpfs -o size=400m tmpfs /mm",
+        "> gzip -dc /tmp/root.tar.gz | tar -x -C /mm",
+        "> rm -f /tmp/root.tar.gz",
+        "> setsid chroot /mm /sbin/init > /dev/null 2>&1 &",
+        "> test -e /mm/sbin/init",
+        "> sha256sum /tmp/root.tar.gz",
+    ] {
+        assert!(text.contains(line), "the log lacks `{line}`:\n{text}");
+    }
+    // the device's answer is there too: the digest the stand-in computed, and each command's status
+    let digest = hex(&(0..100_000u32)
+        .map(|i| (i % 247) as u8)
+        .collect::<Vec<u8>>());
+    assert!(
+        text.contains(&format!("< {digest}")),
+        "no answer in the log:\n{text}"
+    );
+    assert!(text.contains("status 0"), "{text}");
+}
+
+#[test]
+fn a_check_that_never_holds_fails_naming_the_step_the_wait_and_the_log() {
+    let (push_port, held, t) = receiver();
+    let shell_port = shell_server(held);
+    let (plan, dir) = loopback_plan("never", push_port, shell_port, |t| {
+        t.replace(
+            "check = \"test -e /mm/sbin/init\"",
+            "check = \"false\"\ncheck_wait = 2",
+        )
+    });
+    let log = dir.join("install.log");
+    let e = install::run_logged(&plan, &mut NoFastboot(live(shell_port)), &log, &mut |_| {})
+        .unwrap_err();
+    t.join().unwrap();
+    assert!(e.contains("step 3"), "{e}");
+    assert!(e.contains("within 2 s"), "{e}");
+    assert!(e.contains(log.to_str().unwrap()), "{e}");
+    assert!(std::fs::read_to_string(&log).unwrap().contains("> false"));
+}
+
+#[test]
+fn check_wait_reaches_the_plan_and_the_dry_run_prints_what_enter_runs() {
+    let (plan, _) = loopback_plan("wait", 1, 1, |t| {
+        t.replace(
+            "check = \"test -e /mm/sbin/init\"",
+            "check = \"test -e /mm/sbin/init\"\ncheck_wait = 120",
+        )
+    });
+    assert_eq!(plan.install.step[2].check_wait, Some(120));
+    let said = install::commands(&plan).unwrap().join("\n");
+    for line in [
+        "on the device: mkdir -p /mm",
+        "on the device: mount -t tmpfs -o size=400m tmpfs /mm",
+        "on the device: gzip -dc /tmp/root.tar.gz | tar -x -C /mm",
+        "on the device: setsid chroot /mm /sbin/init > /dev/null 2>&1 &",
+        "on the device: test -e /mm/sbin/init (tried every second for 120 s)",
+    ] {
+        assert!(said.contains(line), "the dry run lacks `{line}`:\n{said}");
+    }
+}
+
+#[test]
+fn a_check_wait_without_a_check_or_of_zero_is_refused_at_read() {
+    let plan = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/plans/walleye-root-in-ram.toml"),
+    )
+    .unwrap();
+    let check = "check = \"test -e /mm/sbin/init\"";
+    for (text, named) in [
+        (
+            plan.replace(check, "check_wait = 5"),
+            "check_wait needs a check",
+        ),
+        (
+            plan.replace(check, &format!("{check}\ncheck_wait = 0")),
+            "check_wait",
+        ),
+    ] {
+        let e = install::read(&text).err().expect("refused");
+        assert!(e.contains("refuses") && e.contains(named), "{named}: {e}");
+    }
+}
+
+/// A device whose check answers "not yet" until its Nth try: a root that is slow to unpack.
+struct SlowRoot {
+    inner: NoFastboot,
+    tries_left: u32,
+}
+impl Device for SlowRoot {
+    fn boot(&mut self, f: &str) -> Result<(), String> {
+        self.inner.boot(f)
+    }
+    fn connect(&mut self, w: u32) -> Result<(), String> {
+        self.inner.connect(w)
+    }
+    fn shell(&mut self, c: &str, w: u32) -> Result<Shell, String> {
+        if c.starts_with("test -e /mm/sbin/init") && self.tries_left > 0 {
+            self.tries_left -= 1;
+            return Ok(Shell {
+                status: 1,
+                text: String::new(),
+            });
+        }
+        self.inner.shell(c, w)
+    }
+    fn send(&mut self, p: u16, f: &str, w: u32) -> Result<u64, String> {
+        self.inner.send(p, f, w)
+    }
+    fn way_back(&mut self, b: &install::WayBack) -> Result<(), String> {
+        self.inner.way_back(b)
+    }
+    fn back_on(&mut self, a: &[String], w: u32) -> Result<(), String> {
+        self.inner.back_on(a, w)
+    }
+}
+
+#[test]
+fn a_check_that_holds_on_its_third_try_passes_within_its_wait_and_the_default_is_ten_seconds() {
+    let (push_port, held, t) = receiver();
+    let shell_port = shell_server(held);
+    let (plan, _) = loopback_plan("slow", push_port, shell_port, |t| {
+        t.replace(
+            "check = \"test -e /mm/sbin/init\"",
+            "check = \"test -e /mm/sbin/init\"\ncheck_wait = 5",
+        )
+    });
+    let mut d = SlowRoot {
+        inner: NoFastboot(live(shell_port)),
+        tries_left: 2,
+    };
+    install::run(&plan, &mut d, &mut |_| {}).unwrap_or_else(|e| panic!("{e}"));
+    t.join().unwrap();
+    assert_eq!(d.tries_left, 0, "the check was not tried until it held");
+    let (default, _) = loopback_plan("default", 1, 1, |t| t);
+    assert!(install::commands(&default)
+        .unwrap()
+        .join("\n")
+        .contains("tried every second for 10 s"));
+}

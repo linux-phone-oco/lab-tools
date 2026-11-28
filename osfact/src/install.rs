@@ -13,6 +13,9 @@ use crate::rootfs;
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 
+/// Seconds an enter's check may take to hold when the plan does not declare `check_wait`.
+pub const DEFAULT_CHECK_WAIT: u32 = 10;
+
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Plan {
@@ -104,6 +107,9 @@ pub struct Step {
     pub command: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub check: Option<String>,
+    /// enter: seconds the check may take to hold, tried every second ([`DEFAULT_CHECK_WAIT`] when not declared).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub check_wait: Option<u32>,
 }
 
 impl Step {
@@ -121,6 +127,7 @@ impl Step {
             size_mib: None,
             command: None,
             check: None,
+            check_wait: None,
         }
     }
 }
@@ -226,6 +233,10 @@ pub fn read(text: &str) -> Result<Plan, String> {
                         ))
                     }
                     None => need(false, "how")?,
+                }
+                if s.check_wait.is_some() {
+                    need(s.check.is_some(), "a check (check_wait needs a check)")?;
+                    need(s.check_wait != Some(0), "check_wait of at least 1 second")?;
                 }
                 need(
                     i.step[..n]
@@ -364,6 +375,7 @@ pub fn commands(plan: &Plan) -> Result<Vec<String>, String> {
                     s.command.as_deref().expect("read checked"),
                     s.size_mib.expect("read checked"),
                 ));
+                out.extend(enter_lines(i, s)?.said());
             }
         }
     }
@@ -457,6 +469,24 @@ pub fn run(plan: &Plan, device: &mut dyn Device, say: &mut dyn FnMut(&str)) -> R
     Ok(())
 }
 
+/// `run`, with every operation on the device written to the log file `log` (created, or appended to: a run again keeps the one before it):
+/// a run that fails says where its device-side text is.
+pub fn run_logged(
+    plan: &Plan,
+    device: &mut dyn Device,
+    log: &std::path::Path,
+    say: &mut dyn FnMut(&str),
+) -> Result<(), String> {
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log)
+        .map_err(|e| format!("the run's log {}: {e}", log.display()))?;
+    let mut logged = crate::log::Logged::new(device, Box::new(file));
+    run(plan, &mut logged, say)
+        .map_err(|e| format!("{e}; every line sent and answered is in {}", log.display()))
+}
+
 fn step_name(s: &Step) -> String {
     match s.action {
         StepAction::BootFromRam => format!("boot {}", s.write),
@@ -541,8 +571,42 @@ fn push(s: &Step, m: &Image, d: &mut dyn Device) -> Result<(), String> {
     Ok(())
 }
 
-/// The pushed root is unpacked into a tmpfs, the file removed, the command started in the chroot, the check run.
-fn enter(i: &Install, s: &Step, d: &mut dyn Device) -> Result<(), String> {
+/// What `enter` runs on the device, as shell lines in order: one place, read by the dry run and by the run.
+struct EnterLines {
+    mkdir: String,
+    is_mounted: String,
+    mount: String,
+    unpack: String,
+    remove: String,
+    start: String,
+    check: Option<String>,
+    check_wait: u32,
+}
+
+impl EnterLines {
+    /// The lines as the dry run says them: the check last, with how long it is tried.
+    fn said(&self) -> Vec<String> {
+        let mut v: Vec<String> = [
+            &self.mkdir,
+            &self.mount,
+            &self.unpack,
+            &self.remove,
+            &self.start,
+        ]
+        .iter()
+        .map(|l| format!("on the device: {l}"))
+        .collect();
+        if let Some(c) = &self.check {
+            v.push(format!(
+                "on the device: {c} (tried every second for {} s)",
+                self.check_wait
+            ));
+        }
+        v
+    }
+}
+
+fn enter_lines(i: &Install, s: &Step) -> Result<EnterLines, String> {
     let push = i
         .step
         .iter()
@@ -553,6 +617,40 @@ fn enter(i: &Install, s: &Step, d: &mut dyn Device) -> Result<(), String> {
         push.to.as_deref().expect("read checked"),
         s.root.as_deref().expect("read checked"),
     );
+    let say = |what: &str, v: Result<String, String>| v.map_err(|e| format!("{what}: {e}"));
+    let (from_q, root_q) = (say("to", path(from))?, say("root", path(root))?);
+    let command = say(
+        "command",
+        command_line(s.command.as_deref().expect("read checked")),
+    )?;
+    let unpack = match m.compression {
+        Some(c) => c.unpack(from)?,
+        None => format!("cat {from_q}"),
+    };
+    Ok(EnterLines {
+        mkdir: format!("mkdir -p {root_q}"),
+        is_mounted: format!("mountpoint -q {root_q}"),
+        mount: format!(
+            "mount -t tmpfs -o size={}m tmpfs {root_q}",
+            s.size_mib.expect("read checked")
+        ),
+        unpack: format!("{unpack} | tar -x -C {root_q}"),
+        remove: format!("rm -f {from_q}"),
+        start: format!("setsid chroot {root_q} {command} > /dev/null 2>&1 &"),
+        check: s
+            .check
+            .as_deref()
+            .map(|c| say("check", command_line(c)))
+            .transpose()?,
+        check_wait: s.check_wait.unwrap_or(DEFAULT_CHECK_WAIT),
+    })
+}
+
+/// The pushed root is unpacked into a tmpfs, the file removed, the command started in the chroot, the check run
+/// every second until it holds or its wait is over.
+fn enter(i: &Install, s: &Step, d: &mut dyn Device) -> Result<(), String> {
+    let lines = enter_lines(i, s)?;
+    let root = s.root.as_deref().expect("read checked");
     let ok = |d: &mut dyn Device, c: &str| -> Result<(), String> {
         let r = d.shell(c, 60)?;
         if r.status == 0 {
@@ -565,45 +663,21 @@ fn enter(i: &Install, s: &Step, d: &mut dyn Device) -> Result<(), String> {
             ))
         }
     };
-    let say = |what: &str, v: Result<String, String>| v.map_err(|e| format!("{what}: {e}"));
-    let (from_q, root_q) = (say("to", path(from))?, say("root", path(root))?);
-    let command = say(
-        "command",
-        command_line(s.command.as_deref().expect("read checked")),
-    )?;
-    let check = s
-        .check
-        .as_deref()
-        .map(|c| say("check", command_line(c)))
-        .transpose()?;
-    ok(d, &format!("mkdir -p {root_q}"))?;
-    if d.shell(&format!("mountpoint -q {root_q}"), 10)?.status == 0 {
+    ok(d, &lines.mkdir)?;
+    if d.shell(&lines.is_mounted, 10)?.status == 0 {
         return Err(format!("{root} is already mounted: a root is entered once"));
     }
-    ok(
-        d,
-        &format!(
-            "mount -t tmpfs -o size={}m tmpfs {root_q}",
-            s.size_mib.expect("read checked")
-        ),
-    )?;
-    let unpack = match m.compression {
-        Some(c) => c.unpack(from)?,
-        None => format!("cat {from_q}"),
-    };
-    ok(d, &format!("{unpack} | tar -x -C {root_q}"))?;
-    ok(d, &format!("rm -f {from_q}"))?;
-    ok(
-        d,
-        &format!("setsid chroot {root_q} {command} > /dev/null 2>&1 &"),
-    )?;
-    if let Some(check) = &check {
-        let mut tries = 0;
-        while ok(d, check).is_err() {
-            tries += 1;
-            if tries >= 10 {
+    ok(d, &lines.mount)?;
+    ok(d, &lines.unpack)?;
+    ok(d, &lines.remove)?;
+    ok(d, &lines.start)?;
+    if let Some(check) = &lines.check {
+        let until = Instant::now() + Duration::from_secs(lines.check_wait.into());
+        while let Err(last) = ok(d, check) {
+            if Instant::now() >= until {
                 return Err(format!(
-                    "the check `{check}` did not hold within 10 s of the start"
+                    "the check `{check}` did not hold within {} s of the start (its last try: {last})",
+                    lines.check_wait
                 ));
             }
             std::thread::sleep(Duration::from_secs(1));
