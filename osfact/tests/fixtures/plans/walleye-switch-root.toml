@@ -1,0 +1,58 @@
+# The refused case: how = "switch-root", which osfact does not run yet (it ends the shell the host reads; decision 2026-11-28-osfact-enter-by-chroot).
+# An install.toml whose image boots from RAM and then takes its root image over the device's USB network, nothing
+# written to the phone. Sources of every value (google-walleye-lab at a14f7704):
+#   connection: build/initramfs-modem (the gadget's address 172.16.43.1, telnetd's shell on 23), procedures/steps/src/modem_boot.rs
+#     (PUSH: ROOTFS_PORT 9001, CONNECT_WAIT_S 20, the receiver `nc -l -p 9001`)
+#   receive, root, size: build/initramfs-modem/rootfs-recv (MM_ROOT /mm, MM_TAR /tmp/..., MM_SIZE 400m, nc -l -p 9001)
+#   how = chroot: decision 2026-11-27-walleye-mm-runs-in-a-pushed-alpine-rootfs; the compressed push: decision
+#   2026-11-28-walleye-modem-push-the-rootfs-compressed; back_wait 240: device.toml [boot].
+[install]
+device = "google-walleye"
+serial_env = "WALLEYE_SERIAL"
+
+[install.connection]
+address = "172.16.43.1"
+shell_port = 23
+wait = 60
+
+[[install.image]]
+name = "boot"
+file = "boot.img"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[[install.image]]
+name = "root"
+file = "root.tar.gz"
+sha256 = "1111111111111111111111111111111111111111111111111111111111111111"
+compression = "gzip"
+
+[[install.step]]
+do = "boot-from-ram"
+write = "boot"
+via = "fastboot"
+
+[[install.step]]
+do = "push"
+write = "root"
+via = "network"
+port = 9001
+receive = "nc -l -p 9001"
+to = "/tmp/root.tar.gz"
+wait = 60
+
+[[install.step]]
+do = "enter"
+write = "root"
+via = "shell"
+how = "switch-root"
+root = "/mm"
+size_mib = 400
+command = "/sbin/init"
+check = "test -e /mm/sbin/init"
+
+[install.way_back]
+# after the boot the device is no longer in fastboot: the image is told to restart (its init ends its window with sync and sysrq b: device.toml [boot])
+via = "shell"
+do = "reboot"
+wait = 240
+command = "sync; echo b > /proc/sysrq-trigger"

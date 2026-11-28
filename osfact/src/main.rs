@@ -48,18 +48,19 @@ fn install(r: &Resolution) -> Result<(), String> {
     let plan_file = Contract::PLAN
         .get_from(r)
         .ok_or("install needs --plan FILE")?;
-    if !Contract::DRY_RUN.get_from(r).unwrap_or(false) {
-        return Err(
-            "install now runs only with --dry-run in this build: nothing is sent to a device yet"
-                .into(),
-        );
-    }
     let text = std::fs::read_to_string(&plan_file).map_err(|e| format!("{plan_file}: {e}"))?;
     let plan = osfact::install::read(&text)?;
     for line in osfact::install::commands(&plan)? {
         println!("{line}");
     }
-    Ok(())
+    if Contract::DRY_RUN.get_from(r).unwrap_or(false) {
+        return Ok(());
+    }
+    let i = &plan.install;
+    let serial = std::env::var(&i.serial_env)
+        .map_err(|_| format!("install now needs the device's serial in ${}", i.serial_env))?;
+    let mut device = osfact::device::Live::new(serial, i.connection.clone());
+    osfact::install::run(&plan, &mut device, &mut |line| println!("{line}"))
 }
 
 fn pack(r: &Resolution) -> Result<(), String> {
