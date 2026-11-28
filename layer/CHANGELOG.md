@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.54.3](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-layer-v0.54.2...lpoco-layer-v0.54.3) - 2026-11-28
+
+### Added
+
+- *(manifest)* read [device] serial_env from osfact's own Identity type ([#487](https://github.com/linux-phone-oco/lab-tools/pull/487))
+
 ## [0.54.2](https://github.com/linux-phone-oco/lab-tools/compare/lpoco-layer-v0.54.1...lpoco-layer-v0.54.2) - 2026-11-28
 
 ### Added
