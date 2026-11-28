@@ -583,7 +583,7 @@ name = "lpoco-attended"
 version = "0.46.9"
 dependencies = [
  "argenv-resolve",
- "lpoco-manifest 0.56.0",
+ "lpoco-manifest 0.56.1 (git+https://github.com/linux-phone-oco/lab-tools?tag=lpoco-manifest-v0.56.1)",
  "serde",
  "sha2",
  "signal-hook",
@@ -668,11 +668,10 @@ dependencies = [
 
 [[package]]
 name = "lpoco-manifest"
-version = "0.56.0"
-source = "git+https://github.com/linux-phone-oco/lab-tools?tag=lpoco-manifest-v0.56.0#6b0e9123436c8e1892bf9e1663c7b7c98a021fa3"
+version = "0.56.1"
 dependencies = [
  "argenv-resolve",
- "osfact 0.0.0 (git+https://github.com/linux-phone-oco/lab-tools?tag=lpoco-manifest-v0.56.0)",
+ "osfact 0.0.0",
  "schemars",
  "serde",
  "serde_json",
@@ -682,9 +681,10 @@ dependencies = [
 [[package]]
 name = "lpoco-manifest"
 version = "0.56.1"
+source = "git+https://github.com/linux-phone-oco/lab-tools?tag=lpoco-manifest-v0.56.1#e85660923589ca4d214b5e69c1e22d8e2e98a37f"
 dependencies = [
  "argenv-resolve",
- "osfact 0.0.0",
+ "osfact 0.0.0 (git+https://github.com/linux-phone-oco/lab-tools?tag=lpoco-manifest-v0.56.1)",
  "schemars",
  "serde",
  "serde_json",
@@ -772,7 +772,7 @@ dependencies = [
 [[package]]
 name = "osfact"
 version = "0.0.0"
-source = "git+https://github.com/linux-phone-oco/lab-tools?tag=lpoco-manifest-v0.56.0#6b0e9123436c8e1892bf9e1663c7b7c98a021fa3"
+source = "git+https://github.com/linux-phone-oco/lab-tools?tag=lpoco-manifest-v0.56.1#e85660923589ca4d214b5e69c1e22d8e2e98a37f"
 dependencies = [
  "abootimg-oxide",
  "argenv-resolve",
@@ -780,6 +780,7 @@ dependencies = [
  "serde",
  "sha1",
  "sha2",
+ "shlex",
  "toml",
 ]
 
