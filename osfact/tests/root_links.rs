@@ -9,7 +9,7 @@
 //! the link target `/bin/busybox` and the command `busybox --install -s`: that package's post-install script, read from
 //!   the same tree's lib/apk/db/scripts.tar.gz on 2026-11-28;
 //! the profile: tests/fixtures/distros/alpine.toml (its `link_list` and `required_paths`).
-//! The ignored test builds the real root: `cargo test -p osfact --test root_links -- --ignored`.
+//! The real root is checked by the ignored test of tests/rootfs_apk.rs.
 
 use osfact::root_links::{apply, require, LinkList};
 use std::path::{Path, PathBuf};
@@ -80,5 +80,32 @@ fn a_missing_list_is_refused_naming_it() {
     let tree = scratch("links-nolist");
     let refused = apply(&tree, &spec()).expect_err("no list");
     assert!(refused.contains("etc/busybox-paths.d/busybox"), "{refused}");
+    let _ = std::fs::remove_dir_all(&tree);
+}
+
+#[test]
+fn a_list_line_that_leaves_the_root_is_refused_naming_it() {
+    for (line, name) in [("/etc/escape", "absolute"), ("../escape", "dotdot")] {
+        let tree = scratch(&format!("links-{name}"));
+        std::fs::create_dir_all(tree.join("etc/busybox-paths.d")).expect("dirs");
+        std::fs::write(
+            tree.join("etc/busybox-paths.d/busybox"),
+            format!("{line}\n"),
+        )
+        .expect("list");
+        let refused = apply(&tree, &spec()).expect_err(name);
+        assert!(refused.contains(line), "{refused}");
+        let _ = std::fs::remove_dir_all(&tree);
+    }
+}
+
+#[test]
+fn a_parent_that_is_an_absolute_link_is_refused() {
+    let tree = scratch("links-parent");
+    std::fs::create_dir_all(tree.join("etc/busybox-paths.d")).expect("dirs");
+    std::fs::write(tree.join("etc/busybox-paths.d/busybox"), "bin/sh\n").expect("list");
+    std::os::unix::fs::symlink("/usr/bin", tree.join("bin")).expect("link");
+    let refused = apply(&tree, &spec()).expect_err("leaves the root");
+    assert!(refused.contains("leaves the root"), "{refused}");
     let _ = std::fs::remove_dir_all(&tree);
 }

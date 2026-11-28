@@ -29,7 +29,7 @@ sha256 = "dd211936d544f4050924ce8aec078d24e7b1b036ae70b30bd07867349587c708"
 # Install scripts cannot run when the root is built for another machine kind, so what the first boot needs from them is
 # declared here. busybox's post-install script runs `busybox --install -s`: a link to /bin/busybox for each applet the
 # package lists (read from its scripts, 2026-11-28; see tests/root_links.rs). The root must then have /sbin/init.
-# The other scripts of this package set were surveyed the same day: the rest need no boot step (osfact CHANGELOG).
+# The package set's other scripts were surveyed the same day (alpine-baselayout, openrc, openssh): none needs a boot step.
 [[link_list]]
 list = "etc/busybox-paths.d/busybox"
 target = "/bin/busybox"
