@@ -765,6 +765,7 @@ dependencies = [
  "serde",
  "sha1",
  "sha2",
+ "shlex",
  "toml",
 ]
 

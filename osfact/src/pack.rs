@@ -258,6 +258,7 @@ pub fn plan_text(declaration: &str, packed: &Packed) -> Result<String, String> {
                 action: WayBackAction::Reboot,
                 wait: back_wait,
                 command: None,
+                back_on: None,
             },
         },
         Some(connection) => {
@@ -288,6 +289,7 @@ pub fn plan_text(declaration: &str, packed: &Packed) -> Result<String, String> {
                     action: WayBackAction::Reboot,
                     wait: back_wait,
                     command: Some(way_back.command.clone()),
+                    back_on: Some(way_back.back_on.clone().ok_or("[install.way_back] declares no back_on (the host command, as argv, that ends with status 0 once the device is on its known good: the way back is confirmed by it)")?),
                 },
             }
         }

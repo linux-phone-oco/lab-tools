@@ -42,8 +42,13 @@ impl Work {
 
     /// The fixture plan with its images' files in this folder and their real sha256.
     fn plan(&self, fixture: &str) -> install::Plan {
+        self.plan_from(&plan_text(fixture))
+    }
+
+    /// A plan text (a fixture with values changed) with its images' files in this folder and their real sha256.
+    fn plan_from(&self, text: &str) -> install::Plan {
         let boot = hex(b"a boot image");
-        let text = plan_text(fixture)
+        let text = text
             .replace(
                 "file = \"boot.img\"",
                 &format!("file = \"{}/boot.img\"", self.dir.display()),
@@ -64,6 +69,7 @@ struct Faults {
     no_connection: bool,
     lose_the_link_while_sending: bool,
     flip_a_byte_in_transit: bool,
+    back_never_answers: bool,
 }
 
 /// A stand-in device: it records every operation in order, keeps the bytes it was sent, and answers the
@@ -114,7 +120,7 @@ impl Device for Stand {
                 hex(&self.held),
                 command.trim_start_matches("sha256sum ")
             )
-        } else if command.starts_with("cat ") && command.ends_with(".status") {
+        } else if command.starts_with("cat ") && command.contains(".status") {
             "0\n".into()
         } else {
             String::new()
@@ -136,6 +142,14 @@ impl Device for Stand {
     }
     fn way_back(&mut self, back: &install::WayBack) -> Result<(), String> {
         self.ops.push(format!("way back after {} s", back.wait));
+        Ok(())
+    }
+    fn back_on(&mut self, argv: &[String], wait_s: u32) -> Result<(), String> {
+        self.ops
+            .push(format!("back on {} within {wait_s}", argv.join(" ")));
+        if self.faults.back_never_answers {
+            return Err("it never ended with status 0".into());
+        }
         Ok(())
     }
 }
@@ -186,7 +200,7 @@ fn a_sha256_mismatch_on_the_device_runs_the_way_back_and_fails_naming_the_push()
         "{e}"
     );
     assert!(
-        s.ops.last().unwrap().starts_with("way back after 240"),
+        s.ops[s.ops.len() - 2].starts_with("way back after 240"),
         "the way back is not last:\n{}",
         s.said()
     );
@@ -208,7 +222,7 @@ fn a_lost_connection_while_pushing_runs_the_way_back_and_fails_naming_the_push()
     assert!(e.contains("step 2") && e.contains("push root"), "{e}");
     assert!(e.contains("connection reset"), "the cause is not said: {e}");
     assert!(
-        s.ops.last().unwrap().starts_with("way back"),
+        s.ops[s.ops.len() - 2].starts_with("way back"),
         "{}",
         s.said()
     );
@@ -224,7 +238,7 @@ fn no_connection_after_the_boot_runs_the_way_back_and_names_the_boot() {
     let e = run(&w.plan("walleye-root-in-ram.toml"), &mut s).unwrap_err();
     assert!(e.contains("step 1") && e.contains("connection"), "{e}");
     assert!(
-        s.ops.last().unwrap().starts_with("way back"),
+        s.ops[s.ops.len() - 2].starts_with("way back"),
         "{}",
         s.said()
     );
@@ -240,7 +254,7 @@ fn an_image_that_is_not_the_packed_one_is_never_sent() {
     assert!(e.contains("step 2") && e.contains("sha256"), "{e}");
     assert!(!s.said().contains("send "), "{}", s.said());
     assert!(
-        s.ops.last().unwrap().starts_with("way back"),
+        s.ops[s.ops.len() - 2].starts_with("way back"),
         "{}",
         s.said()
     );
@@ -290,4 +304,277 @@ fn a_plan_with_a_connection_and_a_fastboot_way_back_is_refused_at_read() {
     );
     let e = install::read(&text).err().expect("refused");
     assert!(e.contains("refuses") && e.contains("via shell"), "{e}");
+}
+
+#[test]
+fn a_way_back_whose_back_on_never_answers_fails_after_the_bound_naming_it() {
+    let w = Work::new("backnever");
+    let mut s = Stand::new(Faults {
+        lose_the_link_while_sending: true,
+        back_never_answers: true,
+        ..Faults::default()
+    });
+    let e = run(&w.plan("walleye-root-in-ram.toml"), &mut s).unwrap_err();
+    assert!(e.contains("step 2") && e.contains("push root"), "{e}");
+    assert!(
+        e.contains("did not answer")
+            && e.contains("adb -s {serial} get-state")
+            && e.contains("240"),
+        "the way back's end is not named: {e}"
+    );
+    assert!(!e.contains("the way back was run"), "{e}");
+}
+
+#[test]
+fn a_way_back_whose_back_on_answers_is_said_to_have_worked() {
+    let w = Work::new("backanswers");
+    let mut s = Stand::new(Faults {
+        lose_the_link_while_sending: true,
+        ..Faults::default()
+    });
+    let e = run(&w.plan("walleye-root-in-ram.toml"), &mut s).unwrap_err();
+    assert!(
+        e.contains("the way back was run") && e.contains("answered"),
+        "{e}"
+    );
+    assert!(
+        s.ops
+            .last()
+            .unwrap()
+            .starts_with("back on adb -s {serial} get-state within 240"),
+        "the way back is not waited for last:\n{}",
+        s.said()
+    );
+}
+
+#[test]
+fn a_plan_whose_shell_way_back_declares_no_back_on_is_refused_at_read() {
+    let text = plan_text("walleye-root-in-ram.toml").replace(
+        "back_on = [\"adb\", \"-s\", \"{serial}\", \"get-state\"]\n",
+        "",
+    );
+    let e = install::read(&text).err().expect("refused");
+    assert!(e.contains("refuses") && e.contains("back_on"), "{e}");
+}
+
+#[test]
+fn an_empty_back_on_is_refused_at_read() {
+    let text = plan_text("walleye-root-in-ram.toml").replace(
+        "back_on = [\"adb\", \"-s\", \"{serial}\", \"get-state\"]",
+        "back_on = []",
+    );
+    let e = install::read(&text).err().expect("refused");
+    assert!(e.contains("refuses") && e.contains("back_on"), "{e}");
+}
+
+/// A value an author could write by mistake or by malice: a space, quotes, a semicolon, a command substitution.
+const HOSTILE: &str = "/tmp/a b'c\";touch $(id) `id`.gz";
+
+fn words(line: &str) -> Vec<String> {
+    shlex::split(line).unwrap_or_else(|| panic!("not one shell line: {line}"))
+}
+
+#[test]
+fn a_path_with_a_space_a_quote_a_semicolon_or_a_substitution_reaches_the_device_as_one_literal_word(
+) {
+    let w = Work::new("hostile-path");
+    let root = "/m m;$(reboot)";
+    let text = plan_text("walleye-root-in-ram.toml")
+        .replace(
+            "to = \"/tmp/root.tar.gz\"",
+            &format!("to = {}", toml_str(HOSTILE)),
+        )
+        .replace("root = \"/mm\"", &format!("root = {}", toml_str(root)))
+        .replace(
+            "test -e /mm/sbin/init",
+            &format!("test -e '{root}/sbin/init'"),
+        );
+    let mut s = Stand::new(Faults::default());
+    let plan = w.plan_from(&text);
+    run(&plan, &mut s).unwrap_or_else(|e| panic!("{e}\n{}", s.said()));
+    let line = |start: &str| -> Vec<String> {
+        let op = s
+            .ops
+            .iter()
+            .filter_map(|o| o.strip_prefix("shell "))
+            .find(|o| o.starts_with(start))
+            .unwrap_or_else(|| panic!("no line `{start}`:\n{}", s.said()));
+        words(op)
+    };
+    let status = format!("{HOSTILE}.status");
+    assert_eq!(line("rm -f "), ["rm", "-f", &status, HOSTILE]);
+    assert_eq!(line("mkdir "), ["mkdir", "-p", root]);
+    assert_eq!(line("mountpoint "), ["mountpoint", "-q", root]);
+    assert_eq!(line("sha256sum "), ["sha256sum", HOSTILE]);
+    assert_eq!(
+        line("mount -t"),
+        ["mount", "-t", "tmpfs", "-o", "size=400m", "tmpfs", root]
+    );
+    let unpack = line("gzip ");
+    assert_eq!(&unpack[..3], ["gzip", "-dc", HOSTILE], "{unpack:?}");
+    assert_eq!(unpack.last().unwrap(), root);
+    assert_eq!(line("test "), ["test", "-e", &format!("{root}/sbin/init")]);
+}
+
+#[test]
+fn a_command_is_split_into_words_each_quoted_so_a_semicolon_in_it_is_an_argument() {
+    let w = Work::new("hostile-command");
+    let text = plan_text("walleye-root-in-ram.toml")
+        .replace(
+            "command = \"/sbin/init\"",
+            "command = \"/sbin/init 'a b' ;touch /x $(id)\"",
+        )
+        .replace(
+            "receive = \"nc -l -p 9001\"",
+            "receive = \"nc -l -p 9001 ;reboot\"",
+        );
+    let mut s = Stand::new(Faults::default());
+    let plan = w.plan_from(&text);
+    run(&plan, &mut s).unwrap_or_else(|e| panic!("{e}\n{}", s.said()));
+    let start = s.ops.iter().find(|o| o.contains("chroot")).unwrap();
+    assert_eq!(
+        words(start.strip_prefix("shell ").unwrap()),
+        [
+            "setsid",
+            "chroot",
+            "/mm",
+            "/sbin/init",
+            "a b",
+            ";touch",
+            "/x",
+            "$(id)",
+            ">",
+            "/dev/null",
+            "2>&1",
+            "&"
+        ],
+        "{start}"
+    );
+    let recv = s.ops.iter().find(|o| o.contains("nc -l")).unwrap();
+    assert!(recv.contains("';reboot'"), "{recv}");
+}
+
+#[test]
+fn a_value_that_cannot_be_quoted_is_refused_at_read_naming_it() {
+    for (from, to, named) in [
+        ("to = \"/tmp/root.tar.gz\"", "to = \"/tmp/a\\nb\"", "to"),
+        ("root = \"/mm\"", "root = \"/m\\u0000m\"", "root"),
+        (
+            "command = \"/sbin/init\"",
+            "command = \"/sbin/init 'unclosed\"",
+            "command",
+        ),
+        ("receive = \"nc -l -p 9001\"", "receive = \"\"", "receive"),
+    ] {
+        let e = install::read(&plan_text("walleye-root-in-ram.toml").replace(from, to))
+            .err()
+            .unwrap_or_else(|| panic!("{to} was not refused"));
+        assert!(e.contains("refuses") && e.contains(named), "{named}: {e}");
+    }
+}
+
+fn toml_str(v: &str) -> String {
+    toml::Value::String(v.into()).to_string()
+}
+
+#[test]
+fn the_receiver_the_status_poll_and_the_removal_quote_the_path_too() {
+    // each of these lines was unparsed by the first proof (review): the receiver's redirect, `cat STATUS`, the second `rm -f`
+    let w = Work::new("hostile-rest");
+    let text = plan_text("walleye-root-in-ram.toml").replace(
+        "to = \"/tmp/root.tar.gz\"",
+        &format!("to = {}", toml_str(HOSTILE)),
+    );
+    let mut s = Stand::new(Faults::default());
+    run(&w.plan_from(&text), &mut s).unwrap_or_else(|e| panic!("{e}\n{}", s.said()));
+    let shell: Vec<Vec<String>> = s
+        .ops
+        .iter()
+        .filter_map(|o| o.strip_prefix("shell "))
+        .map(words)
+        .collect();
+    let status = format!("{HOSTILE}.status");
+    // shlex::split does not know `;` as an operator: the line is compared as text, the paths quoted by the same rule
+    let (q, qs) = (
+        shlex::try_quote(HOSTILE).unwrap(),
+        shlex::try_quote(&status).unwrap(),
+    );
+    let line = s
+        .ops
+        .iter()
+        .find(|o| o.contains("nc -l"))
+        .expect("the receiver line");
+    assert_eq!(
+        line,
+        &format!("shell ( nc -l -p 9001 > {q}; echo $? > {qs} ) > /dev/null 2>&1 &")
+    );
+    assert!(shell.iter().any(|w| w == &["cat", &status]), "{shell:?}");
+    let removals: Vec<_> = shell.iter().filter(|w| w[0] == "rm").collect();
+    assert_eq!(removals.len(), 2, "{removals:?}");
+    assert_eq!(removals[1], &["rm", "-f", HOSTILE]);
+}
+
+#[test]
+fn a_value_that_would_read_as_an_option_or_holds_a_control_character_is_refused_at_read() {
+    for (from, to, named) in [
+        ("to = \"/tmp/root.tar.gz\"", "to = \"-rf\"", "to"),
+        ("root = \"/mm\"", "root = \"-p\"", "root"),
+        ("to = \"/tmp/root.tar.gz\"", "to = \"/tmp/a\\u0003b\"", "to"),
+        (
+            "command = \"sync; echo b > /proc/sysrq-trigger\"",
+            "command = \"sync\\u0004\"",
+            "way_back",
+        ),
+        (
+            "check = \"test -e /mm/sbin/init\"",
+            "check = \"test -e /x 'unclosed\"",
+            "check",
+        ),
+        ("\"get-state\"]", "\"get\\u0000state\"]", "back_on"),
+    ] {
+        let e = install::read(&plan_text("walleye-root-in-ram.toml").replace(from, to))
+            .err()
+            .unwrap_or_else(|| panic!("{to} was not refused"));
+        assert!(e.contains("refuses") && e.contains(named), "{named}: {e}");
+    }
+}
+
+#[test]
+fn a_way_back_that_could_not_be_sent_is_still_confirmed_by_back_on() {
+    struct SendFails(Stand);
+    impl Device for SendFails {
+        fn boot(&mut self, f: &str) -> Result<(), String> {
+            self.0.boot(f)
+        }
+        fn connect(&mut self, w: u32) -> Result<(), String> {
+            self.0.connect(w)
+        }
+        fn shell(&mut self, c: &str, w: u32) -> Result<Shell, String> {
+            self.0.shell(c, w)
+        }
+        fn send(&mut self, p: u16, f: &str, w: u32) -> Result<u64, String> {
+            self.0.send(p, f, w)
+        }
+        fn way_back(&mut self, _: &install::WayBack) -> Result<(), String> {
+            Err("the shell closed".into())
+        }
+        fn back_on(&mut self, a: &[String], w: u32) -> Result<(), String> {
+            self.0.back_on(a, w)
+        }
+    }
+    let w = Work::new("sendfails");
+    let mut d = SendFails(Stand::new(Faults {
+        no_connection: true,
+        ..Faults::default()
+    }));
+    let e = install::run(&w.plan("walleye-root-in-ram.toml"), &mut d, &mut |_| {}).unwrap_err();
+    assert!(
+        e.contains("sending the way back failed (the shell closed)") && e.contains("answered"),
+        "{e}"
+    );
+    assert!(
+        d.0.ops.last().unwrap().starts_with("back on "),
+        "{}",
+        d.0.said()
+    );
 }
